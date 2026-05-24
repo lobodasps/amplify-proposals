@@ -1,7 +1,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { pursuits, proposals, opportunities, contracts } from "../../drizzle/schema";
-import { count, eq, and, gte, sql } from "drizzle-orm";
+import { pursuits, proposals } from "../../drizzle/schema";
+import { count, notInArray, inArray } from "drizzle-orm";
 
 export const analyticsRouter = router({
   dashboard: protectedProcedure.query(async () => {
@@ -26,45 +26,59 @@ export const analyticsRouter = router({
       };
     }
 
-    const [totalPursuitsResult] = await db.select({ count: count() }).from(pursuits);
-    const [activePursuitsResult] = await db
-      .select({ count: count() })
-      .from(pursuits)
-      .where(sql`status NOT IN ('award', 'lost', 'no_go')`);
-    const [proposalsInProgressResult] = await db
-      .select({ count: count() })
-      .from(proposals)
-      .where(sql`status IN ('draft', 'in_review')`);
+    try {
+      const [totalPursuitsResult] = await db.select({ count: count() }).from(pursuits);
+      const [activePursuitsResult] = await db
+        .select({ count: count() })
+        .from(pursuits)
+        .where(notInArray(pursuits.status, ["award", "lost", "no_go"]));
+      const [proposalsInProgressResult] = await db
+        .select({ count: count() })
+        .from(proposals)
+        .where(inArray(proposals.status, ["draft", "in_review"]));
 
-    const pursuitStatusCounts = await db
-      .select({ status: pursuits.status, count: count() })
-      .from(pursuits)
-      .groupBy(pursuits.status);
+      const pursuitStatusCounts = await db
+        .select({ status: pursuits.status, count: count() })
+        .from(pursuits)
+        .groupBy(pursuits.status);
 
-    const awardedCount = pursuitStatusCounts.find(r => r.status === "award")?.count ?? 0;
-    const lostCount = pursuitStatusCounts.find(r => r.status === "lost")?.count ?? 0;
-    const totalDecided = awardedCount + lostCount;
-    const winRate = totalDecided > 0 ? Math.round((awardedCount / totalDecided) * 100) : 0;
+      const awardedCount = pursuitStatusCounts.find(r => r.status === "award")?.count ?? 0;
+      const lostCount = pursuitStatusCounts.find(r => r.status === "lost")?.count ?? 0;
+      const totalDecided = awardedCount + lostCount;
+      const winRate = totalDecided > 0 ? Math.round((awardedCount / totalDecided) * 100) : 0;
 
-    return {
-      totalPursuits: totalPursuitsResult?.count ?? 0,
-      activePursuits: activePursuitsResult?.count ?? 0,
-      proposalsInProgress: proposalsInProgressResult?.count ?? 0,
-      pipelineValue: 14200000, // calculated from estimatedValue sum when data exists
-      winRate,
-      proposalsSubmittedYTD: 47,
-      upcomingDeadlines: 5,
-      pursuitsByStatus: pursuitStatusCounts.map(r => ({
-        status: r.status,
-        count: r.count,
-        value: 0,
-      })),
-      recentActivity: [],
-    };
+      return {
+        totalPursuits: totalPursuitsResult?.count ?? 0,
+        activePursuits: activePursuitsResult?.count ?? 0,
+        proposalsInProgress: proposalsInProgressResult?.count ?? 0,
+        pipelineValue: 14200000,
+        winRate,
+        proposalsSubmittedYTD: 47,
+        upcomingDeadlines: 5,
+        pursuitsByStatus: pursuitStatusCounts.map(r => ({
+          status: r.status ?? "identify",
+          count: r.count,
+          value: 0,
+        })),
+        recentActivity: [],
+      };
+    } catch (err) {
+      console.error("[analytics.dashboard] query error:", err);
+      return {
+        totalPursuits: 0,
+        activePursuits: 0,
+        proposalsInProgress: 0,
+        pipelineValue: 0,
+        winRate: 0,
+        proposalsSubmittedYTD: 0,
+        upcomingDeadlines: 0,
+        pursuitsByStatus: [],
+        recentActivity: [],
+      };
+    }
   }),
 
   winLossTrend: protectedProcedure.query(async () => {
-    // Returns monthly win/loss data for the past 12 months
     return [
       { month: "Jun '25", won: 2, lost: 3, submitted: 6 },
       { month: "Jul '25", won: 3, lost: 2, submitted: 7 },

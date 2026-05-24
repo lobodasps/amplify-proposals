@@ -95,7 +95,7 @@ export default function Personnel() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((person: any) => {
-              const serviceLines = person.serviceLines ? (typeof person.serviceLines === "string" ? JSON.parse(person.serviceLines) : person.serviceLines) : [];
+              const serviceLines = (() => { try { const sl = person.serviceLines; if (!sl) return []; if (Array.isArray(sl)) return sl; if (typeof sl === "string") return JSON.parse(sl); return []; } catch { return []; } })();
               const initials = person.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
               return (
                 <Card key={person.id} className="card-hover">

@@ -156,7 +156,7 @@ export default function Dashboard() {
         statusColor: STATUS_COLORS[p.status] ?? "status-identify",
         due: p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD",
         value: p.estimatedValue ? `$${(p.estimatedValue / 1000000).toFixed(1)}M` : "—",
-        service: p.serviceLines ? (JSON.parse(p.serviceLines as string)?.[0] ?? "—") : "—",
+        service: (() => { try { const sl = p.serviceLines; if (!sl) return "—"; if (Array.isArray(sl)) return sl[0] ?? "—"; if (typeof sl === "string") return JSON.parse(sl)?.[0] ?? "—"; return "—"; } catch { return "—"; } })(),
       }))
     : [
         { id: 1, title: "NJDOT Route 9 Bridge Inspection Services", client: "NJDOT", status: "pursue", statusLabel: "Pursue", statusColor: "status-pursue", due: "Jun 15", value: "$2.4M", service: "Special Inspections" },

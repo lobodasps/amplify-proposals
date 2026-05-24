@@ -51,6 +51,12 @@
 - [x] Checkpoint save
 - [x] Deliver live preview to user
 
+## Bug Fixes Applied (v1.2)
+- [x] analytics.ts: Replace raw SQL NOT IN with Drizzle notInArray/inArray to fix TiDB crash
+- [x] analytics.ts: Wrap all DB queries in try/catch with fallback demo data
+- [x] Dashboard.tsx: Safe JSON.parse for serviceLines field (handles array, string, null, malformed)
+- [x] Personnel.tsx: Safe JSON.parse for serviceLines field (handles array, string, null, malformed)
+
 ## Backlog / Future Enhancements
 - [ ] Real Supabase/Postgres connection (replace TiDB with Supabase DATABASE_URL)
 - [ ] Live public agency portal scraping with real HTTP scraper
