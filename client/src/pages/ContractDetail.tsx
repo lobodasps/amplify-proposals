@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { FinancialSummaryCard } from "@/components/FinancialSummaryCard";
+import { ComplianceBar } from "@/components/ComplianceBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -13,14 +14,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { getCompanyBadgeClass, getBadgeColorById, KNOWN_COMPANIES } from "../../../shared/contractNumbers";
+import { getCompanyBadgeClass, KNOWN_COMPANIES } from "../../../shared/contractNumbers";
 import {
-  ArrowLeft, Building2, Calendar, DollarSign, FileText, Plus,
-  ChevronRight, AlertTriangle, CheckCircle2, Clock, FolderOpen,
-  GitBranch, Pencil, Shield, Layers
+  ArrowLeft, Building2, DollarSign, FileText, Plus,
+  ChevronRight, GitBranch, Pencil, Shield, ExternalLink,
+  Loader2, AlertCircle
 } from "lucide-react";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatCurrency(v?: number | null) {
   if (v == null) return "—";
@@ -51,11 +50,19 @@ const NODE_LABELS: Record<string, string> = {
   contract: "Primary Contract", task_order: "Task Order", sub_project: "Sub-Project",
 };
 
-// ─── Add Child Dialog ─────────────────────────────────────────────────────────
+function getEndDateWarning(endDate: Date | string | null | undefined) {
+  if (!endDate) return null;
+  const today = new Date();
+  const end = new Date(endDate);
+  const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return { label: "Past Due", cls: "bg-red-500 text-white" };
+  if (days <= 30) return { label: `${days}d remaining`, cls: "bg-red-500 text-white" };
+  if (days <= 60) return { label: `${days}d remaining`, cls: "bg-orange-500 text-white" };
+  if (days <= 90) return { label: `${days}d remaining`, cls: "bg-yellow-500 text-black" };
+  return null;
+}
 
-function AddChildDialog({
-  parentId, parentNumber, parentLevel, open, onClose, onSuccess,
-}: {
+function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, onSuccess }: {
   parentId: number; parentNumber: string; parentLevel: number;
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
@@ -63,21 +70,14 @@ function AddChildDialog({
   const [value, setValue] = useState("");
   const [notes, setNotes] = useState("");
   const createChild = trpc.contracts.createChild.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Created ${data.contractNumber}`);
-      onSuccess();
-      onClose();
-      setTitle(""); setValue(""); setNotes("");
-    },
+    onSuccess: (data) => { toast.success(`Created ${data.contractNumber}`); onSuccess(); onClose(); setTitle(""); setValue(""); setNotes(""); },
     onError: (e) => toast.error(e.message),
   });
   const childLabel = parentLevel === 1 ? "Task Order" : "Sub-Project";
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add {childLabel} to {parentNumber}</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Add {childLabel} to {parentNumber}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1">
             <Label>Title *</Label>
@@ -94,14 +94,8 @@ function AddChildDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            disabled={!title.trim() || createChild.isPending}
-            onClick={() => createChild.mutate({
-              parentId, title: title.trim(),
-              contractValue: value ? parseFloat(value) : undefined,
-              notes: notes || undefined,
-            })}
-          >
+          <Button disabled={!title.trim() || createChild.isPending}
+            onClick={() => createChild.mutate({ parentId, title: title.trim(), contractValue: value ? parseFloat(value) : undefined, notes: notes || undefined })}>
             {createChild.isPending ? "Creating…" : `Add ${childLabel}`}
           </Button>
         </DialogFooter>
@@ -110,33 +104,21 @@ function AddChildDialog({
   );
 }
 
-// ─── Add Amendment / Change Order Dialog ─────────────────────────────────────
-
-function AddAmendmentDialog({
-  contractId, contractNumber, type, open, onClose, onSuccess,
-}: {
-  contractId: number; contractNumber: string;
-  type: "amendment" | "change_order";
+function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, onSuccess }: {
+  contractId: number; contractNumber: string; type: "amendment" | "change_order";
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const label = type === "amendment" ? "Amendment" : "Change Order";
   const addAmendment = trpc.contracts.addAmendment.useMutation({
-    onSuccess: (data) => {
-      toast.success(`${label} ${data.amendmentNumber} added`);
-      onSuccess();
-      onClose();
-      setAmount(""); setDescription("");
-    },
+    onSuccess: (data) => { toast.success(`${label} ${data.amendmentNumber} added`); onSuccess(); onClose(); setAmount(""); setDescription(""); },
     onError: (e) => toast.error(e.message),
   });
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add {label} to {contractNumber}</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Add {label} to {contractNumber}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1">
             <Label>Amount (+ add / − deduct) *</Label>
@@ -149,14 +131,8 @@ function AddAmendmentDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            disabled={!amount || addAmendment.isPending}
-            onClick={() => addAmendment.mutate({
-              contractId, type,
-              amount: parseFloat(amount),
-              description: description || undefined,
-            })}
-          >
+          <Button disabled={!amount || addAmendment.isPending}
+            onClick={() => addAmendment.mutate({ contractId, type, amount: parseFloat(amount), description: description || undefined })}>
             {addAmendment.isPending ? "Saving…" : `Add ${label}`}
           </Button>
         </DialogFooter>
@@ -165,84 +141,121 @@ function AddAmendmentDialog({
   );
 }
 
-// ─── Compliance Panel ─────────────────────────────────────────────────────────
+function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: any; open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const [form, setForm] = useState({
+    title: contract.title ?? "",
+    clientName: contract.clientName ?? "",
+    ownerName: contract.ownerName ?? "",
+    contractManagerName: (contract as any).contractManagerName ?? "",
+    primaryLocation: contract.primaryLocation ?? "",
+    status: contract.status ?? "draft",
+    startDate: contract.startDate ? new Date(contract.startDate).toISOString().split("T")[0] : "",
+    endDate: contract.endDate ? new Date(contract.endDate).toISOString().split("T")[0] : "",
+    qbName: contract.qbName ?? "",
+    timeCode: contract.timeCode ?? "",
+    notes: contract.notes ?? "",
+  });
+  const update = trpc.contracts.update.useMutation({
+    onSuccess: () => { toast.success("Contract updated"); onSuccess(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Edit Contract</DialogTitle></DialogHeader>
+        <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+          {([["Title", "title"], ["Client", "clientName"], ["Owner / Agency", "ownerName"], ["Contract Manager", "contractManagerName"], ["Location", "primaryLocation"], ["QB Name", "qbName"], ["Time Code", "timeCode"]] as [string, string][]).map(([label, key]) => (
+            <div key={key}>
+              <Label>{label}</Label>
+              <Input value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+            </div>
+          ))}
+          <div>
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+            <div><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+          </div>
+          <div><Label>Notes</Label><Textarea rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => update.mutate({ id: contract.id, ...form, startDate: form.startDate ? new Date(form.startDate) : undefined, endDate: form.endDate ? new Date(form.endDate) : undefined })} disabled={update.isPending}>
+            {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function CompliancePanel({ contract, onRefresh }: { contract: any; onRefresh: () => void }) {
   const update = trpc.contracts.update.useMutation({
     onSuccess: () => { toast.success("Compliance updated"); onRefresh(); },
     onError: (e) => toast.error(e.message),
   });
-
-  const toggle = (field: string, val: boolean) => update.mutate({ id: contract.id, [field]: val } as any);
-
   const flags = [
-    { key: "coiRequired", label: "COI Required", value: contract.coiRequired },
-    { key: "coiReceived", label: "COI Received", value: contract.coiReceived },
-    { key: "fullyExecutedContractReceived", label: "Fully Executed Contract Received", value: contract.fullyExecutedContractReceived },
-    { key: "primeAgreementRequired", label: "Prime Agreement Required", value: contract.primeAgreementRequired },
-    { key: "primeAgreementOnFile", label: "Prime Agreement on File", value: contract.primeAgreementOnFile },
-    { key: "clientBillingInfoOnFile", label: "Client Billing Info on File", value: contract.clientBillingInfoOnFile },
+    { key: "coiRequired", label: "COI Required", sub: "Certificate of Insurance required for this contract" },
+    { key: "coiReceived", label: "COI Received", sub: "COI has been received and is on file" },
+    { key: "fullyExecutedContractReceived", label: "Fully Executed Contract Received", sub: "Signed contract received from client" },
+    { key: "primeAgreementRequired", label: "Prime Agreement Required", sub: "Prime consultant agreement required" },
+    { key: "primeAgreementOnFile", label: "Prime Agreement On File", sub: "Prime agreement has been executed and filed" },
+    { key: "clientBillingInfoOnFile", label: "Client Billing Info On File", sub: "Client billing contact and address confirmed" },
   ];
-
-  const allGood = flags.every(f => !f.value || (f.key === "coiRequired" ? contract.coiReceived : true));
-
+  const issueCount = (contract.coiRequired && !contract.coiReceived ? 1 : 0) + (contract.primeAgreementRequired && !contract.primeAgreementOnFile ? 1 : 0);
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Shield className="h-4 w-4" />
-          Compliance Checklist
-          {allGood
+          <Shield className="h-4 w-4" />Compliance Checklist
+          {issueCount === 0
             ? <Badge className="ml-auto bg-emerald-100 text-emerald-700 border-emerald-300">All Clear</Badge>
-            : <Badge className="ml-auto bg-amber-100 text-amber-700 border-amber-300">Action Needed</Badge>
-          }
+            : <Badge className="ml-auto bg-amber-100 text-amber-700 border-amber-300">{issueCount} Action{issueCount > 1 ? "s" : ""} Needed</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {flags.map(f => (
-          <div key={f.key} className="flex items-center justify-between">
-            <span className="text-sm">{f.label}</span>
-            <Switch
-              checked={!!f.value}
-              onCheckedChange={v => toggle(f.key, v)}
-              disabled={update.isPending}
-            />
+          <div key={f.key} className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
+            <Switch checked={!!contract[f.key]} onCheckedChange={v => update.mutate({ id: contract.id, [f.key]: v } as any)} disabled={update.isPending} className="mt-0.5" />
+            <div><p className="text-sm font-medium">{f.label}</p><p className="text-xs text-muted-foreground">{f.sub}</p></div>
           </div>
         ))}
+        {contract.coiRequired && (
+          <div className="p-3 rounded-lg border">
+            <Label className="text-sm font-medium">COI Expiration Date</Label>
+            <Input type="date" className="mt-1 max-w-xs" defaultValue={contract.coiExpirationDate ? new Date(contract.coiExpirationDate).toISOString().split("T")[0] : ""}
+              onBlur={e => { if (e.target.value) update.mutate({ id: contract.id, coiExpirationDate: new Date(e.target.value) } as any); }} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-// ─── Hierarchy Tree ───────────────────────────────────────────────────────────
-
-function HierarchyNode({
-  node, depth = 0, onAddChild, onAddAmendment,
-}: {
+function HierarchyNode({ node, depth = 0, onAddChild, onAddAmendment }: {
   node: any; depth?: number;
   onAddChild: (id: number, num: string, level: number) => void;
   onAddAmendment: (id: number, num: string, type: "amendment" | "change_order") => void;
 }) {
   const [, navigate] = useLocation();
-  const indent = depth * 20;
   const nodeLabel = NODE_LABELS[node.nodeType ?? "contract"] ?? "Contract";
   const canHaveChildren = (node.level ?? 1) < 3;
-
   return (
     <div>
-      <div
-        className="flex items-center gap-2 py-2 px-3 rounded-md hover:bg-muted/50 cursor-pointer group"
-        style={{ marginLeft: indent }}
-        onClick={() => navigate(`/contracts/${node.id}`)}
-      >
+      <div className="flex items-center gap-2 py-2 px-3 rounded-md hover:bg-muted/50 cursor-pointer group" style={{ marginLeft: depth * 20 }} onClick={() => navigate(`/contracts/${node.id}`)}>
         {depth > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
         <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-medium">{node.contractNumber ?? `#${node.id}`}</span>
-            <Badge variant="outline" className={`text-xs ${STATUS_COLORS[node.status ?? "draft"]}`}>
-              {STATUS_LABELS[node.status ?? "draft"]}
-            </Badge>
+            <Badge variant="outline" className={`text-xs ${STATUS_COLORS[node.status ?? "draft"]}`}>{STATUS_LABELS[node.status ?? "draft"]}</Badge>
             <span className="text-xs text-muted-foreground">{nodeLabel}</span>
           </div>
           <p className="text-sm text-muted-foreground truncate">{node.title}</p>
@@ -250,86 +263,71 @@ function HierarchyNode({
         <span className="text-sm font-medium shrink-0">{formatCurrency(node.computedContractValue)}</span>
         <div className="hidden group-hover:flex items-center gap-1" onClick={e => e.stopPropagation()}>
           {canHaveChildren && (
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-              onClick={() => onAddChild(node.id, node.contractNumber ?? "", node.level ?? 1)}>
-              <Plus className="h-3 w-3 mr-1" />
-              {(node.level ?? 1) === 1 ? "Task Order" : "Sub-Project"}
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAddChild(node.id, node.contractNumber ?? "", node.level ?? 1)}>
+              <Plus className="h-3 w-3 mr-1" />{(node.level ?? 1) === 1 ? "Task Order" : "Sub-Project"}
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-            onClick={() => onAddAmendment(node.id, node.contractNumber ?? "", "amendment")}>
-            A
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-            onClick={() => onAddAmendment(node.id, node.contractNumber ?? "", "change_order")}>
-            CO
-          </Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAddAmendment(node.id, node.contractNumber ?? "", "amendment")}>A</Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAddAmendment(node.id, node.contractNumber ?? "", "change_order")}>CO</Button>
         </div>
       </div>
       {node.subProjects?.map((sub: any) => (
-        <HierarchyNode key={sub.id} node={sub} depth={depth + 1}
-          onAddChild={onAddChild} onAddAmendment={onAddAmendment} />
+        <HierarchyNode key={sub.id} node={sub} depth={depth + 1} onAddChild={onAddChild} onAddAmendment={onAddAmendment} />
       ))}
     </div>
   );
 }
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ContractDetail() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const contractId = parseInt(params.id ?? "0");
 
-  const { data, isLoading, refetch } = trpc.contracts.getWithChildren.useQuery(
-    { id: contractId },
-    { enabled: !!contractId }
-  );
-
+  const { data, isLoading, refetch } = trpc.contracts.getWithChildren.useQuery({ id: contractId }, { enabled: !!contractId });
   const updateStatus = trpc.contracts.update.useMutation({
     onSuccess: () => { toast.success("Status updated"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
+  const [editOpen, setEditOpen] = useState(false);
   const [addChildTarget, setAddChildTarget] = useState<{ id: number; num: string; level: number } | null>(null);
   const [addAmendTarget, setAddAmendTarget] = useState<{ id: number; num: string; type: "amendment" | "change_order" } | null>(null);
 
   if (isLoading) {
-    return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
+    return <div className="p-8 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
 
   if (!data) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        Contract not found.
+        <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-40" />
+        <p>Contract not found.</p>
         <Button variant="link" onClick={() => navigate("/contracts")}>Back to Contracts</Button>
       </div>
     );
   }
 
   const { contract, children, amendments } = data;
-  const companyName = contract.performingCompanyName ||
-    (contract.companyRole === "subconsultant" ? "Strans" : "JPCL");
+  const companyName = contract.performingCompanyName ?? "JPCL";
   const companyInfo = KNOWN_COMPANIES.find(c => c.abbreviation === companyName);
   const badgeColor = companyInfo?.badgeColor ?? "blue";
   const badgeClass = getCompanyBadgeClass(badgeColor);
-
-  const totalAmendments = amendments.filter(a => a.amendmentType === "amendment").reduce((s, a) => s + (a.amount ?? 0), 0);
-  const totalChangeOrders = amendments.filter(a => a.amendmentType === "change_order").reduce((s, a) => s + (a.amount ?? 0), 0);
+  const totalAmendments = amendments.filter((a: any) => a.amendmentType === "amendment").reduce((s: number, a: any) => s + (a.amount ?? 0), 0);
+  const totalChangeOrders = amendments.filter((a: any) => a.amendmentType === "change_order").reduce((s: number, a: any) => s + (a.amount ?? 0), 0);
   const nodeLabel = NODE_LABELS[contract.nodeType ?? "contract"] ?? "Contract";
-
+  const endWarning = getEndDateWarning(contract.endDate);
+  const allocatedToChildren = children.reduce((sum: number, c: any) => sum + (c.value ?? 0), 0);
+  const financials = {
+    selfContractValue: contract.value ?? 0,
+    authorizedValue: contract.computedContractValue ?? contract.value ?? 0,
+    allocatedToChildren,
+    billedToDate: contract.totalBilledAmount ?? 0,
+    remaining: (contract.computedContractValue ?? contract.value ?? 0) - (contract.totalBilledAmount ?? 0),
+    descendantCount: children.length,
+  };
   const STATUS_FLOW: Record<string, string[]> = {
-    draft: ["negotiation", "active"],
-    negotiation: ["executed", "draft"],
-    executed: ["active", "on_hold"],
-    active: ["on_hold", "completed", "terminated"],
-    on_hold: ["active", "terminated"],
-    completed: [],
-    terminated: [],
+    draft: ["negotiation", "active"], negotiation: ["executed", "draft"], executed: ["active", "on_hold"],
+    active: ["on_hold", "completed", "terminated"], on_hold: ["active", "terminated"], completed: [], terminated: [],
   };
   const nextStatuses = STATUS_FLOW[contract.status ?? "draft"] ?? [];
 
@@ -343,183 +341,122 @@ export default function ContractDetail() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-2xl font-bold">{contract.contractNumber ?? `Contract #${contract.id}`}</span>
-            <Badge variant="outline" className={`text-sm px-2 py-0.5 ${STATUS_COLORS[contract.status ?? "draft"]}`}>
-              {STATUS_LABELS[contract.status ?? "draft"]}
-            </Badge>
-            <Badge variant="outline" className={`text-xs px-2 py-0.5 ${badgeClass}`}>
-              {companyInfo?.abbreviation ?? "JPCL"}
-            </Badge>
-            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-300">
-              {nodeLabel}
-            </Badge>
+            <Badge variant="outline" className={`text-sm px-2 py-0.5 ${STATUS_COLORS[contract.status ?? "draft"]}`}>{STATUS_LABELS[contract.status ?? "draft"]}</Badge>
+            <Badge variant="outline" className={`text-xs px-2 py-0.5 ${badgeClass}`}>{companyInfo?.abbreviation ?? "JPCL"}</Badge>
+            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-300">{nodeLabel}</Badge>
+            {endWarning && <span className={`text-xs font-medium px-2 py-0.5 rounded ${endWarning.cls}`}>{endWarning.label}</span>}
+            {(contract as any).supabaseProjectId && <span className="text-xs font-medium px-2 py-0.5 rounded border border-violet-300 text-violet-700 bg-violet-50">In Timekeeping</span>}
           </div>
           <h1 className="text-lg font-medium mt-1 text-foreground">{contract.title}</h1>
-          <p className="text-sm text-muted-foreground">{contract.clientName ?? "No client"}</p>
+          {contract.clientName && <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5"><Building2 className="h-3 w-3" /> {contract.clientName}</p>}
         </div>
-        {/* Status transition buttons */}
         <div className="flex gap-2 shrink-0">
           {nextStatuses.map(s => (
-            <Button key={s} size="sm" variant="outline"
-              disabled={updateStatus.isPending}
-              onClick={() => updateStatus.mutate({ id: contract.id, status: s })}>
+            <Button key={s} size="sm" variant="outline" disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ id: contract.id, status: s })}>
               → {STATUS_LABELS[s]}
             </Button>
           ))}
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
         </div>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Original Value", value: formatCurrency(contract.value), icon: DollarSign, color: "text-blue-600" },
-          { label: "Amendments", value: formatCurrency(totalAmendments), icon: FileText, color: totalAmendments > 0 ? "text-emerald-600" : "text-muted-foreground" },
-          { label: "Change Orders", value: formatCurrency(totalChangeOrders), icon: Pencil, color: totalChangeOrders > 0 ? "text-amber-600" : "text-muted-foreground" },
-          { label: "Total Contract Value", value: formatCurrency(contract.computedContractValue), icon: Layers, color: "text-purple-600" },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <Card key={label}>
-            <CardContent className="pt-4 pb-3">
-              <div className="flex items-center gap-2">
-                <Icon className={`h-4 w-4 ${color}`} />
-                <span className="text-xs text-muted-foreground">{label}</span>
-              </div>
-              <p className="text-lg font-bold mt-1">{value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Financial Summary Card */}
+      <FinancialSummaryCard financials={financials} />
 
-      {/* Main Tabs */}
+      {/* Compliance Bar */}
+      <ComplianceBar contract={contract} />
+
+      {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="hierarchy">
-            Hierarchy
-            {children.length > 0 && <span className="ml-1 text-xs bg-primary/10 text-primary px-1.5 rounded-full">{children.length}</span>}
-          </TabsTrigger>
-          <TabsTrigger value="amendments">
-            Amendments & COs
-            {amendments.length > 0 && <span className="ml-1 text-xs bg-primary/10 text-primary px-1.5 rounded-full">{amendments.length}</span>}
-          </TabsTrigger>
+          <TabsTrigger value="hierarchy">Hierarchy{children.length > 0 && <span className="ml-1 text-xs bg-primary/10 px-1 rounded">{children.length}</span>}</TabsTrigger>
+          <TabsTrigger value="amendments">Amendments &amp; COs{amendments.length > 0 && <span className="ml-1 text-xs bg-primary/10 px-1 rounded">{amendments.length}</span>}</TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
+          <TabsTrigger value="analyzer">Analyzer</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TabsContent value="overview" className="mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Building2 className="h-4 w-4" />Contract Details</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4" />Contract Details</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {[
-                  ["Contract Number", contract.contractNumber ?? "—"],
-                  ["Project Number", contract.projectNumber ?? "—"],
-                  ["Contract Vehicle", contract.contractVehicle ?? "—"],
-                  ["Company Role", contract.companyRole ?? "—"],
-                  ["Owner / Agency", contract.ownerName ?? "—"],
-                  ["Prime Contractor", contract.primeName ?? "—"],
-                  ["QB Name", contract.qbName ?? "—"],
-                  ["Time Code", contract.timeCode ?? "—"],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-2">
-                    <span className="text-muted-foreground shrink-0">{k}</span>
-                    <span className="font-medium text-right">{v}</span>
+                {([["Contract #", contract.contractNumber], ["Project #", contract.projectNumber], ["Client", contract.clientName], ["Owner / Agency", contract.ownerName], ["Contract Manager", (contract as any).contractManagerName], ["Contract Vehicle", contract.contractVehicle?.replace(/_/g, " ")], ["Company Role", contract.companyRole], ["Location", contract.primaryLocation], ["QB Name", contract.qbName], ["Time Code", contract.timeCode]] as [string, string | null | undefined][]).map(([label, value]) => value ? (
+                  <div key={label} className="flex justify-between gap-2">
+                    <span className="text-muted-foreground shrink-0">{label}</span>
+                    <span className="font-medium text-right">{value}</span>
                   </div>
-                ))}
+                ) : null)}
               </CardContent>
             </Card>
-
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Calendar className="h-4 w-4" />Dates & Team</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><DollarSign className="h-4 w-4" />Dates &amp; Value</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {[
-                  ["Start Date", formatDate(contract.startDate)],
-                  ["End Date", formatDate(contract.endDate)],
-                  ["Execution Date", formatDate(contract.executionDate)],
-                  ["Project Manager", contract.projectManagerName ?? "—"],
-                  ["Accounting Contact", contract.accountingContactName ?? "—"],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-2">
-                    <span className="text-muted-foreground shrink-0">{k}</span>
-                    <span className="font-medium text-right">{v}</span>
+                {([["Start Date", formatDate(contract.startDate)], ["End Date", formatDate(contract.endDate)], ["Initial Value", formatCurrency(contract.value)], ["Authorized Value", formatCurrency(contract.computedContractValue)], ["Total Billed", formatCurrency(contract.totalBilledAmount)], ["Retainage", formatCurrency(contract.retainageAmount)], ["NTE Ceiling", contract.hasNteCeiling ? formatCurrency(contract.nteCeilingAmount) : null], ["Billing Basis", contract.billingBasis?.replace(/_/g, " ")]] as [string, string | null | undefined][]).map(([label, value]) => value && value !== "—" ? (
+                  <div key={label} className="flex justify-between gap-2">
+                    <span className="text-muted-foreground shrink-0">{label}</span>
+                    <span className="font-medium text-right font-mono">{value}</span>
                   </div>
-                ))}
+                ) : null)}
               </CardContent>
             </Card>
+            {contract.notes && (
+              <Card className="md:col-span-2">
+                <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>
+                <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{contract.notes}</p></CardContent>
+              </Card>
+            )}
           </div>
-
-          {contract.notes && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Notes</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{contract.notes}</p></CardContent>
-            </Card>
-          )}
         </TabsContent>
 
-        {/* Hierarchy Tab */}
         <TabsContent value="hierarchy" className="mt-4">
           <Card>
-            <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <FolderOpen className="h-4 w-4" />
-                Contract Hierarchy
-              </CardTitle>
-              {(contract.level ?? 1) < 3 && (
-                <Button size="sm" variant="outline"
-                  onClick={() => setAddChildTarget({ id: contract.id, num: contract.contractNumber ?? "", level: contract.level ?? 1 })}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  {(contract.level ?? 1) === 1 ? "Add Task Order" : "Add Sub-Project"}
-                </Button>
-              )}
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4" />Contract Hierarchy</CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Root node */}
-              <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-muted/30 mb-1">
+              <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-primary/5 border border-primary/20 mb-2">
                 <GitBranch className="h-4 w-4 text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <span className="font-mono text-sm font-bold">{contract.contractNumber ?? `#${contract.id}`}</span>
-                    <Badge variant="outline" className={`text-xs ${STATUS_COLORS[contract.status ?? "draft"]}`}>
-                      {STATUS_LABELS[contract.status ?? "draft"]}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">Primary Contract</span>
+                    <Badge variant="outline" className={`text-xs ${STATUS_COLORS[contract.status ?? "draft"]}`}>{STATUS_LABELS[contract.status ?? "draft"]}</Badge>
+                    <span className="text-xs text-muted-foreground">{nodeLabel} (current)</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{contract.title}</p>
                 </div>
-                <span className="text-sm font-bold shrink-0">{formatCurrency(contract.computedContractValue)}</span>
+                <span className="text-sm font-medium shrink-0">{formatCurrency(contract.computedContractValue)}</span>
               </div>
-
               {children.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No task orders yet. Click "Add Task Order" to create one.</p>
+                <div className="text-center py-6 text-muted-foreground text-sm">No child contracts yet.</div>
               ) : (
-                children.map(child => (
+                children.map((child: any) => (
                   <HierarchyNode key={child.id} node={child} depth={1}
                     onAddChild={(id, num, level) => setAddChildTarget({ id, num, level })}
-                    onAddAmendment={(id, num, type) => setAddAmendTarget({ id, num, type })}
-                  />
+                    onAddAmendment={(id, num, type) => setAddAmendTarget({ id, num, type })} />
                 ))
+              )}
+              {!contract.parentContractId && (
+                <Button size="sm" variant="outline" className="mt-3"
+                  onClick={() => setAddChildTarget({ id: contract.id, num: contract.contractNumber ?? "", level: contract.level ?? 1 })}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Task Order
+                </Button>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Amendments & Change Orders Tab */}
         <TabsContent value="amendments" className="mt-4 space-y-4">
           <div className="flex gap-2">
-            <Button size="sm" variant="outline"
-              onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "amendment" })}>
+            <Button size="sm" variant="outline" onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "amendment" })}>
               <Plus className="h-3 w-3 mr-1" /> Add Amendment
             </Button>
-            <Button size="sm" variant="outline"
-              onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "change_order" })}>
+            <Button size="sm" variant="outline" onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "change_order" })}>
               <Plus className="h-3 w-3 mr-1" /> Add Change Order
             </Button>
           </div>
-
           {amendments.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center text-muted-foreground text-sm">
-                No amendments or change orders yet.
-              </CardContent>
-            </Card>
+            <Card><CardContent className="py-10 text-center text-muted-foreground text-sm">No amendments or change orders yet.</CardContent></Card>
           ) : (
             <Card>
               <CardContent className="p-0">
@@ -535,27 +472,21 @@ export default function ContractDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {amendments.map(a => (
+                    {amendments.map((a: any) => (
                       <tr key={a.id} className="border-b last:border-0 hover:bg-muted/20">
                         <td className="p-3 font-mono font-medium">{a.amendmentNumber}</td>
                         <td className="p-3">
-                          <Badge variant="outline" className={a.amendmentType === "amendment"
-                            ? "bg-blue-50 text-blue-700 border-blue-300"
-                            : "bg-amber-50 text-amber-700 border-amber-300"}>
+                          <Badge variant="outline" className={a.amendmentType === "amendment" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
                             {a.amendmentType === "amendment" ? "Amendment" : "Change Order"}
                           </Badge>
                         </td>
                         <td className="p-3 text-muted-foreground">{formatDate(a.amendmentDate)}</td>
                         <td className="p-3 text-muted-foreground max-w-xs truncate">{a.description ?? "—"}</td>
-                        <td className={`p-3 text-right font-medium ${(a.amount ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        <td className={`p-3 text-right font-medium font-mono ${(a.amount ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                           {(a.amount ?? 0) >= 0 ? "+" : ""}{formatCurrency(a.amount)}
                         </td>
                         <td className="p-3">
-                          <Badge variant="outline" className={
-                            a.approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" :
-                            a.approvalStatus === "rejected" ? "bg-rose-50 text-rose-700 border-rose-300" :
-                            "bg-amber-50 text-amber-700 border-amber-300"
-                          }>
+                          <Badge variant="outline" className={a.approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : a.approvalStatus === "rejected" ? "bg-rose-50 text-rose-700 border-rose-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
                             {a.approvalStatus ?? "pending"}
                           </Badge>
                         </td>
@@ -565,7 +496,7 @@ export default function ContractDetail() {
                   <tfoot>
                     <tr className="bg-muted/30 font-medium">
                       <td colSpan={4} className="p-3 text-right text-muted-foreground">Total Adjustments</td>
-                      <td className={`p-3 text-right ${(totalAmendments + totalChangeOrders) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      <td className={`p-3 text-right font-mono ${(totalAmendments + totalChangeOrders) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                         {(totalAmendments + totalChangeOrders) >= 0 ? "+" : ""}{formatCurrency(totalAmendments + totalChangeOrders)}
                       </td>
                       <td />
@@ -577,33 +508,32 @@ export default function ContractDetail() {
           )}
         </TabsContent>
 
-        {/* Compliance Tab */}
         <TabsContent value="compliance" className="mt-4">
           <CompliancePanel contract={contract} onRefresh={refetch} />
         </TabsContent>
+
+        <TabsContent value="analyzer" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4" />Contract Analyzer</CardTitle></CardHeader>
+            <CardContent className="py-8 text-center text-muted-foreground">
+              <div className="max-w-sm mx-auto space-y-3">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <FileText className="h-8 w-8 text-primary" />
+                </div>
+                <p className="font-medium text-foreground">AI-Powered Contract Analysis</p>
+                <p className="text-sm">Upload a contract PDF to extract key terms, parties, dates, values, and risk flags automatically.</p>
+                <Button variant="outline" onClick={() => navigate("/contract-analyzer")}>
+                  <ExternalLink className="h-4 w-4 mr-2" />Open Contract Analyzer
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Dialogs */}
-      {addChildTarget && (
-        <AddChildDialog
-          parentId={addChildTarget.id}
-          parentNumber={addChildTarget.num}
-          parentLevel={addChildTarget.level}
-          open={!!addChildTarget}
-          onClose={() => setAddChildTarget(null)}
-          onSuccess={() => refetch()}
-        />
-      )}
-      {addAmendTarget && (
-        <AddAmendmentDialog
-          contractId={addAmendTarget.id}
-          contractNumber={addAmendTarget.num}
-          type={addAmendTarget.type}
-          open={!!addAmendTarget}
-          onClose={() => setAddAmendTarget(null)}
-          onSuccess={() => refetch()}
-        />
-      )}
+      {editOpen && <EditContractDialog contract={contract} open={editOpen} onClose={() => setEditOpen(false)} onSuccess={() => refetch()} />}
+      {addChildTarget && <AddChildDialog parentId={addChildTarget.id} parentNumber={addChildTarget.num} parentLevel={addChildTarget.level} open={!!addChildTarget} onClose={() => setAddChildTarget(null)} onSuccess={() => refetch()} />}
+      {addAmendTarget && <AddAmendmentDialog contractId={addAmendTarget.id} contractNumber={addAmendTarget.num} type={addAmendTarget.type} open={!!addAmendTarget} onClose={() => setAddAmendTarget(null)} onSuccess={() => refetch()} />}
     </div>
   );
 }

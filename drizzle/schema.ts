@@ -542,6 +542,287 @@ export type InsertContractAmendment = typeof contractAmendments.$inferInsert;
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
 
+// ─── Business Entities (JPCL, Strans, etc.) ─────────────────────────────────
+
+export const entities = mysqlTable("entities", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  shortName: varchar("shortName", { length: 64 }),
+  badgeColor: varchar("badgeColor", { length: 32 }).default("blue"), // blue | emerald | purple | amber | rose
+  supabaseCompanyId: varchar("supabaseCompanyId", { length: 64 }), // UUID from Supabase companies table
+  isDefault: boolean("isDefault").default(false),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Entity = typeof entities.$inferSelect;
+export type InsertEntity = typeof entities.$inferInsert;
+
+// ─── Order Types (Task Order, Purchase Order, Work Order, SOW, etc.) ──────────
+
+export const orderTypes = mysqlTable("order_types", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderType = typeof orderTypes.$inferSelect;
+export type InsertOrderType = typeof orderTypes.$inferInsert;
+
+// ─── Departments ──────────────────────────────────────────────────────────────
+
+export const departments = mysqlTable("departments", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Department = typeof departments.$inferSelect;
+export type InsertDepartment = typeof departments.$inferInsert;
+
+// ─── Service Types (Engineering, Inspection, CM, etc.) ───────────────────────
+
+export const serviceTypes = mysqlTable("service_types", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  code: varchar("code", { length: 32 }),
+  description: text("description"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ServiceType = typeof serviceTypes.$inferSelect;
+export type InsertServiceType = typeof serviceTypes.$inferInsert;
+
+// ─── Form 254 Codes ───────────────────────────────────────────────────────────
+
+export const form254Codes = mysqlTable("form_254_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull(),
+  description: text("description"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Form254Code = typeof form254Codes.$inferSelect;
+export type InsertForm254Code = typeof form254Codes.$inferInsert;
+
+// ─── Organizations (Clients, Owners, Primes, Subs) ────────────────────────────
+
+export const organizations = mysqlTable("organizations", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  orgType: varchar("orgType", { length: 32 }).default("CLIENT"), // OWNER | CLIENT | PRIME_CONTRACTOR | SUBCONSULTANT | VENDOR
+  address: text("address"),
+  city: varchar("city", { length: 128 }),
+  state: varchar("state", { length: 32 }),
+  zip: varchar("zip", { length: 16 }),
+  phone: varchar("phone", { length: 32 }),
+  email: varchar("email", { length: 320 }),
+  website: text("website"),
+  notes: text("notes"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = typeof organizations.$inferInsert;
+
+// ─── People (PMs, Accountants, Contract Admins) ───────────────────────────────
+
+export const people = mysqlTable("people", {
+  id: int("id").autoincrement().primaryKey(),
+  firstName: varchar("firstName", { length: 128 }).notNull(),
+  lastName: varchar("lastName", { length: 128 }).notNull(),
+  role: varchar("role", { length: 64 }).default("PM"), // PM | ACCOUNTANT | CONTRACT_ADMIN | OWNER | EXECUTIVE
+  organizationId: int("organizationId"),
+  organizationName: varchar("organizationName", { length: 256 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 32 }),
+  title: varchar("title", { length: 128 }),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Person = typeof people.$inferSelect;
+export type InsertPerson = typeof people.$inferInsert;
+
+// ─── Glossary Terms ───────────────────────────────────────────────────────────
+
+export const glossaryTerms = mysqlTable("glossary_terms", {
+  id: int("id").autoincrement().primaryKey(),
+  term: varchar("term", { length: 256 }).notNull(),
+  definition: text("definition").notNull(),
+  characteristics: json("characteristics"), // string[]
+  typicalUse: json("typicalUse"), // string[]
+  oneLiner: text("oneLiner"),
+  category: varchar("category", { length: 32 }).default("general"), // pricing | contract | billing | general
+  active: boolean("active").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GlossaryTerm = typeof glossaryTerms.$inferSelect;
+export type InsertGlossaryTerm = typeof glossaryTerms.$inferInsert;
+
+// ─── Compliance Exceptions ────────────────────────────────────────────────────
+
+export const complianceExceptions = mysqlTable("compliance_exceptions", {
+  id: int("id").autoincrement().primaryKey(),
+  contractId: int("contractId").notNull(),
+  severity: varchar("severity", { length: 16 }).default("WARN").notNull(), // INFO | WARN | BLOCKER
+  exceptionType: varchar("exceptionType", { length: 64 }).notNull(), // COI_MISSING | COI_EXPIRED | EXECUTED_MISSING | etc.
+  description: text("description"),
+  status: varchar("status", { length: 16 }).default("OPEN").notNull(), // OPEN | RESOLVED
+  assignedToId: int("assignedToId"),
+  resolutionNote: text("resolutionNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+});
+
+export type ComplianceException = typeof complianceExceptions.$inferSelect;
+export type InsertComplianceException = typeof complianceExceptions.$inferInsert;
+
+// ─── Contract Analyses (AI Analyzer) ─────────────────────────────────────────
+
+export const contractAnalyses = mysqlTable("contract_analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  contractId: int("contractId"), // optional link to a contract record
+  fileName: varchar("fileName", { length: 512 }),
+  fileUrl: text("fileUrl"),
+  fileKey: text("fileKey"),
+  status: varchar("status", { length: 32 }).default("pending"), // pending | processing | complete | error
+  extractedParties: json("extractedParties"),
+  extractedDates: json("extractedDates"),
+  extractedValues: json("extractedValues"),
+  extractedClauses: json("extractedClauses"),
+  riskFlags: json("riskFlags"),
+  complianceFlags: json("complianceFlags"),
+  summary: text("summary"),
+  rawAnalysis: text("rawAnalysis"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ContractAnalysis = typeof contractAnalyses.$inferSelect;
+export type InsertContractAnalysis = typeof contractAnalyses.$inferInsert;
+
+// ─── Activity Logs ────────────────────────────────────────────────────────────
+
+export const activityLogs = mysqlTable("activity_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: varchar("entityType", { length: 64 }).notNull(), // contract | amendment | organization | person | etc.
+  entityId: int("entityId").notNull(),
+  action: varchar("action", { length: 64 }).notNull(), // CREATE | UPDATE | DELETE | STATUS_CHANGE | etc.
+  description: text("description"),
+  changedFields: json("changedFields"),
+  userId: int("userId"),
+  userName: varchar("userName", { length: 256 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = typeof activityLogs.$inferInsert;
+
+// ─── App Settings (key-value store) ──────────────────────────────────────────
+
+export const appSettings = mysqlTable("app_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 128 }).notNull().unique(),
+  value: text("value"),
+  description: text("description"),
+  updatedBy: int("updatedBy"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AppSetting = typeof appSettings.$inferSelect;
+export type InsertAppSetting = typeof appSettings.$inferInsert;
+
+// ─── Billing Entries (from QuickBooks or manual) ──────────────────────────────
+
+export const billingEntries = mysqlTable("billing_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  contractId: int("contractId").notNull(),
+  invoiceNumber: varchar("invoiceNumber", { length: 128 }),
+  invoiceDate: timestamp("invoiceDate"),
+  amount: float("amount").notNull().default(0), // in dollars
+  billedAmount: float("billedAmount").default(0),
+  retainageAmount: float("retainageAmount").default(0),
+  description: text("description"),
+  source: varchar("source", { length: 32 }).default("manual"), // manual | quickbooks | import
+  qbInvoiceId: varchar("qbInvoiceId", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BillingEntry = typeof billingEntries.$inferSelect;
+export type InsertBillingEntry = typeof billingEntries.$inferInsert;
+
+// ─── Opportunity Team Firms ───────────────────────────────────────────────────
+
+export const opportunityTeamFirms = mysqlTable("opportunity_team_firms", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull(),
+  firmName: varchar("firmName", { length: 256 }).notNull(),
+  role: varchar("role", { length: 128 }), // Prime | Sub | JV Partner | Specialty
+  scope: text("scope"),
+  estimatedFee: float("estimatedFee"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OpportunityTeamFirm = typeof opportunityTeamFirms.$inferSelect;
+export type InsertOpportunityTeamFirm = typeof opportunityTeamFirms.$inferInsert;
+
+// ─── Opportunity Competitors ──────────────────────────────────────────────────
+
+export const opportunityCompetitors = mysqlTable("opportunity_competitors", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull(),
+  firmName: varchar("firmName", { length: 256 }).notNull(),
+  role: varchar("role", { length: 64 }), // Prime | Sub
+  isWinner: boolean("isWinner").default(false),
+  winningFee: float("winningFee"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OpportunityCompetitor = typeof opportunityCompetitors.$inferSelect;
+export type InsertOpportunityCompetitor = typeof opportunityCompetitors.$inferInsert;
+
+// ─── Opportunity Debrief ──────────────────────────────────────────────────────
+
+export const opportunityDebriefs = mysqlTable("opportunity_debriefs", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull().unique(),
+  outcome: varchar("outcome", { length: 32 }), // won | lost | no_bid | withdrawn
+  winningFirm: varchar("winningFirm", { length: 256 }),
+  winningFee: float("winningFee"),
+  ourFee: float("ourFee"),
+  lowestBidder: varchar("lowestBidder", { length: 256 }),
+  debriefNotes: text("debriefNotes"),
+  lessonsLearned: text("lessonsLearned"),
+  debriefDate: timestamp("debriefDate"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpportunityDebrief = typeof opportunityDebriefs.$inferSelect;
+export type InsertOpportunityDebrief = typeof opportunityDebriefs.$inferInsert;
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 export const notifications = mysqlTable("notifications", {

@@ -320,8 +320,12 @@ export const contractsRouter = router({
       primeAgreementRequired: z.boolean().optional(),
       primeAgreementOnFile: z.boolean().optional(),
       clientBillingInfoOnFile: z.boolean().optional(),
+      coiExpirationDate: z.date().optional(),
       qbName: z.string().optional(),
       timeCode: z.string().optional(),
+      clientName: z.string().optional(),
+      contractManagerName: z.string().optional(),
+      primaryLocation: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();

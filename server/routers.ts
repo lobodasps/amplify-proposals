@@ -8,6 +8,13 @@ import { assetsRouter } from "./routers/assets";
 import { opportunitiesRouter } from "./routers/opportunities";
 import { personnelRouter, projectsRouter, contractsRouter } from "./routers/personnel";
 import { analyticsRouter } from "./routers/analytics";
+import {
+  entitiesRouter, orderTypesRouter, departmentsRouter, serviceTypesRouter,
+  form254CodesRouter, organizationsRouter, peopleRouter, glossaryRouter,
+  appSettingsRouter, seedEntitiesRouter,
+} from "./routers/settings";
+import { complianceRouter, activityLogRouter, billingEntriesRouter } from "./routers/compliance";
+import { contractAnalyzerRouter } from "./routers/contractAnalyzer";
 
 export const appRouter = router({
   system: systemRouter,
@@ -27,6 +34,20 @@ export const appRouter = router({
   projects: projectsRouter,
   contracts: contractsRouter,
   analytics: analyticsRouter,
+  entities: entitiesRouter,
+  orderTypes: orderTypesRouter,
+  departments: departmentsRouter,
+  serviceTypes: serviceTypesRouter,
+  form254Codes: form254CodesRouter,
+  organizations: organizationsRouter,
+  people: peopleRouter,
+  glossary: glossaryRouter,
+  appSettings: appSettingsRouter,
+  seed: seedEntitiesRouter,
+  compliance: complianceRouter,
+  activityLog: activityLogRouter,
+  billingEntries: billingEntriesRouter,
+  contractAnalyzer: contractAnalyzerRouter,
 });
 
 export type AppRouter = typeof appRouter;

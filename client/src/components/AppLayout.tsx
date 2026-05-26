@@ -39,6 +39,9 @@ import {
   X,
   Sparkles,
   Package,
+  Shield,
+  Calendar,
+  ScanText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +64,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Personnel", href: "/personnel", icon: Users },
   { label: "Projects", href: "/projects", icon: Building2 },
   { label: "Contracts", href: "/contracts", icon: FileSignature, roles: ["administrator", "executive", "contract_manager", "admin"] },
+  { label: "Compliance", href: "/compliance", icon: Shield, roles: ["administrator", "executive", "contract_manager", "admin"] },
+  { label: "Contract Analyzer", href: "/contract-analyzer", icon: ScanText, badge: "AI", roles: ["administrator", "contract_manager", "admin"] },
+  { label: "Bid Calendar", href: "/bid-calendar", icon: Calendar },
+  { label: "Glossary", href: "/glossary", icon: BookOpen },
   { label: "AI Tools", href: "/ai-tools", icon: Sparkles, badge: "AI" },
   { label: "InDesign Export", href: "/indesign-export", icon: Package },
   { label: "Analytics", href: "/analytics", icon: BarChart3, roles: ["administrator", "executive", "business_development", "admin"] },

@@ -22,6 +22,10 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import AITools from "./pages/AITools";
 import InDesignExport from "./pages/InDesignExport";
+import Compliance from "./pages/Compliance";
+import ContractAnalyzer from "./pages/ContractAnalyzer";
+import Glossary from "./pages/Glossary";
+import BidCalendar from "./pages/BidCalendar";
 
 function Router() {
   return (
@@ -44,6 +48,10 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/ai-tools" component={AITools} />
       <Route path="/indesign-export" component={InDesignExport} />
+      <Route path="/compliance" component={Compliance} />
+      <Route path="/contract-analyzer" component={ContractAnalyzer} />
+      <Route path="/glossary" component={Glossary} />
+      <Route path="/bid-calendar" component={BidCalendar} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
