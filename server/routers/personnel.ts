@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts, pursuits } from "../../drizzle/schema";
+import { personnel, projects, contracts, pursuits, contractAmendments } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { supabase } from "../supabase";
+import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
 
 export const personnelRouter = router({
   list: protectedProcedure.query(async () => {
@@ -206,18 +207,46 @@ export const contractsRouter = router({
       if (!contract) throw new Error("Contract not found");
       if (contract.status === "active") throw new Error("Contract is already active");
 
-      // Generate contract number if not already set
+      // Generate contract/project number if not already set
       const now = new Date();
-      const year = now.getFullYear().toString().slice(-2);
-      const contractNumber = contract.contractNumber ?? `JPCL-${year}-${String(input.id).padStart(3, "0")}`;
-      const projectNumber = contract.projectNumber ?? `${year}-${String(input.id).padStart(3, "0")}`;
+      const yy = now.getFullYear().toString().slice(-2);
 
-      // 1. Update Amplify contract to Active with generated numbers
+      let contractNumber = contract.contractNumber;
+      let projectNumber = contract.projectNumber;
+
+      if (!contractNumber || !projectNumber) {
+        // Determine company from the supabaseCompanyId provided
+        const companyInfo = KNOWN_COMPANIES.find(c => c.id === input.supabaseCompanyId);
+        const companyAbbrev = companyInfo?.abbreviation ?? "JPCL";
+
+        // Count existing primary contracts this year to get next sequence
+        const allContracts = await db.select({ contractNumber: contracts.contractNumber })
+          .from(contracts)
+          .where(eq(contracts.level as any, 1));
+
+        // Count contracts whose number starts with YY- (JPCL) or STR-YY- (Strans)
+        const prefix = isStrans(companyAbbrev) ? `STR-${yy}-` : `${yy}-`;
+        const existingThisYear = allContracts.filter(c =>
+          c.contractNumber?.startsWith(prefix) &&
+          // Only count primary numbers (no further dashes after the seq segment)
+          (c.contractNumber.replace(prefix, "").split("-").length === 1)
+        ).length;
+
+        const seq = existingThisYear + 1;
+        const generatedNumber = generatePrimaryNumber(seq, companyAbbrev, yy);
+        contractNumber = contractNumber ?? generatedNumber;
+        projectNumber = projectNumber ?? generatedNumber;
+      }
+
+      // 1. Update Amplify contract to Active with generated numbers + store company
+      const companyInfo2 = KNOWN_COMPANIES.find(c => c.id === input.supabaseCompanyId);
       await db.update(contracts)
         .set({
           status: "active",
           contractNumber,
           projectNumber,
+          performingCompanyId: input.supabaseCompanyId ?? null,
+          performingCompanyName: companyInfo2?.abbreviation ?? null,
         } as any)
         .where(eq(contracts.id, input.id));
 
@@ -281,6 +310,10 @@ export const contractsRouter = router({
       contractVehicle: z.string().optional(),
       companyRole: z.string().optional(),
       notes: z.string().optional(),
+      ownerName: z.string().optional(),
+      primeName: z.string().optional(),
+      projectManagerName: z.string().optional(),
+      accountingContactName: z.string().optional(),
       coiRequired: z.boolean().optional(),
       coiReceived: z.boolean().optional(),
       fullyExecutedContractReceived: z.boolean().optional(),
@@ -296,5 +329,138 @@ export const contractsRouter = router({
       const { id, ...updates } = input;
       await db.update(contracts).set(updates as any).where(eq(contracts.id, id));
       return { success: true };
+    }),
+
+  // Get a contract with all its children (task orders + sub-projects) and amendments
+  getWithChildren: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.id)).limit(1);
+      if (!contract) return null;
+      // Get all descendants (children and their children)
+      const allContracts = await db.select().from(contracts).orderBy(contracts.contractNumber);
+      const children = allContracts.filter(c => c.parentContractId === input.id);
+      const childrenWithSubs = children.map(child => ({
+        ...child,
+        subProjects: allContracts.filter(c => c.parentContractId === child.id),
+      }));
+      // Get amendments and change orders
+      const amendments = await db.select().from(contractAmendments)
+        .where(eq(contractAmendments.contractId, input.id))
+        .orderBy(contractAmendments.amendmentNumber);
+      return { contract, children: childrenWithSubs, amendments };
+    }),
+
+  // Create a child contract (task order or sub-project)
+  createChild: protectedProcedure
+    .input(z.object({
+      parentId: z.number(),
+      title: z.string(),
+      contractValue: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [parent] = await db.select().from(contracts).where(eq(contracts.id, input.parentId)).limit(1);
+      if (!parent) throw new Error("Parent contract not found");
+
+      const parentNumber = parent.contractNumber ?? "";
+      const parentLevel = parent.level ?? 1;
+      const childLevel = parentLevel + 1;
+      const nodeType = childLevel === 2 ? "task_order" : "sub_project";
+
+      // Count existing children of this parent to get next seq
+      const { generateChildNumber } = await import("../../shared/contractNumbers");
+      const siblings = await db.select({ contractNumber: contracts.contractNumber })
+        .from(contracts)
+        .where(eq(contracts.parentContractId, input.parentId));
+      const childSeq = siblings.length + 1;
+      const childNumber = parentNumber ? generateChildNumber(parentNumber, childSeq) : undefined;
+
+      const result = await db.insert(contracts).values({
+        parentContractId: input.parentId,
+        title: input.title,
+        contractNumber: childNumber,
+        projectNumber: childNumber,
+        clientId: parent.clientId ?? undefined,
+        clientName: parent.clientName ?? undefined,
+        status: parent.status === "active" ? "active" : "draft",
+        contractVehicle: parent.contractVehicle ?? "standalone",
+        companyRole: parent.companyRole ?? "prime",
+        value: input.contractValue ?? 0,
+        computedContractValue: input.contractValue ?? 0,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        notes: input.notes,
+        level: childLevel,
+        nodeType,
+        budgetBehavior: "draws_from_parent",
+        contractManagerId: ctx.user.id,
+      });
+      return { success: true, id: (result as any).insertId, contractNumber: childNumber };
+    }),
+
+  // Add an amendment or change order to a contract
+  addAmendment: protectedProcedure
+    .input(z.object({
+      contractId: z.number(),
+      type: z.enum(["amendment", "change_order"]),
+      amount: z.number(),
+      description: z.string().optional(),
+      date: z.date().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.contractId)).limit(1);
+      if (!contract) throw new Error("Contract not found");
+
+      // Count existing amendments/COs of this type for this contract
+      const { generateAmendmentNumber, generateChangeOrderNumber } = await import("../../shared/contractNumbers");
+      const existing = await db.select({ amendmentNumber: contractAmendments.amendmentNumber })
+        .from(contractAmendments)
+        .where(eq(contractAmendments.contractId, input.contractId));
+      const typePrefix = input.type === "amendment" ? "-A" : "-C";
+      const sameType = existing.filter(a => a.amendmentNumber?.includes(typePrefix));
+      const seq = sameType.length + 1;
+
+      const baseNumber = contract.contractNumber ?? String(input.contractId);
+      const amendmentNumber = input.type === "amendment"
+        ? generateAmendmentNumber(baseNumber, seq)
+        : generateChangeOrderNumber(baseNumber, seq);
+
+      await db.insert(contractAmendments).values({
+        contractId: input.contractId,
+        amendmentType: input.type === "amendment" ? "amendment" : "change_order",
+        amendmentNumber,
+        amount: input.amount,
+        description: input.description,
+        amendmentDate: input.date ?? new Date(),
+        approvalStatus: "pending",
+      });
+
+      // Update computedContractValue on the contract
+      const newValue = (contract.computedContractValue ?? contract.value ?? 0) + input.amount;
+      await db.update(contracts)
+        .set({ computedContractValue: newValue } as any)
+        .where(eq(contracts.id, input.contractId));
+
+      return { success: true, amendmentNumber };
+    }),
+
+  // List amendments for a contract
+  listAmendments: protectedProcedure
+    .input(z.object({ contractId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(contractAmendments)
+        .where(eq(contractAmendments.contractId, input.contractId))
+        .orderBy(contractAmendments.amendmentNumber);
     }),
 });

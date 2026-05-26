@@ -29,6 +29,13 @@
       "when": 1779826389907,
       "tag": "0003_boring_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1779829610651,
+      "tag": "0004_tearful_serpent_society",
+      "breakpoints": true
     }
   ]
 }

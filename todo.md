@@ -87,3 +87,17 @@
 - [ ] SSO/SAML enterprise authentication
 - [ ] Stripe billing for SaaS multi-tenant deployment
 - [ ] Contract Management Module — full milestone tracking, amendment history, billing schedule
+
+## Phase 3 — Full Contract Management UI (v1.5)
+- [x] Update contract number generator: JPCL YY-NNN, Strans STR-YY-NNN, child YY-NNN-NNN, sub-project YY-NNN-NNN-NNN, amendment -A001, change order -C001
+- [x] Company badge colors matching Replit: JPCL=blue, Strans=emerald (from live Supabase badge_color field)
+- [x] Old/test project numbers remain valid — new format only applies to newly created contracts
+- [x] Contract detail page: header with status, numbers, client, value, dates, company badge
+- [x] Contract hierarchy tree: primary → child task orders (0-m) → sub-projects (0-m)
+- [x] Add child order / sub-project buttons with auto-numbering
+- [x] Amendments panel: list + add amendment with -A001 numbering, applies to any hierarchy level
+- [x] Change orders panel: list + add change order with -C001 numbering, applies to any hierarchy level
+- [x] Compliance flags: COI required/received, executed contract, prime agreement on file, client billing info
+- [x] Contract status workflow: Draft → Negotiation → Executed → Active → On Hold → Completed / Terminated
+- [x] Contract Analyzer stub (AI document extraction placeholder — in detail page tabs)
+- [x] Contracts list page: company badges (JPCL=blue, Strans=emerald), clickable rows to detail, chevron indicator

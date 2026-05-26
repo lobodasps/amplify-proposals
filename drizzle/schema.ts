@@ -497,6 +497,8 @@ export const contracts = mysqlTable("contracts", {
   computedContractValue: float("computedContractValue").default(0), // initial + amendments
   qbName: varchar("qbName", { length: 256 }), // QuickBooks project name
   timeCode: varchar("timeCode", { length: 128 }), // Timekeeping identifier
+  performingCompanyId: varchar("performingCompanyId", { length: 64 }), // Supabase company UUID (JPCL or Strans)
+  performingCompanyName: varchar("performingCompanyName", { length: 64 }), // e.g. 'JPCL' or 'Strans'
   // Compliance flags
   coiRequired: boolean("coiRequired").default(false),
   coiReceived: boolean("coiReceived").default(false),

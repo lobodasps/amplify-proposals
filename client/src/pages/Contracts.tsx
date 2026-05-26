@@ -10,16 +10,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import {
-  FileSignature, Search, Plus, DollarSign, AlertCircle,
-  Calendar, Building2, Zap, CheckCircle2, Clock, FileText, ExternalLink
+  FileSignature, Search, Plus, DollarSign,
+  Calendar, Building2, Zap, CheckCircle2, FileText, ChevronRight
 } from "lucide-react";
+import { getCompanyBadgeClass, KNOWN_COMPANIES } from "../../../shared/contractNumbers";
 
 // Supabase company IDs (from your live database)
-const SUPABASE_COMPANIES = [
-  { id: "fddf0d5c-6199-4986-8e91-cb38d96d16bb", name: "JPCL" },
-  { id: "e45a26d6-2e04-4358-9129-959ba4c55c45", name: "Strans" },
-];
+const SUPABASE_COMPANIES = KNOWN_COMPANIES.map(c => ({ id: c.id, name: c.abbreviation }));
 
 const STATUS_STYLES: Record<string, string> = {
   draft:    "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -161,6 +160,7 @@ function ActivateContractDialog({
 export default function Contracts() {
   const [search, setSearch] = useState("");
   const [activateTarget, setActivateTarget] = useState<any | null>(null);
+  const [, navigate] = useLocation();
   const { data: dbContracts, isLoading } = trpc.contracts.list.useQuery();
 
   const contracts = dbContracts ?? [];
@@ -253,7 +253,7 @@ export default function Contracts() {
               const endDate = c.endDate ? new Date(c.endDate).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : null;
 
               return (
-                <Card key={c.id} className={`border-border/60 transition-all ${isDraft ? "ring-1 ring-amber-300/50" : ""} ${isActive ? "ring-1 ring-emerald-400/30" : ""}`}>
+                <Card key={c.id} onClick={() => navigate(`/contracts/${c.id}`)} className={`border-border/60 transition-all cursor-pointer hover:shadow-md ${isDraft ? "ring-1 ring-amber-300/50" : ""} ${isActive ? "ring-1 ring-emerald-400/30" : ""}`}>
                   <CardContent className="p-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-emerald-100 dark:bg-emerald-900/40" : isDraft ? "bg-amber-100 dark:bg-amber-900/40" : "bg-primary/10"}`}>
@@ -269,11 +269,19 @@ export default function Contracts() {
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           {c.clientName && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{c.clientName}</span>}
                           {c.contractNumber && <span className="font-mono font-medium text-foreground">{c.contractNumber}</span>}
-                          {c.projectNumber && <span className="font-mono text-xs">Proj: {c.projectNumber}</span>}
+                          {c.projectNumber && c.projectNumber !== c.contractNumber && <span className="font-mono text-xs">Proj: {c.projectNumber}</span>}
                           {value !== "—" && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{value}</span>}
                           {startDate && endDate && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{startDate} – {endDate}</span>}
                           {c.contractVehicle && <Badge variant="outline" className="text-xs">{c.contractVehicle}</Badge>}
-                          {c.companyRole && <Badge variant="outline" className="text-xs capitalize">{c.companyRole}</Badge>}
+                          {/* Company badge — uses stored performingCompanyName when available, falls back to companyRole */}
+                          {(() => {
+                            const name = c.performingCompanyName ||
+                              (c.companyRole === 'subconsultant' ? 'Strans' : 'JPCL');
+                            const co = KNOWN_COMPANIES.find(k => k.abbreviation === name);
+                            return co ? (
+                              <Badge variant="outline" className={`text-xs font-semibold ${getCompanyBadgeClass(co.badgeColor)}`}>{co.abbreviation}</Badge>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
 
@@ -295,6 +303,7 @@ export default function Contracts() {
                             <span>In Timekeeping</span>
                           </div>
                         )}
+                        <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
                       </div>
                     </div>
                   </CardContent>

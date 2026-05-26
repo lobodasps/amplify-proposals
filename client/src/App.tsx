@@ -17,6 +17,7 @@ import Projects from "./pages/Projects";
 import Pipeline from "./pages/Pipeline";
 import Opportunities from "./pages/Opportunities";
 import Contracts from "./pages/Contracts";
+import ContractDetail from "./pages/ContractDetail";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import AITools from "./pages/AITools";
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/pipeline" component={Pipeline} />
       <Route path="/opportunities" component={Opportunities} />
       <Route path="/contracts" component={Contracts} />
+      <Route path="/contracts/:id" component={ContractDetail} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={Settings} />
       <Route path="/ai-tools" component={AITools} />
