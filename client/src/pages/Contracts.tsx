@@ -21,6 +21,7 @@ import {
 import { format, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { getCompanyBadgeClass, getStatusConfig, fmtCurrency, fmtCurrencyCompact } from "@/lib/contractUtils";
+import { EntitySwitcher } from "@/components/EntitySwitcher";
 import { KNOWN_COMPANIES } from "../../../shared/contractNumbers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -354,6 +355,7 @@ export default function Contracts() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <EntitySwitcher />
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-1.5" /> Refresh
             </Button>

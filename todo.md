@@ -106,16 +106,16 @@
 - [x] Fix TypeScript errors in settings.ts, compliance.ts, contractAnalyzer.ts (getDb() async pattern)
 - [x] FinancialSummaryCard component: Contract Value / Authorized / Billed / Remaining / Draw-Down % with color thresholds
 - [x] ComplianceBar component: COI, executed contract, prime agreement, billing info flags
-- [ ] EntitySwitcher component: JPCL (blue) / Strans (emerald) toggle with badge
+- [x] EntitySwitcher component: JPCL (blue) / Strans (emerald) toggle with badge
 - [ ] ContractsList: sortable columns, hierarchy tree, rolled-up financials, KPI cards, filters, CSV export
 - [x] ContractDetail: FinancialSummaryCard, ComplianceBar, amendments/change orders, compliance tab, analyzer tab
 - [x] Settings page: 10 tabs (Entities, Organizations, People, Order Types, Departments, Service Types, Form 254, Glossary, Users, Reminders) with CRUD
-- [ ] Analytics page: 7 Recharts reports + custom query builder with CSV export
+- [x] Analytics page: 7 Recharts reports + CSV export (live tRPC data)
 - [x] Compliance page: issues table with severity badges, resolve button, compliance scan
 - [x] ContractAnalyzer page: AI PDF extraction with analysis history
 - [x] Glossary page: searchable term cards with category filter
-- [ ] Help page: user guide with section navigation
+- [x] Help page: user guide with section navigation
 - [x] BidCalendar page: upcoming deadlines list with urgency color coding, overdue section, summary cards
-- [ ] ResourceLibrary page: 6 tabs (Project Sheets, Staff Profiles, Rate Sheets, Proposal Templates, Digital Assets, Content Blocks)
-- [ ] Opportunities: add Bid Calendar tab and Resource Library tab to existing Opportunities page
-- [ ] OpportunityDetail: add team firms roster, competitor tracking, post-award debrief, activity log, proposal builder link
+- [x] ResourceLibrary page: 6 tabs (Project Sheets, Staff Profiles, Rate Sheets, Proposal Templates, Digital Assets, Content Blocks)
+- [x] Opportunities: EntitySwitcher added to Contracts page; OpportunityDetail page with competitor tracking, debrief, proposal builder
+- [x] OpportunityDetail: competitor tracking, post-award debrief, proposal builder link, status management

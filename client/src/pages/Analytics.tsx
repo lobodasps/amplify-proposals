@@ -1,217 +1,338 @@
+import { useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Award, DollarSign, Target, BarChart3, PieChart as PieIcon, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
+import {
+  TrendingUp, Award, DollarSign, Target, BarChart3,
+  PieChart as PieIcon, Activity, Download, FileText, Loader2,
+} from "lucide-react";
+import { toast } from "sonner";
 
-const WIN_LOSS_DATA = [
-  { month: "Jan", wins: 2, losses: 3, submitted: 5 },
-  { month: "Feb", wins: 3, losses: 2, submitted: 5 },
-  { month: "Mar", wins: 1, losses: 4, submitted: 5 },
-  { month: "Apr", wins: 4, losses: 2, submitted: 6 },
-  { month: "May", wins: 3, losses: 3, submitted: 6 },
-  { month: "Jun", wins: 2, losses: 1, submitted: 3 },
-];
+const COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#14b8a6", "#f43f5e"];
+const TOOLTIP_STYLE = { backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "11px", padding: "8px 12px" };
 
-const PIPELINE_TREND = [
-  { month: "Jan", value: 8.2 },
-  { month: "Feb", value: 9.5 },
-  { month: "Mar", value: 11.0 },
-  { month: "Apr", value: 13.4 },
-  { month: "May", value: 15.8 },
-  { month: "Jun", value: 14.2 },
-];
+function formatM(v: number) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+  return `$${v}`;
+}
 
-const SERVICE_MIX = [
-  { name: "Special Inspections", value: 35, color: "#3b82f6" },
-  { name: "Construction Mgmt", value: 28, color: "#8b5cf6" },
-  { name: "Traffic Engineering", value: 18, color: "#f59e0b" },
-  { name: "Landscape / Streetscape", value: 12, color: "#10b981" },
-  { name: "Environmental", value: 7, color: "#14b8a6" },
-];
-
-const AGENCY_PERFORMANCE = [
-  { agency: "NJDOT", proposals: 12, wins: 5, value: 8.4 },
-  { agency: "NYC DDC", proposals: 9, wins: 3, value: 6.2 },
-  { agency: "NYC SCA", proposals: 7, wins: 3, value: 5.8 },
-  { agency: "NJDEP", proposals: 6, wins: 2, value: 1.9 },
-  { agency: "NYC Parks", proposals: 5, wins: 2, value: 3.1 },
-  { agency: "Port Auth.", proposals: 4, wins: 1, value: 4.5 },
-];
-
-const HIT_RATE_BY_SERVICE = [
-  { service: "Special Inspections", rate: 45 },
-  { service: "Construction Mgmt", rate: 33 },
-  { service: "Traffic Engineering", rate: 38 },
-  { service: "Landscape / Streetscape", rate: 40 },
-  { service: "Environmental", rate: 50 },
-];
-
-const KPI_CARDS = [
-  { label: "Overall Win Rate", value: "38%", sub: "+5% vs last year", icon: Award, color: "text-amber-500", bg: "bg-amber-50", trend: "up" },
-  { label: "YTD Proposals Submitted", value: "47", sub: "vs 39 last year", icon: Target, color: "text-blue-500", bg: "bg-blue-50", trend: "up" },
-  { label: "Revenue Won (YTD)", value: "$12.4M", sub: "From 18 wins", icon: DollarSign, color: "text-emerald-500", bg: "bg-emerald-50", trend: "up" },
-  { label: "Avg Proposal Value", value: "$1.8M", sub: "Per submission", icon: TrendingUp, color: "text-violet-500", bg: "bg-violet-50", trend: "neutral" },
-];
-
-const CUSTOM_TOOLTIP_STYLE = {
-  backgroundColor: "white",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  fontSize: "11px",
-  padding: "8px 12px",
-};
+function exportCSV(rows: any[], filename: string) {
+  if (!rows.length) { toast.error("No data to export"); return; }
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(","), ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(","))];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  toast.success(`Exported ${rows.length} rows`);
+}
 
 export default function Analytics() {
+  const [activeTab, setActiveTab] = useState("performance");
+  const { data: dashboard, isLoading: loadingDash } = trpc.analytics.dashboard.useQuery();
+  const { data: winLoss = [], isLoading: loadingWL } = trpc.analytics.winLossTrend.useQuery();
+  const { data: serviceMix = [], isLoading: loadingSM } = trpc.analytics.serviceLineMix.useQuery();
+  const { data: agencyPerf = [], isLoading: loadingAP } = trpc.analytics.agencyPerformance.useQuery();
+  const { data: pipelineTrend = [], isLoading: loadingPT } = trpc.analytics.pipelineTrend.useQuery();
+
+  const dash = dashboard as any;
+  const wlData = winLoss as any[];
+  const smData = serviceMix as any[];
+  const apData = agencyPerf as any[];
+  const ptData = pipelineTrend as any[];
+
+  const kpiCards = [
+    { label: "Overall Win Rate", value: dash ? `${dash.winRate ?? 0}%` : "—", sub: "Awarded / (Awarded + Lost)", icon: Award, color: "text-amber-500", bg: "bg-amber-50" },
+    { label: "Active Pursuits", value: dash ? String(dash.activePursuits ?? 0) : "—", sub: `of ${dash?.totalPursuits ?? 0} total`, icon: Target, color: "text-blue-500", bg: "bg-blue-50" },
+    { label: "Pipeline Value", value: dash ? formatM(dash.pipelineValue ?? 0) : "—", sub: "Estimated total", icon: DollarSign, color: "text-emerald-500", bg: "bg-emerald-50" },
+    { label: "Proposals In Progress", value: dash ? String(dash.proposalsInProgress ?? 0) : "—", sub: "Draft + In Review", icon: TrendingUp, color: "text-violet-500", bg: "bg-violet-50" },
+  ];
+
+  const exportMap: Record<string, any[]> = { performance: wlData, pipeline: ptData, service: smData, agency: apData, contracts: [] };
+
   return (
     <AppLayout title="Analytics & Intelligence">
       <div className="p-6 space-y-5">
-        {/* KPI Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {KPI_CARDS.map(k => (
+          {kpiCards.map(k => (
             <Card key={k.label} className="border-border/60">
               <CardContent className="p-4">
-                <div className={`w-8 h-8 rounded-lg ${k.bg} flex items-center justify-center mb-2`}>
-                  <k.icon className={`w-4 h-4 ${k.color}`} />
-                </div>
-                <div className="text-2xl font-display font-800 text-foreground">{k.value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{k.label}</div>
-                <div className="text-[10px] text-muted-foreground/70">{k.sub}</div>
+                {loadingDash ? <div className="h-16 flex items-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div> : (
+                  <>
+                    <div className={`w-8 h-8 rounded-lg ${k.bg} flex items-center justify-center mb-2`}><k.icon className={`w-4 h-4 ${k.color}`} /></div>
+                    <div className="text-2xl font-bold text-foreground">{k.value}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{k.label}</div>
+                    <div className="text-[10px] text-muted-foreground/70">{k.sub}</div>
+                  </>
+                )}
               </CardContent>
             </Card>
           ))}
         </div>
 
-        <Tabs defaultValue="performance">
-          <TabsList className="bg-muted/60">
-            <TabsTrigger value="performance" className="text-xs gap-1.5"><BarChart3 className="w-3.5 h-3.5" /> Win/Loss</TabsTrigger>
-            <TabsTrigger value="pipeline" className="text-xs gap-1.5"><Activity className="w-3.5 h-3.5" /> Pipeline Trend</TabsTrigger>
-            <TabsTrigger value="service" className="text-xs gap-1.5"><PieIcon className="w-3.5 h-3.5" /> Service Mix</TabsTrigger>
-            <TabsTrigger value="agency" className="text-xs gap-1.5"><Target className="w-3.5 h-3.5" /> Agency Performance</TabsTrigger>
-          </TabsList>
+        {dash?.pursuitsByStatus && dash.pursuitsByStatus.length > 0 && (
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {(["identify", "qualify", "pursue", "submit", "award", "lost"] as string[]).map(s => {
+              const item = dash.pursuitsByStatus.find((r: any) => r.status === s);
+              const labels: Record<string, string> = { identify: "Identify", qualify: "Qualify", pursue: "Pursue", submit: "Submit", award: "Award", lost: "Lost" };
+              const colors: Record<string, string> = { identify: "bg-slate-100 text-slate-700", qualify: "bg-blue-100 text-blue-700", pursue: "bg-violet-100 text-violet-700", submit: "bg-amber-100 text-amber-700", award: "bg-emerald-100 text-emerald-700", lost: "bg-rose-100 text-rose-700" };
+              return (
+                <Card key={s} className={`border-0 ${colors[s]}`}>
+                  <CardContent className="p-3 text-center">
+                    <div className="text-2xl font-bold">{item?.count ?? 0}</div>
+                    <div className="text-xs font-medium mt-0.5">{labels[s]}</div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
 
-          {/* Win/Loss */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <TabsList className="bg-muted/60 flex-wrap h-auto">
+              <TabsTrigger value="performance" className="text-xs gap-1.5"><BarChart3 className="w-3.5 h-3.5" /> Win/Loss</TabsTrigger>
+              <TabsTrigger value="pipeline" className="text-xs gap-1.5"><Activity className="w-3.5 h-3.5" /> Pipeline Trend</TabsTrigger>
+              <TabsTrigger value="service" className="text-xs gap-1.5"><PieIcon className="w-3.5 h-3.5" /> Service Mix</TabsTrigger>
+              <TabsTrigger value="agency" className="text-xs gap-1.5"><Target className="w-3.5 h-3.5" /> Agency Performance</TabsTrigger>
+              <TabsTrigger value="contracts" className="text-xs gap-1.5"><FileText className="w-3.5 h-3.5" /> Contracts</TabsTrigger>
+            </TabsList>
+            {activeTab !== "contracts" && (
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => exportCSV(exportMap[activeTab] ?? [], `analytics-${activeTab}.csv`)}>
+                <Download className="h-3 w-3 mr-1" />Export CSV
+              </Button>
+            )}
+          </div>
+
           <TabsContent value="performance" className="mt-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card className="border-border/60">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Monthly Win/Loss Performance</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={WIN_LOSS_DATA} barGap={4}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="wins" name="Wins" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="losses" name="Losses" fill="#f87171" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="submitted" name="Submitted" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {loadingWL ? <div className="h-48 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={wlData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Legend wrapperStyle={{ fontSize: "10px" }} />
+                        <Bar dataKey="won" fill="#10b981" name="Won" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="lost" fill="#f43f5e" name="Lost" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="submitted" fill="#3b82f6" name="Submitted" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </CardContent>
               </Card>
-              <Card className="border-border/60">
-                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Hit Rate by Service Line</CardTitle></CardHeader>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Pursuit Status Distribution</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="space-y-3 mt-2">
-                    {HIT_RATE_BY_SERVICE.map(s => (
-                      <div key={s.service}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-foreground font-medium">{s.service}</span>
-                          <span className="text-xs font-bold text-foreground">{s.rate}%</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div className="h-2 rounded-full bg-amplify-gradient transition-all" style={{ width: `${s.rate}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {loadingDash ? <div className="h-48 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={dash?.pursuitsByStatus ?? []} layout="vertical" margin={{ top: 4, right: 8, left: 40, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis type="number" tick={{ fontSize: 10 }} />
+                        <YAxis dataKey="status" type="category" tick={{ fontSize: 10 }} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Bar dataKey="count" fill="#8b5cf6" radius={[0, 3, 3, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Pipeline Trend */}
           <TabsContent value="pipeline" className="mt-4">
-            <Card className="border-border/60">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Pipeline Value Trend ($M)</CardTitle></CardHeader>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Pipeline Value Trend</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={PIPELINE_TREND}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}M`} />
-                    <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: number) => [`$${v}M`, "Pipeline Value"]} />
-                    <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2.5} dot={{ fill: "#6366f1", r: 4 }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                {loadingPT ? <div className="h-64 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={ptData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      <YAxis tickFormatter={v => formatM(v)} tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: any) => [formatM(v), "Pipeline Value"]} />
+                      <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Service Mix */}
           <TabsContent value="service" className="mt-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card className="border-border/60">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Pipeline by Service Line</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <PieChart>
-                      <Pie data={SERVICE_MIX} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
-                        {SERVICE_MIX.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: number) => [`${v}%`, "Share"]} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {loadingSM ? <div className="h-48 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={smData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                          {smData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </CardContent>
               </Card>
-              <Card className="border-border/60">
+              <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Service Line Breakdown</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="space-y-3 mt-2">
-                    {SERVICE_MIX.map(s => (
-                      <div key={s.name} className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs text-foreground font-medium">{s.name}</span>
-                            <span className="text-xs font-bold text-foreground">{s.value}%</span>
+                  {loadingSM ? <div className="h-48 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                    <div className="flex items-center gap-4">
+                      <ResponsiveContainer width="50%" height={180}>
+                        <PieChart>
+                          <Pie data={smData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}>
+                            {smData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: any) => [`${v}%`, ""]} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="flex-1 space-y-1.5">
+                        {smData.map((s: any, i: number) => (
+                          <div key={s.name} className="flex items-center gap-2 text-xs">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                            <span className="text-muted-foreground truncate">{s.name}</span>
+                            <span className="ml-auto font-medium">{s.value}%</span>
                           </div>
-                          <div className="w-full bg-muted rounded-full h-1.5">
-                            <div className="h-1.5 rounded-full transition-all" style={{ width: `${s.value}%`, backgroundColor: s.color }} />
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Agency Performance */}
           <TabsContent value="agency" className="mt-4">
-            <Card className="border-border/60">
+            <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Agency Performance — Proposals vs Wins</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={AGENCY_PERFORMANCE} layout="vertical" barGap={4}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="agency" type="category" tick={{ fontSize: 11 }} width={70} />
-                    <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="proposals" name="Proposals" fill="#94a3b8" radius={[0, 4, 4, 0]} />
-                    <Bar dataKey="wins" name="Wins" fill="#6366f1" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {loadingAP ? <div className="h-64 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={apData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="agency" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={TOOLTIP_STYLE} />
+                      <Legend wrapperStyle={{ fontSize: "10px" }} />
+                      <Bar dataKey="proposals" fill="#3b82f6" name="Proposals" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="wins" fill="#10b981" name="Wins" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="contracts" className="mt-4">
+            <ContractsAnalyticsTab />
           </TabsContent>
         </Tabs>
       </div>
     </AppLayout>
+  );
+}
+
+function ContractsAnalyticsTab() {
+  const { data: contracts = [], isLoading } = trpc.contracts.list.useQuery();
+  const rows = contracts as any[];
+
+  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const totalValue = rows.reduce((s, c) => s + (c.computedContractValue ?? c.value ?? 0), 0);
+  const activeContracts = rows.filter(c => c.status === "active");
+  const activeValue = activeContracts.reduce((s, c) => s + (c.computedContractValue ?? c.value ?? 0), 0);
+
+  const byStatus = Object.entries(
+    rows.reduce((acc: Record<string, number>, c) => { acc[c.status ?? "draft"] = (acc[c.status ?? "draft"] ?? 0) + 1; return acc; }, {})
+  ).map(([status, count]) => ({ status, count }));
+
+  const byCompany = Object.entries(
+    rows.reduce((acc: Record<string, number>, c) => {
+      const co = c.performingCompanyName ?? "JPCL";
+      acc[co] = (acc[co] ?? 0) + (c.computedContractValue ?? c.value ?? 0);
+      return acc;
+    }, {})
+  ).map(([company, value]) => ({ company, value }));
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Total Contracts", value: String(rows.length), color: "text-blue-600" },
+          { label: "Active Contracts", value: String(activeContracts.length), color: "text-emerald-600" },
+          { label: "Total Portfolio Value", value: formatM(totalValue), color: "text-violet-600" },
+          { label: "Active Portfolio Value", value: formatM(activeValue), color: "text-amber-600" },
+        ].map(k => (
+          <Card key={k.label}><CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">{k.label}</p>
+            <p className={`text-2xl font-bold mt-0.5 ${k.color}`}>{k.value}</p>
+          </CardContent></Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Contracts by Status</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={byStatus} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="status" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Bar dataKey="count" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Portfolio Value by Company</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={byCompany} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="company" tick={{ fontSize: 10 }} />
+                <YAxis tickFormatter={v => formatM(v)} tick={{ fontSize: 10 }} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: any) => [formatM(v), "Value"]} />
+                <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                  {byCompany.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" className="h-8 text-xs"
+          onClick={() => exportCSV(rows.map(c => ({
+            contractNumber: c.contractNumber ?? "",
+            title: c.title ?? "",
+            status: c.status ?? "",
+            company: c.performingCompanyName ?? "",
+            client: c.clientName ?? "",
+            value: c.computedContractValue ?? c.value ?? 0,
+            startDate: c.startDate ? new Date(c.startDate).toLocaleDateString() : "",
+            endDate: c.endDate ? new Date(c.endDate).toLocaleDateString() : "",
+          })), "contracts-export.csv")}>
+          <Download className="h-3 w-3 mr-1" />Export Contracts CSV
+        </Button>
+      </div>
+    </div>
   );
 }

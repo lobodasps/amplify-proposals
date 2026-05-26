@@ -42,6 +42,8 @@ import {
   Shield,
   Calendar,
   ScanText,
+  HelpCircle,
+  Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +73,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "AI Tools", href: "/ai-tools", icon: Sparkles, badge: "AI" },
   { label: "InDesign Export", href: "/indesign-export", icon: Package },
   { label: "Analytics", href: "/analytics", icon: BarChart3, roles: ["administrator", "executive", "business_development", "admin"] },
+  { label: "Resource Library", href: "/resource-library", icon: Library },
+  { label: "Help", href: "/help", icon: HelpCircle },
   { label: "Settings", href: "/settings", icon: Settings, roles: ["administrator", "admin"] },
 ];
 

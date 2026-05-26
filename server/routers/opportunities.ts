@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { opportunities } from "../../drizzle/schema";
+import { opportunities, opportunityCompetitors, opportunityDebriefs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
 
@@ -11,6 +11,22 @@ export const opportunitiesRouter = router({
     if (!db) return [];
     return db.select().from(opportunities).orderBy(desc(opportunities.publishedDate)).limit(200);
   }),
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select().from(opportunities).where(eq(opportunities.id, input.id)).limit(1);
+      return rows[0] ?? null;
+    }),
+  updateStatus: protectedProcedure
+    .input(z.object({ id: z.number(), status: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.update(opportunities).set({ status: input.status as any }).where(eq(opportunities.id, input.id));
+      return { success: true };
+    }),
 
   scoreOpportunity: protectedProcedure
     .input(z.object({
@@ -91,6 +107,84 @@ Score 0-100 based on: alignment with our services, agency relationship potential
         aiScoreReason: input.aiScoreReason,
         status: "new",
       });
+      return { success: true };
+    }),
+
+  // ─── Competitors ────────────────────────────────────────────────────────────
+  listCompetitors: protectedProcedure
+    .input(z.object({ opportunityId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(opportunityCompetitors)
+        .where(eq(opportunityCompetitors.opportunityId, input.opportunityId))
+        .orderBy(desc(opportunityCompetitors.createdAt));
+    }),
+  addCompetitor: protectedProcedure
+    .input(z.object({
+      opportunityId: z.number(),
+      firmName: z.string().min(1),
+      role: z.string().optional(),
+      isWinner: z.boolean().optional(),
+      winningFee: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.insert(opportunityCompetitors).values({
+        opportunityId: input.opportunityId,
+        firmName: input.firmName,
+        role: input.role,
+        isWinner: input.isWinner ?? false,
+        winningFee: input.winningFee,
+        notes: input.notes,
+      });
+      return { success: true };
+    }),
+  removeCompetitor: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.delete(opportunityCompetitors).where(eq(opportunityCompetitors.id, input.id));
+      return { success: true };
+    }),
+
+  // ─── Debrief ────────────────────────────────────────────────────────────────
+  getDebrief: protectedProcedure
+    .input(z.object({ opportunityId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select().from(opportunityDebriefs)
+        .where(eq(opportunityDebriefs.opportunityId, input.opportunityId)).limit(1);
+      return rows[0] ?? null;
+    }),
+  upsertDebrief: protectedProcedure
+    .input(z.object({
+      opportunityId: z.number(),
+      outcome: z.string().optional(),
+      winningFirm: z.string().optional(),
+      winningFee: z.number().optional(),
+      ourFee: z.number().optional(),
+      lowestBidder: z.string().optional(),
+      debriefNotes: z.string().optional(),
+      lessonsLearned: z.string().optional(),
+      debriefDate: z.date().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const { opportunityId, ...data } = input;
+      const existing = await db.select().from(opportunityDebriefs)
+        .where(eq(opportunityDebriefs.opportunityId, opportunityId)).limit(1);
+      if (existing.length) {
+        await db.update(opportunityDebriefs).set(data as any)
+          .where(eq(opportunityDebriefs.opportunityId, opportunityId));
+      } else {
+        await db.insert(opportunityDebriefs).values({ opportunityId, ...data as any });
+      }
       return { success: true };
     }),
 });

@@ -26,6 +26,9 @@ import Compliance from "./pages/Compliance";
 import ContractAnalyzer from "./pages/ContractAnalyzer";
 import Glossary from "./pages/Glossary";
 import BidCalendar from "./pages/BidCalendar";
+import Help from "./pages/Help";
+import ResourceLibrary from "./pages/ResourceLibrary";
+import OpportunityDetail from "./pages/OpportunityDetail";
 
 function Router() {
   return (
@@ -52,6 +55,9 @@ function Router() {
       <Route path="/contract-analyzer" component={ContractAnalyzer} />
       <Route path="/glossary" component={Glossary} />
       <Route path="/bid-calendar" component={BidCalendar} />
+      <Route path="/help" component={Help} />
+      <Route path="/resource-library" component={ResourceLibrary} />
+      <Route path="/opportunities/:id" component={OpportunityDetail} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
