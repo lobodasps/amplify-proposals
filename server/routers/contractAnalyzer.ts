@@ -3,7 +3,24 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { contractAnalyses } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLMWithSkill } from "../_core/llmSkill";
+
+const CONTRACT_ANALYSIS_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    parties: { type: "array", items: { type: "object", properties: { role: { type: "string" }, name: { type: "string" }, address: { type: "string" } }, required: ["role", "name", "address"], additionalProperties: false } },
+    dates: { type: "object", properties: { executionDate: { type: ["string", "null"] }, startDate: { type: ["string", "null"] }, endDate: { type: ["string", "null"] }, noticeToProceedException: { type: ["string", "null"] } }, required: ["executionDate", "startDate", "endDate", "noticeToProceedException"], additionalProperties: false },
+    values: { type: "object", properties: { baseContractValue: { type: ["number", "null"] }, nteCeiling: { type: ["number", "null"] }, retainagePercent: { type: ["number", "null"] }, currency: { type: "string" } }, required: ["baseContractValue", "nteCeiling", "retainagePercent", "currency"], additionalProperties: false },
+    contractType: { type: "string" },
+    billingMethod: { type: "string" },
+    keyClauseSummaries: { type: "array", items: { type: "object", properties: { clause: { type: "string" }, summary: { type: "string" } }, required: ["clause", "summary"], additionalProperties: false } },
+    riskFlags: { type: "array", items: { type: "object", properties: { severity: { type: "string" }, description: { type: "string" } }, required: ["severity", "description"], additionalProperties: false } },
+    complianceFlags: { type: "array", items: { type: "object", properties: { type: { type: "string" }, description: { type: "string" }, required: { type: "boolean" } }, required: ["type", "description", "required"], additionalProperties: false } },
+    summary: { type: "string" },
+  },
+  required: ["parties", "dates", "values", "contractType", "billingMethod", "keyClauseSummaries", "riskFlags", "complianceFlags", "summary"],
+  additionalProperties: false,
+};
 
 export const contractAnalyzerRouter = router({
   // List all analyses
@@ -23,7 +40,7 @@ export const contractAnalyzerRouter = router({
       return rows[0] ?? null;
     }),
 
-  // Analyze a contract document via URL (PDF or text)
+  // Analyze a contract document via URL (PDF or text) — uses the contract_analyzer skill
   analyze: protectedProcedure
     .input(z.object({
       fileUrl: z.string().url(),
@@ -46,53 +63,20 @@ export const contractAnalyzerRouter = router({
       }).$returningId();
 
       try {
-        // Call LLM with the document URL for analysis
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: `You are an expert AEC contract analyst. Analyze the provided contract document and extract structured information. Return a JSON object with these exact fields:
-{
-  "parties": [{"role": "string", "name": "string", "address": "string"}],
-  "dates": {"executionDate": "YYYY-MM-DD or null", "startDate": "YYYY-MM-DD or null", "endDate": "YYYY-MM-DD or null", "noticeToProceedException": "YYYY-MM-DD or null"},
-  "values": {"baseContractValue": number_or_null, "nteCeiling": number_or_null, "retainagePercent": number_or_null, "currency": "USD"},
-  "contractType": "string (IDIQ/MSA/Standalone/Task Order/etc)",
-  "billingMethod": "string (Lump Sum/T&M/Cost Plus/Unit Price)",
-  "keyClauseSummaries": [{"clause": "string", "summary": "string"}],
-  "riskFlags": [{"severity": "HIGH/MEDIUM/LOW", "description": "string"}],
-  "complianceFlags": [{"type": "string", "description": "string", "required": true/false}],
-  "summary": "2-3 sentence plain English summary of the contract"
-}`,
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: `Please analyze this contract document: ${input.fileName}` },
-                { type: "file_url", file_url: { url: input.fileUrl, mime_type: "application/pdf" } },
-              ],
-            },
+        // Dispatch to the contract_analyzer skill (provider/model/prompts from Settings → AI Skills)
+        const response = await invokeLLMWithSkill({
+          skillType: "contract_analyzer",
+          variables: { fileName: input.fileName, fileUrl: input.fileUrl },
+          // Attach the PDF as a file_url content part so the model can read it
+          extraUserContent: [
+            { type: "file_url", file_url: { url: input.fileUrl, mime_type: "application/pdf" } },
           ],
-          response_format: {
+          responseFormat: {
             type: "json_schema",
             json_schema: {
               name: "contract_analysis",
               strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  parties: { type: "array", items: { type: "object", properties: { role: { type: "string" }, name: { type: "string" }, address: { type: "string" } }, required: ["role", "name", "address"], additionalProperties: false } },
-                  dates: { type: "object", properties: { executionDate: { type: ["string", "null"] }, startDate: { type: ["string", "null"] }, endDate: { type: ["string", "null"] }, noticeToProceedException: { type: ["string", "null"] } }, required: ["executionDate", "startDate", "endDate", "noticeToProceedException"], additionalProperties: false },
-                  values: { type: "object", properties: { baseContractValue: { type: ["number", "null"] }, nteCeiling: { type: ["number", "null"] }, retainagePercent: { type: ["number", "null"] }, currency: { type: "string" } }, required: ["baseContractValue", "nteCeiling", "retainagePercent", "currency"], additionalProperties: false },
-                  contractType: { type: "string" },
-                  billingMethod: { type: "string" },
-                  keyClauseSummaries: { type: "array", items: { type: "object", properties: { clause: { type: "string" }, summary: { type: "string" } }, required: ["clause", "summary"], additionalProperties: false } },
-                  riskFlags: { type: "array", items: { type: "object", properties: { severity: { type: "string" }, description: { type: "string" } }, required: ["severity", "description"], additionalProperties: false } },
-                  complianceFlags: { type: "array", items: { type: "object", properties: { type: { type: "string" }, description: { type: "string" }, required: { type: "boolean" } }, required: ["type", "description", "required"], additionalProperties: false } },
-                  summary: { type: "string" },
-                },
-                required: ["parties", "dates", "values", "contractType", "billingMethod", "keyClauseSummaries", "riskFlags", "complianceFlags", "summary"],
-                additionalProperties: false,
-              },
+              schema: CONTRACT_ANALYSIS_SCHEMA,
             },
           },
         });

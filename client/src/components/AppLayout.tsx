@@ -44,6 +44,8 @@ import {
   ScanText,
   HelpCircle,
   Library,
+  Code2,
+  Cpu,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +73,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Bid Calendar", href: "/bid-calendar", icon: Calendar },
   { label: "Glossary", href: "/glossary", icon: BookOpen },
   { label: "AI Tools", href: "/ai-tools", icon: Sparkles, badge: "AI" },
+  { label: "Doc Shredder", href: "/document-shredder", icon: Code2, badge: "AI" },
+  { label: "RFP Wiki", href: "/rfp-wiki", icon: Cpu, badge: "AI" },
+  { label: "Agent Guidelines", href: "/agent-guidelines", icon: Target, badge: "AI" },
   { label: "InDesign Export", href: "/indesign-export", icon: Package },
   { label: "Analytics", href: "/analytics", icon: BarChart3, roles: ["administrator", "executive", "business_development", "admin"] },
   { label: "Resource Library", href: "/resource-library", icon: Library },

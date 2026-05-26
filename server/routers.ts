@@ -15,6 +15,10 @@ import {
 } from "./routers/settings";
 import { complianceRouter, activityLogRouter, billingEntriesRouter } from "./routers/compliance";
 import { contractAnalyzerRouter } from "./routers/contractAnalyzer";
+import { aiSkillsRouter } from "./routers/aiSkills";
+import { xmlShredderRouter } from "./routers/xmlShredder";
+import { rfpWikiRouter } from "./routers/rfpWiki";
+import { agentGuidelinesRouter } from "./routers/agentGuidelines";
 
 export const appRouter = router({
   system: systemRouter,
@@ -48,6 +52,10 @@ export const appRouter = router({
   activityLog: activityLogRouter,
   billingEntries: billingEntriesRouter,
   contractAnalyzer: contractAnalyzerRouter,
+  aiSkills: aiSkillsRouter,
+  xmlShredder: xmlShredderRouter,
+  rfpWiki: rfpWikiRouter,
+  agentGuidelines: agentGuidelinesRouter,
 });
 
 export type AppRouter = typeof appRouter;

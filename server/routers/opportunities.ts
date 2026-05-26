@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { opportunities, opportunityCompetitors, opportunityDebriefs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLMWithSkill } from "../_core/llmSkill";
 
 export const opportunitiesRouter = router({
   list: protectedProcedure.query(async () => {
@@ -11,6 +11,7 @@ export const opportunitiesRouter = router({
     if (!db) return [];
     return db.select().from(opportunities).orderBy(desc(opportunities.publishedDate)).limit(200);
   }),
+
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
@@ -19,6 +20,7 @@ export const opportunitiesRouter = router({
       const rows = await db.select().from(opportunities).where(eq(opportunities.id, input.id)).limit(1);
       return rows[0] ?? null;
     }),
+
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
@@ -28,6 +30,7 @@ export const opportunitiesRouter = router({
       return { success: true };
     }),
 
+  /** Score an opportunity for fit — uses the opportunity_scorer skill */
   scoreOpportunity: protectedProcedure
     .input(z.object({
       title: z.string(),
@@ -37,26 +40,17 @@ export const opportunitiesRouter = router({
       dueDate: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a strategic AEC business development advisor for a firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ, NY, and NYC public-agency markets.`,
-          },
-          {
-            role: "user",
-            content: `Score this opportunity for our firm:
-
-TITLE: ${input.title}
-AGENCY: ${input.agency}
-DESCRIPTION: ${input.description.slice(0, 2000)}
-VALUE: ${input.estimatedValue ? `$${input.estimatedValue.toLocaleString()}` : "Unknown"}
-DUE: ${input.dueDate ?? "TBD"}
-
-Score 0-100 based on: alignment with our services, agency relationship potential, competition level, strategic value, and win probability. Return JSON.`,
-          },
-        ],
-        response_format: {
+      const result = await invokeLLMWithSkill({
+        skillType: "opportunity_scorer",
+        variables: {
+          title: input.title,
+          agency: input.agency,
+          description: input.description.slice(0, 2000),
+          value: input.estimatedValue ? `$${input.estimatedValue.toLocaleString()}` : "Unknown",
+          serviceLines: "Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, Environmental",
+          source: "manual",
+        },
+        responseFormat: {
           type: "json_schema",
           json_schema: {
             name: "opportunity_score",
@@ -75,8 +69,12 @@ Score 0-100 based on: alignment with our services, agency relationship potential
           },
         },
       });
-      const content = (response.choices?.[0]?.message?.content as string) ?? "{}";
-      try { return JSON.parse(content); } catch { return { score: 50, recommendation: "Monitor", serviceLineMatch: "Unknown", rationale: "" }; }
+      const content = (result.choices[0]?.message?.content as string) ?? "{}";
+      try {
+        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
+      } catch {
+        return { score: 50, recommendation: "Monitor", serviceLineMatch: "Unknown", rationale: "", _provider: result._provider, _model: result._model };
+      }
     }),
 
   create: protectedProcedure
@@ -120,6 +118,7 @@ Score 0-100 based on: alignment with our services, agency relationship potential
         .where(eq(opportunityCompetitors.opportunityId, input.opportunityId))
         .orderBy(desc(opportunityCompetitors.createdAt));
     }),
+
   addCompetitor: protectedProcedure
     .input(z.object({
       opportunityId: z.number(),
@@ -142,6 +141,7 @@ Score 0-100 based on: alignment with our services, agency relationship potential
       });
       return { success: true };
     }),
+
   removeCompetitor: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
@@ -161,6 +161,7 @@ Score 0-100 based on: alignment with our services, agency relationship potential
         .where(eq(opportunityDebriefs.opportunityId, input.opportunityId)).limit(1);
       return rows[0] ?? null;
     }),
+
   upsertDebrief: protectedProcedure
     .input(z.object({
       opportunityId: z.number(),

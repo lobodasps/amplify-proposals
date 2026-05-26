@@ -119,3 +119,62 @@
 - [x] ResourceLibrary page: 6 tabs (Project Sheets, Staff Profiles, Rate Sheets, Proposal Templates, Digital Assets, Content Blocks)
 - [x] Opportunities: EntitySwitcher added to Contracts page; OpportunityDetail page with competitor tracking, debrief, proposal builder
 - [x] OpportunityDetail: competitor tracking, post-award debrief, proposal builder link, status management
+
+## Phase 4 — Prototype → Production (v2.0)
+
+### LLM Configuration System
+- [ ] Schema: llmConfigs table (taskType, provider, model, apiKey encrypted, systemPrompt, userPromptTemplate, enabled)
+- [ ] Schema: promptTemplates table (name, taskType, systemPrompt, userPromptTemplate, isDefault)
+- [ ] Settings router: getLlmConfig, upsertLlmConfig, listPromptTemplates, upsertPromptTemplate
+- [ ] Settings > AI Configuration tab: per-task LLM selector (RFP Shredding, Resume Tailoring, Go/No-Go, Opportunity Scoring, Contract Analyzer, Opportunity Ingestion)
+- [ ] Per-task: provider dropdown (OpenAI / Anthropic / Google Gemini / Manus Built-in), model field, API key field (masked), system prompt editor, user prompt template editor with variable hints
+- [ ] invokeLLM helper: check llmConfigs table first, fall back to built-in Manus LLM if no config
+- [ ] All AI procedures (shredRfp, tailorResume, scoreGoNoGo, scoreOpportunity, analyze contract) read from llmConfigs table
+
+### Real File Upload — DAM / Knowledge Hub / Assets
+- [ ] Assets.tsx: replace mock ASSETS array with real trpc.assets.list.useQuery + search/filter params wired
+- [ ] Assets.tsx: add file upload button → POST /api/upload → trpc.assets.create with returned fileKey/fileUrl
+- [ ] KnowledgeHub.tsx: replace mock PROJECTS array with real trpc.projects.list.useQuery
+- [ ] KnowledgeHub.tsx: replace mock RESUMES with real trpc.personnel.list.useQuery
+- [ ] KnowledgeHub.tsx: wire asset search to real trpc.assets.list with search param
+- [ ] assets.list router: wire search and assetType filter params (currently ignored)
+- [ ] /api/upload: add folder param so uploads can be bucketed by type (assets, contracts, rfps, resumes)
+
+### Opportunities Ingestion — Settings-Based
+- [ ] Schema: portalConfigs table (portalName, baseUrl, enabled, scrapeMethod, selectors JSON, lastScrapedAt)
+- [ ] Settings > Opportunity Portals tab: list portals, enable/disable, configure selectors, test connection
+- [ ] Opportunities router: scrapePortal mutation that fetches portal URL, parses HTML with cheerio, upserts to opportunities table
+- [ ] Opportunities.tsx: replace mock PORTALS/OPPORTUNITIES arrays with real trpc.opportunities.list.useQuery
+- [ ] Opportunities.tsx: add "Scan Portals" button → trpc.opportunities.scrapePortals mutation
+- [ ] Opportunities.tsx: wire AI score button to real trpc.opportunities.scoreOpportunity mutation
+- [ ] Install cheerio for HTML parsing
+
+### Pursuit Detail — Real DB
+- [ ] PursuitDetail.tsx: replace mock TASKS/REQUIREMENTS/TEAM with real tRPC queries
+- [ ] pursuits router: add getRequirements, addRequirement, updateRequirement procedures
+- [ ] pursuits router: add getTeamFirms, addTeamFirm, removeTeamFirm procedures (uses opportunityTeamFirms table)
+- [ ] pursuits router: add getWinThemes, updateWinThemes, getNotes, updateNotes procedures
+- [ ] PursuitDetail.tsx: wire tasks tab to real trpc.pursuits.getTasks + createTask
+- [ ] PursuitDetail.tsx: wire team tab to real trpc.pursuits.getTeamFirms + addTeamFirm
+- [ ] PursuitDetail.tsx: wire requirements tab to real trpc.pursuits.getRequirements + addRequirement
+
+### Proposals — Real DB
+- [ ] Proposals.tsx: remove DEMO_PROPOSALS fallback, show empty state when no DB data
+- [ ] ProposalDetail page: wire proposal sections to real trpc.proposals.getById with sections
+- [ ] ProposalDetail: wire resume tailoring to real trpc.proposals.tailorResume mutation with personnel picker
+- [ ] proposals router: add getById with sections, updateSection, addSection, deleteSection procedures
+
+## Phase 5 — Karpathy AI Patterns (v2.1)
+
+- [ ] Fix TypeScript errors in aiSkills.ts (line 167, 178)
+- [ ] Add seedDefaultSkills() call at server startup in _core/index.ts
+- [ ] Pattern 1 — XML Shredder: schema table (documentShreds), server router (xmlShredder.shred, xmlShredder.list, xmlShredder.getById), skill definition (xml_shredder), ShredderPage UI with file upload + XML preview + structured output
+- [ ] Pattern 1 — Wire XML Shredder as first step in RFP ingestion: upload RFP → shred to XML → feed XML to shredRfp instead of raw text
+- [ ] Pattern 2 — LLM Wiki: schema table (rfpWikis), server router (wiki.compile, wiki.get, wiki.refresh, wiki.list), skill definition (wiki_compiler), WikiPage UI with Markdown rendering + search + refresh button
+- [ ] Pattern 2 — Wire wiki context into generateSection: fetch wiki for the proposal's RFP, inject wiki as firmContext so the model has full cross-referenced context
+- [ ] Pattern 2 — Wire wiki context into scoreProposal: inject wiki as evaluationCriteria source
+- [ ] Pattern 3 — Agent Guidelines: schema table (agentGuidelines), server router (guidelines.getForSkill, guidelines.upsert, guidelines.multiApproach), skill definition (agent_guidelines)
+- [ ] Pattern 3 — Multi-approach advisor: server procedure that takes a task description and returns 3 approaches with pros/cons/recommendation before committing
+- [ ] Pattern 3 — Wire success criteria into generateSection UI: show criteria checklist, require user to confirm criteria before generating
+- [ ] Pattern 3 — Wire multi-approach into generateSection: "Suggest Approaches" button → shows 3 approaches → user picks one → generates section from chosen approach
+- [ ] Wire all three pattern pages into sidebar nav and App.tsx routes

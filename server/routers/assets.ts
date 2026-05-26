@@ -2,8 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assets } from "../../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { eq, desc, and } from "drizzle-orm";
+import { invokeLLMWithSkill } from "../_core/llmSkill";
 
 export const assetsRouter = router({
   list: protectedProcedure
@@ -11,10 +11,14 @@ export const assetsRouter = router({
       search: z.string().optional(),
       assetType: z.string().optional(),
     }).optional())
-    .query(async () => {
+    .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(assets).orderBy(desc(assets.createdAt)).limit(200);
+      const conditions = [];
+      if (input?.assetType) conditions.push(eq(assets.assetType, input.assetType as any));
+      const query = db.select().from(assets).orderBy(desc(assets.createdAt)).limit(200);
+      if (conditions.length) return query.where(and(...conditions));
+      return query;
     }),
 
   getById: protectedProcedure
@@ -61,12 +65,10 @@ export const assetsRouter = router({
   generateAltText: protectedProcedure
     .input(z.object({ assetName: z.string(), assetDescription: z.string().optional() }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: "You generate concise, professional alt text and search tags for AEC digital assets." },
-          { role: "user", content: `Generate alt text and 5-8 search tags for this AEC asset: "${input.assetName}". ${input.assetDescription ?? ""}. Return JSON with altText and tags array.` },
-        ],
-        response_format: {
+      const result = await invokeLLMWithSkill({
+        skillType: "asset_tagger",
+        variables: { assetName: input.assetName, description: input.assetDescription ?? "" },
+        responseFormat: {
           type: "json_schema",
           json_schema: {
             name: "asset_meta",
@@ -83,7 +85,20 @@ export const assetsRouter = router({
           },
         },
       });
-      const content = (response.choices?.[0]?.message?.content as string) ?? "{}";
-      try { return JSON.parse(content); } catch { return { altText: "", tags: [] }; }
+      const content = (result.choices[0]?.message?.content as string) ?? "{}";
+      try {
+        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
+      } catch {
+        return { altText: "", tags: [], _provider: result._provider, _model: result._model };
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.delete(assets).where(eq(assets.id, input.id));
+      return { success: true };
     }),
 });

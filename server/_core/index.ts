@@ -9,6 +9,7 @@ import { registerUploadRoute } from "../upload";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { seedDefaultSkills } from "../_core/llmSkill";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +39,8 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerUploadRoute(app);
+  // Seed AI skill defaults on startup (no-op if already seeded)
+  seedDefaultSkills().catch(e => console.warn("[AI Skills] Seed failed:", e));
   // tRPC API
   app.use(
     "/api/trpc",

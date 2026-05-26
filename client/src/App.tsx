@@ -29,6 +29,9 @@ import BidCalendar from "./pages/BidCalendar";
 import Help from "./pages/Help";
 import ResourceLibrary from "./pages/ResourceLibrary";
 import OpportunityDetail from "./pages/OpportunityDetail";
+import DocumentShredder from "./pages/DocumentShredder";
+import RfpWiki from "./pages/RfpWiki";
+import AgentGuidelines from "./pages/AgentGuidelines";
 
 function Router() {
   return (
@@ -58,6 +61,9 @@ function Router() {
       <Route path="/help" component={Help} />
       <Route path="/resource-library" component={ResourceLibrary} />
       <Route path="/opportunities/:id" component={OpportunityDetail} />
+      <Route path="/document-shredder" component={DocumentShredder} />
+      <Route path="/rfp-wiki" component={RfpWiki} />
+      <Route path="/agent-guidelines" component={AgentGuidelines} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

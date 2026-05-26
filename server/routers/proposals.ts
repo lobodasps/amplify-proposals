@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { proposals, proposalSections, tailoredResumes } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLMWithSkill } from "../_core/llmSkill";
 
 export const proposalsRouter = router({
   list: protectedProcedure.query(async () => {
@@ -50,62 +50,46 @@ export const proposalsRouter = router({
       return { success: true };
     }),
 
+  /** Generate a proposal section — uses the proposal_writer skill */
   generateSection: protectedProcedure
     .input(z.object({
       sectionTitle: z.string(),
       rfpContext: z.string(),
       firmContext: z.string().optional(),
       serviceLines: z.array(z.string()).optional(),
+      agency: z.string().optional(),
+      wordLimit: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const systemPrompt = `You are an expert AEC proposal writer specializing in public-agency proposals for NJ, NY, and NYC government clients. 
-You write compelling, compliant, and technically accurate proposal sections for firms providing: Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services.
-Always write in a professional, first-person plural voice ("Our team...", "We have..."). 
-Reference specific agency names, standards (NJDOT, AASHTO, NYCDOT, NJDEP), and technical terminology appropriate to the service line.
-Keep content factual, specific, and directly responsive to the RFP requirements.`;
-
-      const userPrompt = `Write a compelling proposal section titled "${input.sectionTitle}" for the following RFP context:
-
-RFP CONTEXT:
-${input.rfpContext}
-
-${input.firmContext ? `FIRM CONTEXT:\n${input.firmContext}\n` : ""}
-${input.serviceLines?.length ? `SERVICE LINES: ${input.serviceLines.join(", ")}\n` : ""}
-
-Write 3-4 paragraphs that are specific, compelling, and directly address the RFP requirements. Include relevant technical details, agency experience, and differentiators.`;
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+      const result = await invokeLLMWithSkill({
+        skillType: "proposal_writer",
+        variables: {
+          sectionType: input.sectionTitle,
+          agency: input.agency ?? "the client agency",
+          rfpRequirements: input.rfpContext,
+          firmExperience: input.firmContext ?? "Our firm has extensive experience in AEC services across NJ/NY/NYC public-agency markets.",
+          wordLimit: input.wordLimit ?? "400-600 words",
+        },
       });
-
-      const content = (response.choices?.[0]?.message?.content as string) ?? "";
-      return { content };
+      const content = result.choices[0]?.message?.content ?? "";
+      return { content, _provider: result._provider, _model: result._model };
     }),
 
+  /** Shred an RFP — uses the rfp_shredder skill */
   shredRfp: protectedProcedure
     .input(z.object({
       rfpText: z.string(),
       proposalTitle: z.string().optional(),
+      firmProfile: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert AEC proposal analyst. Extract and structure all key requirements from RFP/RFQ documents for AEC firms in NJ/NY/NYC public-agency markets.`,
-          },
-          {
-            role: "user",
-            content: `Analyze this RFP and extract all key information. Return structured JSON.
-
-RFP TEXT:
-${input.rfpText.slice(0, 8000)}`,
-          },
-        ],
-        response_format: {
+      const result = await invokeLLMWithSkill({
+        skillType: "rfp_shredder",
+        variables: {
+          rfpText: input.rfpText.slice(0, 12000),
+          firmProfile: input.firmProfile ?? "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ/NY/NYC.",
+        },
+        responseFormat: {
           type: "json_schema",
           json_schema: {
             name: "rfp_analysis",
@@ -144,15 +128,15 @@ ${input.rfpText.slice(0, 8000)}`,
           },
         },
       });
-
-      const content = (response.choices?.[0]?.message?.content as string) ?? "{}";
+      const content = result.choices[0]?.message?.content ?? "{}";
       try {
-        return JSON.parse(content);
+        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
       } catch {
-        return { summary: content, keyRequirements: [], evaluationCriteria: [], requiredSections: [], keyDates: [], qualifications: [], dbeRequirements: "", complianceScore: 0 };
+        return { summary: content, keyRequirements: [], evaluationCriteria: [], requiredSections: [], keyDates: [], qualifications: [], dbeRequirements: "", complianceScore: 0, _provider: result._provider, _model: result._model };
       }
     }),
 
+  /** Tailor a resume — uses the resume_tailor skill */
   tailorResume: protectedProcedure
     .input(z.object({
       personnelId: z.number(),
@@ -163,38 +147,16 @@ ${input.rfpText.slice(0, 8000)}`,
       proposalId: z.number(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert AEC proposal resume writer. You reformat and tailor professional resumes to match specific RFP requirements for public-agency AEC proposals in NJ, NY, and NYC. 
-You maintain factual accuracy while highlighting the most relevant experience, certifications, and project history for the specific pursuit.
-Format resumes in a clean, professional proposal style with: Name/Title, Education, Registrations/Certifications, Years of Experience, Relevant Project Experience (5-7 projects), and a brief professional summary.`,
-          },
-          {
-            role: "user",
-            content: `Tailor this resume for the following RFP:
-
-PERSONNEL: ${input.personnelName}
-TARGET ROLE IN PROPOSAL: ${input.targetRole}
-
-RFP REQUIREMENTS:
-${input.rfpRequirements}
-
-CURRENT RESUME:
-${input.currentResume}
-
-Rewrite the resume to:
-1. Lead with the most relevant experience for this specific pursuit
-2. Highlight certifications and licenses required by the RFP
-3. Select and reorder project experience to best match the scope
-4. Use language that mirrors the RFP's evaluation criteria
-5. Format for a professional AEC proposal submission`,
-          },
-        ],
+      const result = await invokeLLMWithSkill({
+        skillType: "resume_tailor",
+        variables: {
+          personnelName: input.personnelName,
+          targetRole: input.targetRole,
+          rfpRequirements: input.rfpRequirements,
+          resumeText: input.currentResume,
+        },
       });
-
-      const tailoredContent = (response.choices?.[0]?.message?.content as string) ?? "";
+      const tailoredContent = result.choices[0]?.message?.content ?? "";
 
       const db = await getDb();
       if (db) {
@@ -206,10 +168,10 @@ Rewrite the resume to:
           aiGenerated: true,
         });
       }
-
-      return { tailoredContent };
+      return { tailoredContent, _provider: result._provider, _model: result._model };
     }),
 
+  /** Score a pursuit for Go/No-Go — uses the go_no_go_advisor skill */
   scoreGoNoGo: protectedProcedure
     .input(z.object({
       pursuitTitle: z.string(),
@@ -220,27 +182,17 @@ Rewrite the resume to:
       rfpSummary: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a strategic AEC business development advisor. Score go/no-go decisions for public-agency proposals in NJ/NY/NYC markets. Consider: firm capabilities, market position, competition, strategic value, resource availability, and win probability.`,
-          },
-          {
-            role: "user",
-            content: `Score this pursuit for go/no-go decision:
-
-PURSUIT: ${input.pursuitTitle}
-CLIENT: ${input.clientAgency}
-SERVICES: ${input.serviceLines.join(", ")}
-VALUE: ${input.estimatedValue ? `$${input.estimatedValue.toLocaleString()}` : "Unknown"}
-DUE: ${input.dueDate ?? "TBD"}
-${input.rfpSummary ? `SUMMARY: ${input.rfpSummary}` : ""}
-
-Score 0-100 and provide recommendation.`,
-          },
-        ],
-        response_format: {
+      const result = await invokeLLMWithSkill({
+        skillType: "go_no_go_advisor",
+        variables: {
+          pursuitTitle: input.pursuitTitle,
+          agency: input.clientAgency,
+          serviceLines: input.serviceLines.join(", "),
+          value: input.estimatedValue ? `$${input.estimatedValue.toLocaleString()}` : "Unknown",
+          dueDate: input.dueDate ?? "TBD",
+          rfpSummary: input.rfpSummary ?? "",
+        },
+        responseFormat: {
           type: "json_schema",
           json_schema: {
             name: "go_no_go",
@@ -261,12 +213,86 @@ Score 0-100 and provide recommendation.`,
           },
         },
       });
-
-      const content = (response.choices?.[0]?.message?.content as string) ?? "{}";
+      const content = result.choices[0]?.message?.content ?? "{}";
       try {
-        return JSON.parse(content);
+        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
       } catch {
-        return { score: 50, recommendation: "CONDITIONAL GO", rationale: content, strengths: [], risks: [], winThemes: [] };
+        return { score: 50, recommendation: "CONDITIONAL GO", rationale: content, strengths: [], risks: [], winThemes: [], _provider: result._provider, _model: result._model };
+      }
+    }),
+
+  /**
+   * Score a proposal or individual section against RFP evaluation criteria.
+   * Uses the proposal_scorer skill.
+   */
+  scoreProposal: protectedProcedure
+    .input(z.object({
+      /** "full proposal" | "Technical Approach" | "Project Experience" | etc. */
+      scoreTarget: z.string(),
+      agency: z.string(),
+      rfpTitle: z.string(),
+      /** Evaluation criteria extracted from the RFP (from shredRfp) */
+      evaluationCriteria: z.string(),
+      /** The proposal content or section text to score */
+      contentToScore: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await invokeLLMWithSkill({
+        skillType: "proposal_scorer",
+        variables: {
+          scoreTarget: input.scoreTarget,
+          agency: input.agency,
+          rfpTitle: input.rfpTitle,
+          evaluationCriteria: input.evaluationCriteria,
+          contentToScore: input.contentToScore.slice(0, 12000),
+        },
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "proposal_score",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                overallScore: { type: "number" },
+                overallSummary: { type: "string" },
+                criteriaScores: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      criterion: { type: "string" },
+                      score: { type: "number" },
+                      addressed: { type: "string" },
+                      gaps: { type: "array", items: { type: "string" } },
+                      improvements: { type: "array", items: { type: "string" } },
+                    },
+                    required: ["criterion", "score", "addressed", "gaps", "improvements"],
+                    additionalProperties: false,
+                  },
+                },
+                topGaps: { type: "array", items: { type: "string" } },
+                readyToSubmit: { type: "boolean" },
+              },
+              required: ["overallScore", "overallSummary", "criteriaScores", "topGaps", "readyToSubmit"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      const content = result.choices[0]?.message?.content ?? "{}";
+      try {
+        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
+      } catch {
+        return {
+          overallScore: 0,
+          overallSummary: content,
+          criteriaScores: [],
+          topGaps: [],
+          readyToSubmit: false,
+          _provider: result._provider,
+          _model: result._model,
+        };
       }
     }),
 });

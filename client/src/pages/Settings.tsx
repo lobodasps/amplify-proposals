@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle } from "lucide-react";
 
 interface Column { key: string; label: string; render?: (row: any) => React.ReactNode; }
 
@@ -333,6 +333,7 @@ export default function Settings() {
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="reminders">Reminders</TabsTrigger>
           <TabsTrigger value="appSettings">App Settings</TabsTrigger>
+          <TabsTrigger value="aiSkills" className="flex items-center gap-1"><Brain className="h-3 w-3" />AI Skills</TabsTrigger>
         </TabsList>
         <TabsContent value="entities" className="mt-4"><EntitiesTab /></TabsContent>
         <TabsContent value="organizations" className="mt-4"><OrganizationsTab /></TabsContent>
@@ -374,7 +375,329 @@ export default function Settings() {
           </CardContent></Card>
         </TabsContent>
         <TabsContent value="appSettings" className="mt-4"><AppSettingsTab /></TabsContent>
+        <TabsContent value="aiSkills" className="mt-4"><AiSkillsTab /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ─── AI Skills Tab ─────────────────────────────────────────────────────────────
+
+const PROVIDER_LABELS: Record<string, string> = {
+  manus_builtin: "Manus Built-in",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google_gemini: "Google Gemini",
+  azure_openai: "Azure OpenAI",
+};
+
+const PROVIDER_MODELS: Record<string, string[]> = {
+  manus_builtin: ["gemini-2.5-flash", "gemini-2.5-pro"],
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3", "o4-mini"],
+  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+  google_gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"],
+  azure_openai: ["gpt-4o", "gpt-4-turbo"],
+};
+
+const SKILL_ICONS: Record<string, string> = {
+  rfp_shredder: "📄",
+  resume_tailor: "👤",
+  go_no_go_advisor: "🎯",
+  opportunity_scorer: "⭐",
+  contract_analyzer: "📋",
+  asset_tagger: "🏷️",
+  proposal_writer: "✍️",
+  proposal_scorer: "📊",
+  opportunity_ingestion: "🔍",
+};
+
+function SkillCard({ skill }: { skill: any }) {
+  const utils = trpc.useUtils();
+  const [expanded, setExpanded] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; provider: string; model: string; response: string } | null>(null);
+  const [form, setForm] = useState({
+    provider: skill.provider ?? "manus_builtin",
+    model: skill.model ?? "",
+    apiKey: "",
+    baseUrl: skill.baseUrl ?? "",
+    systemPrompt: skill.systemPrompt ?? "",
+    userPromptTemplate: skill.userPromptTemplate ?? "",
+    enabled: skill.enabled ?? true,
+  });
+  const [dirty, setDirty] = useState(false);
+
+  const update = (patch: Partial<typeof form>) => {
+    setForm(f => ({ ...f, ...patch }));
+    setDirty(true);
+  };
+
+  const upsert = trpc.aiSkills.upsert.useMutation({
+    onSuccess: () => { toast.success("Skill saved"); utils.aiSkills.list.invalidate(); setDirty(false); },
+    onError: e => toast.error(e.message),
+  });
+
+  const reset = trpc.aiSkills.resetToDefaults.useMutation({
+    onSuccess: (_, vars) => {
+      toast.success("Prompts reset to defaults");
+      utils.aiSkills.list.invalidate();
+      setDirty(false);
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const test = trpc.aiSkills.test.useMutation({
+    onSuccess: (data) => {
+      setTestResult(data);
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const templateVars: string[] = (() => {
+    try { return JSON.parse(skill.templateVariables ?? "[]"); } catch { return []; }
+  })();
+
+  const suggestedModels = PROVIDER_MODELS[form.provider] ?? [];
+
+  return (
+    <Card className={`transition-all ${!form.enabled ? "opacity-60" : ""}`}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{SKILL_ICONS[skill.skillType] ?? "🤖"}</span>
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                {skill.displayName}
+                {dirty && <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">Unsaved</Badge>}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-xl">{skill.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <Switch
+                checked={form.enabled}
+                onCheckedChange={v => {
+                  update({ enabled: v });
+                  upsert.mutate({ skillType: skill.skillType, provider: form.provider, model: form.model, systemPrompt: form.systemPrompt, userPromptTemplate: form.userPromptTemplate, enabled: v });
+                }}
+              />
+              <span className="text-xs text-muted-foreground">{form.enabled ? "On" : "Off"}</span>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(e => !e)}>
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+
+        {/* Collapsed summary row */}
+        {!expanded && (
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <Badge variant="secondary" className="text-xs">{PROVIDER_LABELS[form.provider] ?? form.provider}</Badge>
+            {form.model && <span className="text-xs text-muted-foreground font-mono">{form.model}</span>}
+            {form.provider !== "manus_builtin" && (
+              <span className="text-xs text-muted-foreground">{skill.apiKey ? "🔑 Key configured" : "⚠️ No API key"}</span>
+            )}
+          </div>
+        )}
+      </CardHeader>
+
+      {expanded && (
+        <CardContent className="space-y-5 pt-0">
+          {/* Provider + Model */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs mb-1.5 block">Provider</Label>
+              <Select value={form.provider} onValueChange={v => update({ provider: v, model: PROVIDER_MODELS[v]?.[0] ?? "" })}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PROVIDER_LABELS).map(([v, l]) => (
+                    <SelectItem key={v} value={v}>{l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Model</Label>
+              <div className="flex gap-1">
+                <Input
+                  className="h-8 text-sm font-mono"
+                  value={form.model}
+                  onChange={e => update({ model: e.target.value })}
+                  placeholder={suggestedModels[0] ?? "e.g. gpt-4o"}
+                  list={`models-${skill.skillType}`}
+                />
+                <datalist id={`models-${skill.skillType}`}>
+                  {suggestedModels.map(m => <option key={m} value={m} />)}
+                </datalist>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Suggestions: {suggestedModels.slice(0, 3).join(", ")}</p>
+            </div>
+          </div>
+
+          {/* API Key (hidden for manus_builtin) */}
+          {form.provider !== "manus_builtin" && (
+            <div>
+              <Label className="text-xs mb-1.5 block">API Key</Label>
+              <div className="flex gap-1">
+                <Input
+                  className="h-8 text-sm font-mono"
+                  type={showKey ? "text" : "password"}
+                  value={form.apiKey}
+                  onChange={e => update({ apiKey: e.target.value })}
+                  placeholder={skill.apiKey ? "••••••••••••••••  (stored — enter to replace)" : "sk-..."}
+                />
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setShowKey(s => !s)}>
+                  {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Stored encrypted. Leave blank to keep the existing key.</p>
+            </div>
+          )}
+
+          {/* Azure Base URL */}
+          {form.provider === "azure_openai" && (
+            <div>
+              <Label className="text-xs mb-1.5 block">Azure Endpoint Base URL</Label>
+              <Input
+                className="h-8 text-sm"
+                value={form.baseUrl}
+                onChange={e => update({ baseUrl: e.target.value })}
+                placeholder="https://your-resource.openai.azure.com/openai/deployments/gpt-4o"
+              />
+            </div>
+          )}
+
+          {/* System Prompt */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs">System Prompt</Label>
+              <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                onClick={() => reset.mutate({ skillType: skill.skillType })}>
+                <RotateCcw className="h-3 w-3" />Reset to default
+              </Button>
+            </div>
+            <Textarea
+              className="text-xs font-mono min-h-[120px] resize-y"
+              value={form.systemPrompt}
+              onChange={e => update({ systemPrompt: e.target.value })}
+            />
+          </div>
+
+          {/* User Prompt Template */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs">User Prompt Template</Label>
+              <div className="flex gap-1 flex-wrap">
+                {templateVars.map(v => (
+                  <code key={v} className="text-xs bg-muted px-1.5 py-0.5 rounded border font-mono text-muted-foreground">
+                    {`{{${v}}}`}
+                  </code>
+                ))}
+              </div>
+            </div>
+            <Textarea
+              className="text-xs font-mono min-h-[140px] resize-y"
+              value={form.userPromptTemplate}
+              onChange={e => update({ userPromptTemplate: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Use <code className="bg-muted px-1 rounded">{`{{variableName}}`}</code> placeholders — they are filled at runtime from the relevant record.
+            </p>
+          </div>
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`rounded-lg border p-3 text-xs ${testResult.success ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
+              <div className="flex items-center gap-2 mb-2 font-medium">
+                {testResult.success
+                  ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  : <XCircle className="h-4 w-4 text-red-600" />}
+                {testResult.success ? `Success — ${testResult.provider} / ${testResult.model}` : "Test Failed"}
+              </div>
+              <pre className="whitespace-pre-wrap break-words text-xs font-mono max-h-48 overflow-y-auto">
+                {testResult.response}
+              </pre>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-between pt-1">
+            <Button
+              size="sm" variant="outline"
+              disabled={test.isPending}
+              onClick={() => { setTestResult(null); test.mutate({ skillType: skill.skillType }); }}
+            >
+              {test.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1.5" />}
+              Test with Sample Data
+            </Button>
+            <Button
+              size="sm"
+              disabled={!dirty || upsert.isPending}
+              onClick={() => upsert.mutate({
+                skillType: skill.skillType,
+                provider: form.provider as any,
+                model: form.model || undefined,
+                apiKey: form.apiKey || undefined,
+                baseUrl: form.baseUrl || undefined,
+                systemPrompt: form.systemPrompt,
+                userPromptTemplate: form.userPromptTemplate,
+                enabled: form.enabled,
+              })}
+            >
+              {upsert.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function AiSkillsTab() {
+  const { data: skills = [], isLoading } = trpc.aiSkills.list.useQuery();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-primary/10">
+          <Brain className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-base">AI Skills Configuration</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Each skill is an AI task with its own provider, model, API key, and editable prompts.
+            Choose from Manus Built-in (no key needed), OpenAI, Anthropic, or Google Gemini for each task independently.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 text-xs text-muted-foreground bg-muted/40 rounded-lg p-3 border">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {Object.entries(PROVIDER_LABELS).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-1.5">
+              <div className={`h-2 w-2 rounded-full ${k === "manus_builtin" ? "bg-blue-500" : k === "openai" ? "bg-green-500" : k === "anthropic" ? "bg-orange-500" : k === "google_gemini" ? "bg-purple-500" : "bg-slate-500"}`} />
+              <span>{v}</span>
+            </div>
+          ))}
+        </div>
+        <p>Manus Built-in requires no API key. All other providers require you to enter your own key — stored encrypted per skill.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {(skills as any[]).map((skill: any) => (
+            <SkillCard key={skill.skillType} skill={skill} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

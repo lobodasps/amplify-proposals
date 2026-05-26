@@ -839,3 +839,106 @@ export const notifications = mysqlTable("notifications", {
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ─── AI Skills ────────────────────────────────────────────────────────────────
+// Each "skill" is a named AI task with its own provider, model, key, and prompts.
+export const aiProviderEnum = mysqlEnum("ai_provider", [
+  "manus_builtin",
+  "openai",
+  "anthropic",
+  "google_gemini",
+  "azure_openai",
+]);
+
+export const aiSkillTypeEnum = mysqlEnum("ai_skill_type", [
+  "rfp_shredder",
+  "resume_tailor",
+  "go_no_go_advisor",
+  "opportunity_scorer",
+  "contract_analyzer",
+  "asset_tagger",
+  "proposal_writer",
+  "opportunity_ingestion",
+  "proposal_scorer",
+  "xml_shredder",
+  "wiki_compiler",
+  "agent_guidelines",
+]);
+
+export const aiSkills = mysqlTable("ai_skills", {
+  id: int("id").autoincrement().primaryKey(),
+  skillType: varchar("skillType", { length: 64 }).notNull().unique(),
+  displayName: varchar("displayName", { length: 128 }).notNull(),
+  description: text("description"),
+  provider: varchar("provider", { length: 64 }).notNull().default("manus_builtin"),
+  model: varchar("model", { length: 128 }),
+  apiKey: text("apiKey"),
+  baseUrl: varchar("baseUrl", { length: 512 }),
+  systemPrompt: text("systemPrompt").notNull(),
+  userPromptTemplate: text("userPromptTemplate").notNull(),
+  templateVariables: text("templateVariables"),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiSkill = typeof aiSkills.$inferSelect;
+export type InsertAiSkill = typeof aiSkills.$inferInsert;
+
+// ─── Pattern 1: XML Document Shreds ──────────────────────────────────────────
+// Stores the structured XML output of the document shredder for each uploaded file.
+export const documentShreds = mysqlTable("document_shreds", {
+  id: int("id").autoincrement().primaryKey(),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 1024 }).notNull(),
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileSize: int("fileSize"),
+  xmlContent: text("xmlContent"),
+  metadata: text("metadata"),
+  proposalId: int("proposalId"),
+  pursuitId: int("pursuitId"),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type DocumentShred = typeof documentShreds.$inferSelect;
+export type InsertDocumentShred = typeof documentShreds.$inferInsert;
+
+// ─── Pattern 2: RFP Wikis ─────────────────────────────────────────────────────
+// Living Markdown wiki synthesized from shredded XML — replaces naive RAG chunking.
+export const rfpWikis = mysqlTable("rfp_wikis", {
+  id: int("id").autoincrement().primaryKey(),
+  shredId: int("shredId").notNull(),
+  proposalId: int("proposalId"),
+  wikiContent: text("wikiContent"),
+  evaluationCriteria: text("evaluationCriteria"),
+  keyRequirements: text("keyRequirements"),
+  keyDates: text("keyDates"),
+  keyPersonnel: text("keyPersonnel"),
+  tokenEstimate: int("tokenEstimate"),
+  compiledAt: timestamp("compiledAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdBy: int("createdBy"),
+});
+export type RfpWiki = typeof rfpWikis.$inferSelect;
+export type InsertRfpWiki = typeof rfpWikis.$inferInsert;
+
+// ─── Pattern 3: Agent Guidelines ─────────────────────────────────────────────
+// CLAUDE.md-style success criteria and multi-approach records per task.
+export const agentGuidelines = mysqlTable("agent_guidelines", {
+  id: int("id").autoincrement().primaryKey(),
+  skillType: varchar("skillType", { length: 64 }).notNull(),
+  proposalId: int("proposalId"),
+  pursuitId: int("pursuitId"),
+  sectionName: varchar("sectionName", { length: 256 }),
+  successCriteria: text("successCriteria"),
+  approaches: text("approaches"),
+  chosenApproachIndex: int("chosenApproachIndex"),
+  choiceRationale: text("choiceRationale"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AgentGuideline = typeof agentGuidelines.$inferSelect;
+export type InsertAgentGuideline = typeof agentGuidelines.$inferInsert;
