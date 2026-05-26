@@ -32,6 +32,7 @@ import OpportunityDetail from "./pages/OpportunityDetail";
 import DocumentShredder from "./pages/DocumentShredder";
 import RfpWiki from "./pages/RfpWiki";
 import AgentGuidelines from "./pages/AgentGuidelines";
+import ProposalScorer from "./pages/ProposalScorer";
 
 function Router() {
   return (
@@ -64,6 +65,7 @@ function Router() {
       <Route path="/document-shredder" component={DocumentShredder} />
       <Route path="/rfp-wiki" component={RfpWiki} />
       <Route path="/agent-guidelines" component={AgentGuidelines} />
+      <Route path="/proposal-scorer" component={ProposalScorer} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

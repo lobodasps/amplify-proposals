@@ -244,10 +244,24 @@ export const agentGuidelinesRouter = router({
           rfpRequirements: input.rfpContext?.slice(0, 4000) ?? "No RFP context provided",
           evaluationCriteria: input.successCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n"),
         },
+        extraUserContent: [{ type: "text" as const, text: `
+In addition to the per-criterion scores, you MUST return an "annotations" array.
+Each annotation identifies a SPECIFIC verbatim passage in the proposal text that fails to meet a criterion or needs improvement.
+Rules for annotations:
+- "exactText" must be a verbatim substring of the proposal text (copy it exactly, including punctuation)
+- "exactText" should be 10-120 characters — a phrase or sentence, not a single word or an entire paragraph
+- "severity" must be exactly one of: "critical", "warning", or "suggestion"
+  - critical = missing required element or directly contradicts an evaluation criterion
+  - warning = present but weak, vague, or lacking specificity
+  - suggestion = could be strengthened or made more compelling
+- "criterion" is the short name of the criterion this annotation relates to
+- "suggestion" is a specific, actionable fix for this exact passage (1-2 sentences)
+- Include 3-12 annotations covering the most important issues across the text
+- Only annotate passages that genuinely need improvement — do not annotate strong passages` }],
         responseFormat: {
           type: "json_schema",
           json_schema: {
-            name: "criteria_scores",
+            name: "scored_proposal",
             strict: true,
             schema: {
               type: "object",
@@ -269,10 +283,24 @@ export const agentGuidelinesRouter = router({
                     additionalProperties: false,
                   },
                 },
+                annotations: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      exactText: { type: "string" },
+                      criterion: { type: "string" },
+                      severity: { type: "string" },
+                      suggestion: { type: "string" },
+                    },
+                    required: ["exactText", "criterion", "severity", "suggestion"],
+                    additionalProperties: false,
+                  },
+                },
                 summary: { type: "string" },
                 topImprovements: { type: "array", items: { type: "string" } },
               },
-              required: ["overallScore", "overallPassed", "criteriaScores", "summary", "topImprovements"],
+              required: ["overallScore", "overallPassed", "criteriaScores", "annotations", "summary", "topImprovements"],
               additionalProperties: false,
             },
           },
@@ -291,6 +319,7 @@ export const agentGuidelinesRouter = router({
           overallScore: 0,
           overallPassed: false,
           criteriaScores: [],
+          annotations: [] as Array<{ exactText: string; criterion: string; severity: string; suggestion: string }>,
           summary: "Could not parse scores.",
           topImprovements: [],
           _provider: result._provider,

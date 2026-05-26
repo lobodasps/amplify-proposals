@@ -10,6 +10,7 @@
  * This page is the "pre-flight checklist" before any proposal section is written.
  */
 import { useState } from "react";
+import AnnotatedProposalViewer, { type Annotation } from "@/components/AnnotatedProposalViewer";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ interface ScoreResult {
   overallScore: number;
   overallPassed: boolean;
   criteriaScores: CriterionScore[];
+  annotations: Annotation[];
   summary: string;
   topImprovements: string[];
 }
@@ -476,69 +478,100 @@ export default function AgentGuidelines() {
           </Card>
 
           {scoreResult && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Score Results</CardTitle>
-                  <div className={`text-2xl font-bold ${scoreColor(scoreResult.overallScore)}`}>
-                    {scoreResult.overallScore}/100
+            <div className="space-y-4">
+              {/* Score header card */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Score Results</CardTitle>
+                    <div className={`text-2xl font-bold ${scoreColor(scoreResult.overallScore)}`}>
+                      {scoreResult.overallScore}/100
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {scoreResult.overallPassed ? (
-                    <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-200">
-                      <CheckCircle2 className="h-3 w-3 mr-1" /> Passed
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-red-500/10 text-red-600 border-red-200">
-                      <XCircle className="h-3 w-3 mr-1" /> Needs Revision
-                    </Badge>
+                  <div className="flex items-center gap-2">
+                    {scoreResult.overallPassed ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-200">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> Passed
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-red-500/10 text-red-600 border-red-200">
+                        <XCircle className="h-3 w-3 mr-1" /> Needs Revision
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <Progress value={scoreResult.overallScore} className="h-2" />
+                  <p className="text-sm text-muted-foreground">{scoreResult.summary}</p>
+                  {scoreResult.topImprovements.length > 0 && (
+                    <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200">
+                      <p className="text-xs font-medium text-amber-700 flex items-center gap-1 mb-2">
+                        <AlertTriangle className="h-3 w-3" /> Top Improvements
+                      </p>
+                      <ul className="space-y-1">
+                        {scoreResult.topImprovements.map((imp, i) => (
+                          <li key={i} className="text-xs text-amber-600">{i + 1}. {imp}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Progress value={scoreResult.overallScore} className="h-2" />
+                </CardContent>
+              </Card>
 
-                <p className="text-sm text-muted-foreground">{scoreResult.summary}</p>
+              {/* Inline annotated text viewer */}
+              {scoreResult.annotations && scoreResult.annotations.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                      <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                      Inline Annotations — hover highlights to see fixes
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Color-coded passages: red = critical gap, amber = weak language, blue = improvement opportunity
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <AnnotatedProposalViewer
+                      text={outputToScore}
+                      annotations={scoreResult.annotations}
+                      showLegend={true}
+                    />
+                  </CardContent>
+                </Card>
+              )}
 
-                {scoreResult.topImprovements.length > 0 && (
-                  <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200">
-                    <p className="text-xs font-medium text-amber-700 flex items-center gap-1 mb-2">
-                      <AlertTriangle className="h-3 w-3" /> Top Improvements
-                    </p>
-                    <ul className="space-y-1">
-                      {scoreResult.topImprovements.map((imp, i) => (
-                        <li key={i} className="text-xs text-amber-600">
-                          {i + 1}. {imp}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <ScrollArea className="h-48">
-                  <div className="space-y-3">
-                    {scoreResult.criteriaScores.map((cs, i) => (
-                      <div key={i} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-medium text-foreground flex items-center gap-1">
-                            {cs.passed
-                              ? <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                              : <XCircle className="h-3 w-3 text-red-400" />}
-                            {cs.criterion}
-                          </p>
-                          <span className={`text-xs font-bold ${scoreColor(cs.score)}`}>{cs.score}</span>
+              {/* Per-criterion breakdown */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Criteria Breakdown</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <ScrollArea className="h-48">
+                    <div className="space-y-3">
+                      {scoreResult.criteriaScores.map((cs, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-foreground flex items-center gap-1">
+                              {cs.passed
+                                ? <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                : <XCircle className="h-3 w-3 text-red-400" />}
+                              {cs.criterion}
+                            </p>
+                            <span className={`text-xs font-bold ${scoreColor(cs.score)}`}>{cs.score}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground pl-4">{cs.feedback}</p>
+                          {!cs.passed && (
+                            <p className="text-xs text-amber-600 pl-4 italic">{cs.suggestion}</p>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground pl-4">{cs.feedback}</p>
-                        {!cs.passed && (
-                          <p className="text-xs text-amber-600 pl-4 italic">{cs.suggestion}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
           )}
         </div>
       )}

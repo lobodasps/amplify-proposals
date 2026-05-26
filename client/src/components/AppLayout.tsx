@@ -46,6 +46,7 @@ import {
   Library,
   Code2,
   Cpu,
+  BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +77,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Doc Shredder", href: "/document-shredder", icon: Code2, badge: "AI" },
   { label: "RFP Wiki", href: "/rfp-wiki", icon: Cpu, badge: "AI" },
   { label: "Agent Guidelines", href: "/agent-guidelines", icon: Target, badge: "AI" },
+  { label: "Proposal Scorer", href: "/proposal-scorer", icon: BarChart2, badge: "AI" },
   { label: "InDesign Export", href: "/indesign-export", icon: Package },
   { label: "Analytics", href: "/analytics", icon: BarChart3, roles: ["administrator", "executive", "business_development", "admin"] },
   { label: "Resource Library", href: "/resource-library", icon: Library },
