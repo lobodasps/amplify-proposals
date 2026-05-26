@@ -450,22 +450,67 @@ export type InsertComment = typeof comments.$inferInsert;
 
 export const contracts = mysqlTable("contracts", {
   id: int("id").autoincrement().primaryKey(),
+  // Links to proposal pipeline
   proposalId: int("proposalId"),
   pursuitId: int("pursuitId"),
   projectId: int("projectId"),
+  sourceOpportunityId: int("sourceOpportunityId"), // FK to opportunities — set when converted
+  // Core identification
   clientId: int("clientId"),
   clientName: varchar("clientName", { length: 256 }),
   title: varchar("title", { length: 512 }).notNull(),
   contractNumber: varchar("contractNumber", { length: 128 }),
+  projectNumber: varchar("projectNumber", { length: 128 }), // e.g. 25-440
+  // Status and contract vehicle
   status: mysqlEnum("contract_status", [
-    "draft", "negotiation", "executed", "active", "completed", "terminated",
+    "draft", "negotiation", "executed", "active", "on_hold", "completed", "terminated",
   ]).default("draft"),
-  value: float("value"),
+  contractVehicle: varchar("contractVehicle", { length: 64 }).default("standalone"), // standalone | msa | idiq_on_call | blanket
+  companyRole: varchar("companyRole", { length: 32 }).default("prime"), // prime | subconsultant
+  billingMethods: json("billingMethods"), // array: lump_sum | time_and_materials | cost_plus | unit_price
+  // Parties
+  ownerName: varchar("ownerName", { length: 256 }), // ultimate recipient (e.g. NJDOT)
+  primeName: varchar("primeName", { length: 256 }), // prime contractor if we are sub
+  // Key people
+  contractManagerId: int("contractManagerId"),
+  projectManagerName: varchar("projectManagerName", { length: 256 }),
+  accountingContactName: varchar("accountingContactName", { length: 256 }),
+  // Classification
+  serviceLines: json("serviceLines"),
+  primaryLocation: varchar("primaryLocation", { length: 256 }),
+  isPublic: boolean("isPublic").default(true),
+  // Dates
   startDate: timestamp("startDate"),
   endDate: timestamp("endDate"),
   executionDate: timestamp("executionDate"),
-  serviceLines: json("serviceLines"),
-  contractManagerId: int("contractManagerId"),
+  // Financial — all values in dollars (float)
+  value: float("value").default(0), // initial contract value
+  hasNteCeiling: boolean("hasNteCeiling").default(false),
+  nteCeilingAmount: float("nteCeilingAmount"),
+  billingBasis: varchar("billingBasis", { length: 32 }).default("authorized"), // authorized | nte_ceiling
+  // Billing data (from QuickBooks or manual entry)
+  totalBilledAmount: float("totalBilledAmount").default(0),
+  retainageAmount: float("retainageAmount").default(0),
+  lastInvoicedDate: timestamp("lastInvoicedDate"),
+  billingPercentage: float("billingPercentage").default(0),
+  isBillingOverCeiling: boolean("isBillingOverCeiling").default(false),
+  computedContractValue: float("computedContractValue").default(0), // initial + amendments
+  qbName: varchar("qbName", { length: 256 }), // QuickBooks project name
+  timeCode: varchar("timeCode", { length: 128 }), // Timekeeping identifier
+  // Compliance flags
+  coiRequired: boolean("coiRequired").default(false),
+  coiReceived: boolean("coiReceived").default(false),
+  coiExpirationDate: timestamp("coiExpirationDate"),
+  fullyExecutedContractReceived: boolean("fullyExecutedContractReceived").default(false),
+  primeAgreementRequired: boolean("primeAgreementRequired").default(false),
+  primeAgreementOnFile: boolean("primeAgreementOnFile").default(false),
+  clientBillingInfoOnFile: boolean("clientBillingInfoOnFile").default(false),
+  // Hierarchy (for task orders / sub-projects)
+  parentContractId: int("parentContractId"), // self-referencing for child contracts
+  level: int("level").default(1), // 1=root, 2=task order, 3=sub-project
+  nodeType: varchar("nodeType", { length: 32 }).default("contract"), // contract | project | sub_project | phase
+  budgetBehavior: varchar("budgetBehavior", { length: 32 }).default("draws_from_parent"), // draws_from_parent | adds_to_parent | independent
+  // Documents and notes
   documentUrl: text("documentUrl"),
   documentKey: text("documentKey"),
   milestones: json("milestones"),
@@ -473,6 +518,24 @@ export const contracts = mysqlTable("contracts", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+// ─── Contract Amendments ──────────────────────────────────────────────────────
+
+export const contractAmendments = mysqlTable("contract_amendments", {
+  id: int("id").autoincrement().primaryKey(),
+  contractId: int("contractId").notNull(),
+  amendmentType: varchar("amendmentType", { length: 64 }).default("amendment"), // amendment | change_order | task_order
+  amendmentNumber: varchar("amendmentNumber", { length: 64 }), // e.g. CO-001, TO-002
+  amendmentDate: timestamp("amendmentDate"),
+  amount: float("amount").notNull().default(0), // positive = add, negative = deduct
+  description: text("description"),
+  approvalStatus: varchar("approvalStatus", { length: 32 }).default("pending"), // pending | approved | rejected
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ContractAmendment = typeof contractAmendments.$inferSelect;
+export type InsertContractAmendment = typeof contractAmendments.$inferInsert;
 
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;

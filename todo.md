@@ -51,6 +51,14 @@
 - [x] Checkpoint save
 - [x] Deliver live preview to user
 
+## Phase 1 — Awarded → Draft Contract Conversion (v1.3)
+- [x] Extend contracts schema with Accordly-compatible fields: contractVehicle, companyRole, billingMethods, NTE ceiling, QB fields, compliance flags, hierarchy, amendments table
+- [x] Push schema migration to TiDB (contract_amendments table added, contracts table extended)
+- [x] Add contractsRouter.convertFromPursuit mutation: validates award status, prevents duplicates, seeds Draft contract from pursuit data
+- [x] Add contractsRouter.update mutation for contract field editing
+- [x] Rewrite Pursuits.tsx with real tRPC data + "Convert to Contract" button on Awarded pursuits
+- [x] ConvertToContractDialog: preview card, contract vehicle selector, company role selector, project number, notes, confirmation warning
+
 ## Bug Fixes Applied (v1.2)
 - [x] analytics.ts: Replace raw SQL NOT IN with Drizzle notInArray/inArray to fix TiDB crash
 - [x] analytics.ts: Wrap all DB queries in try/catch with fallback demo data

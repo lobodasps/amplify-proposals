@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts } from "../../drizzle/schema";
+import { personnel, projects, contracts, pursuits } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 export const personnelRouter = router({
@@ -107,28 +107,114 @@ export const contractsRouter = router({
 
   create: protectedProcedure
     .input(z.object({
-      contractNumber: z.string(),
+      contractNumber: z.string().optional(),
       title: z.string(),
       clientId: z.number().optional(),
+      clientName: z.string().optional(),
       contractValue: z.number().optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
-      serviceLine: z.string().optional(),
+      serviceLines: z.array(z.string()).optional(),
+      contractVehicle: z.string().optional(),
+      companyRole: z.string().optional(),
+      primaryLocation: z.string().optional(),
+      notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(contracts).values({
+      const result = await db.insert(contracts).values({
         contractNumber: input.contractNumber,
         title: input.title,
         clientId: input.clientId,
-        value: input.contractValue,
+        clientName: input.clientName,
+        value: input.contractValue ?? 0,
+        computedContractValue: input.contractValue ?? 0,
         startDate: input.startDate,
         endDate: input.endDate,
-        serviceLines: input.serviceLine ? JSON.stringify([input.serviceLine]) : null,
+        serviceLines: input.serviceLines ? JSON.stringify(input.serviceLines) : null,
+        contractVehicle: input.contractVehicle ?? "standalone",
+        companyRole: input.companyRole ?? "prime",
+        primaryLocation: input.primaryLocation,
+        notes: input.notes,
         status: "draft",
         contractManagerId: ctx.user.id,
       });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  // Convert an awarded pursuit into a Draft contract
+  convertFromPursuit: protectedProcedure
+    .input(z.object({
+      pursuitId: z.number(),
+      // Optional overrides from the confirmation dialog
+      contractVehicle: z.string().optional(),
+      companyRole: z.string().optional(),
+      projectNumber: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      // Load the pursuit
+      const [pursuit] = await db.select().from(pursuits).where(eq(pursuits.id, input.pursuitId)).limit(1);
+      if (!pursuit) throw new Error("Pursuit not found");
+      if (pursuit.status !== "award") throw new Error("Pursuit must be in Awarded status to convert to contract");
+      // Check if a contract already exists for this pursuit
+      const existing = await db.select({ id: contracts.id }).from(contracts).where(eq(contracts.pursuitId, input.pursuitId)).limit(1);
+      if (existing.length > 0) throw new Error("A contract already exists for this pursuit");
+      // Create the draft contract pre-populated from the pursuit
+      const result = await db.insert(contracts).values({
+        pursuitId: pursuit.id,
+        clientId: pursuit.clientId ?? undefined,
+        clientName: pursuit.clientName ?? undefined,
+        title: pursuit.title,
+        projectNumber: input.projectNumber ?? undefined,
+        status: "draft",
+        contractVehicle: input.contractVehicle ?? "standalone",
+        companyRole: input.companyRole ?? "prime",
+        value: pursuit.awardedValue ?? pursuit.estimatedValue ?? 0,
+        computedContractValue: pursuit.awardedValue ?? pursuit.estimatedValue ?? 0,
+        serviceLines: pursuit.serviceLines,
+        notes: input.notes ?? pursuit.notes ?? undefined,
+        contractManagerId: ctx.user.id,
+        level: 1,
+        nodeType: "contract",
+        budgetBehavior: "independent",
+        isPublic: true,
+      });
+      const newContractId = (result as any).insertId;
+      return { success: true, contractId: newContractId };
+    }),
+
+  // Update a contract
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.string().optional(),
+      title: z.string().optional(),
+      contractNumber: z.string().optional(),
+      projectNumber: z.string().optional(),
+      value: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      contractVehicle: z.string().optional(),
+      companyRole: z.string().optional(),
+      notes: z.string().optional(),
+      coiRequired: z.boolean().optional(),
+      coiReceived: z.boolean().optional(),
+      fullyExecutedContractReceived: z.boolean().optional(),
+      primeAgreementRequired: z.boolean().optional(),
+      primeAgreementOnFile: z.boolean().optional(),
+      clientBillingInfoOnFile: z.boolean().optional(),
+      qbName: z.string().optional(),
+      timeCode: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const { id, ...updates } = input;
+      await db.update(contracts).set(updates as any).where(eq(contracts.id, id));
       return { success: true };
     }),
 });

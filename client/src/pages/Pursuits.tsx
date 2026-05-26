@@ -1,70 +1,296 @@
 import AppLayout from "@/components/AppLayout";
+import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Link } from "wouter";
-import { Plus, Search, Filter, Target, Calendar, DollarSign, User } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { useState } from "react";
+import { useLocation } from "wouter";
+import { Plus, Search, Filter, Target, Calendar, DollarSign, User, Trophy, FileText, AlertCircle } from "lucide-react";
 
-const PURSUITS = [
-  { id: 1, title: "NJDOT Route 9 Bridge Inspection Services", client: "NJDOT", status: "pursue", statusLabel: "Pursue", statusColor: "status-pursue", due: "2026-06-15", value: "$2.4M", service: "Special Inspections", lead: "M. Torres", probability: 65 },
-  { id: 2, title: "NYC DDC Community Center CM Services", client: "NYC DDC", status: "submit", statusLabel: "Submitted", statusColor: "status-submit", due: "2026-06-03", value: "$5.1M", service: "Construction Management", lead: "J. Rivera", probability: 80 },
-  { id: 3, title: "NYCDOT Traffic Signal Modernization", client: "NYC DOT", status: "qualify", statusLabel: "Qualify", statusColor: "status-qualify", due: "2026-07-08", value: "$890K", service: "Traffic Engineering", lead: "A. Patel", probability: 40 },
-  { id: 4, title: "NJ Transit Station Streetscape Design", client: "NJ Transit", status: "identify", statusLabel: "Identify", statusColor: "status-identify", due: "2026-08-01", value: "$1.2M", service: "Landscape / Streetscape", lead: "S. Chen", probability: 30 },
-  { id: 5, title: "NJDEP Wetlands Assessment Program", client: "NJDEP", status: "pursue", statusLabel: "Pursue", statusColor: "status-pursue", due: "2026-06-28", value: "$650K", service: "Environmental", lead: "R. Kim", probability: 55 },
-  { id: 6, title: "PANYNJ Terminal Expansion Inspection", client: "Port Authority NY/NJ", status: "award", statusLabel: "Awarded", statusColor: "status-award", due: "2026-05-01", value: "$3.8M", service: "Special Inspections", lead: "M. Torres", probability: 100 },
-  { id: 7, title: "NYC Parks Greenway Landscape Study", client: "NYC Parks", status: "lost", statusLabel: "Lost", statusColor: "status-lost", due: "2026-04-15", value: "$420K", service: "Landscape / Streetscape", lead: "S. Chen", probability: 0 },
-];
+const STATUS_LABELS: Record<string, string> = {
+  identify: "Identify", qualify: "Qualify", pursue: "Pursue",
+  submit: "Submitted", award: "Awarded", lost: "Lost", no_go: "No-Go",
+};
+const STATUS_COLORS: Record<string, string> = {
+  identify: "status-identify", qualify: "status-qualify", pursue: "status-pursue",
+  submit: "status-submit", award: "status-award", lost: "status-lost", no_go: "status-no-go",
+};
 
-export default function Pursuits() {
+// ── Convert to Contract Dialog ─────────────────────────────────────────────────
+function ConvertToContractDialog({
+  pursuit,
+  open,
+  onClose,
+}: {
+  pursuit: any;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [, navigate] = useLocation();
+  const [contractVehicle, setContractVehicle] = useState("standalone");
+  const [companyRole, setCompanyRole] = useState("prime");
+  const [projectNumber, setProjectNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const utils = trpc.useUtils();
+
+  const convertMutation = trpc.contracts.convertFromPursuit.useMutation({
+    onSuccess: (data) => {
+      toast.success("Draft contract created successfully!", {
+        description: `Contract seeded from "${pursuit.title}". Review and complete the contract details.`,
+        action: { label: "View Contracts", onClick: () => navigate("/contracts") },
+      });
+      utils.contracts.list.invalidate();
+      onClose();
+    },
+    onError: (err) => {
+      toast.error("Failed to create contract", { description: err.message });
+    },
+  });
+
+  const value = pursuit.awardedValue ?? pursuit.estimatedValue;
+  const valueFormatted = value ? `$${(value / 1000000).toFixed(2)}M` : "—";
+
   return (
-    <AppLayout title="Pursuits">
-      <div className="p-6 space-y-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1 max-w-md">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search pursuits..." className="pl-9" />
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            Convert Awarded Pursuit to Contract
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Preview card */}
+        <div className="rounded-xl border border-border/60 bg-muted/30 p-4 space-y-2 text-sm">
+          <div className="font-semibold text-foreground leading-snug">{pursuit.title}</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
+            <span className="flex items-center gap-1"><User className="w-3 h-3" />{pursuit.clientName ?? "—"}</span>
+            <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{valueFormatted}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium mt-1">
+            <Trophy className="w-3.5 h-3.5" /> Status will be preserved as Awarded
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-medium">Contract Vehicle</Label>
+              <Select value={contractVehicle} onValueChange={setContractVehicle}>
+                <SelectTrigger className="mt-1.5 h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standalone">Standalone</SelectItem>
+                  <SelectItem value="msa">MSA</SelectItem>
+                  <SelectItem value="idiq_on_call">IDIQ / On-Call</SelectItem>
+                  <SelectItem value="blanket">Blanket</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Filter className="w-4 h-4" /> Filter
-            </Button>
+            <div>
+              <Label className="text-xs font-medium">Our Role</Label>
+              <Select value={companyRole} onValueChange={setCompanyRole}>
+                <SelectTrigger className="mt-1.5 h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prime">Prime</SelectItem>
+                  <SelectItem value="subconsultant">Subconsultant</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-medium">Project Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              value={projectNumber}
+              onChange={e => setProjectNumber(e.target.value)}
+              placeholder="e.g. 25-440"
+              className="mt-1.5 h-9 text-sm"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-medium">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Initial contract notes..."
+              className="mt-1.5 text-sm resize-none"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>A <strong>Draft</strong> contract will be created and pre-populated with this pursuit's client, value, and service lines. You can complete all contract details in the Contracts module.</span>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button
+            size="sm"
+            className="bg-amplify-gradient text-white font-semibold gap-2"
+            onClick={() => convertMutation.mutate({
+              pursuitId: pursuit.id,
+              contractVehicle,
+              companyRole,
+              projectNumber: projectNumber || undefined,
+              notes: notes || undefined,
+            })}
+            disabled={convertMutation.isPending}
+          >
+            <FileText className="w-4 h-4" />
+            {convertMutation.isPending ? "Creating Contract..." : "Create Draft Contract"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Pursuits Page ─────────────────────────────────────────────────────────
+export default function Pursuits() {
+  const [search, setSearch] = useState("");
+  const [convertTarget, setConvertTarget] = useState<any | null>(null);
+  const { data: dbPursuits, isLoading } = trpc.pursuits.list.useQuery(undefined as any);
+
+  const pursuits = dbPursuits && dbPursuits.length > 0 ? dbPursuits : [];
+
+  const filtered = pursuits.filter((p: any) =>
+    !search ||
+    p.title.toLowerCase().includes(search.toLowerCase()) ||
+    (p.clientName ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const safeServiceLines = (p: any): string[] => {
+    try {
+      const sl = p.serviceLines;
+      if (!sl) return [];
+      if (Array.isArray(sl)) return sl;
+      if (typeof sl === "string") return JSON.parse(sl);
+      return [];
+    } catch { return []; }
+  };
+
+  return (
+    <AppLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-display font-bold text-foreground">Pursuits</h1>
+            <p className="text-muted-foreground mt-1">Track every pursuit from identification through award</p>
           </div>
           <Button className="bg-amplify-gradient text-white font-semibold gap-2">
             <Plus className="w-4 h-4" /> New Pursuit
           </Button>
         </div>
 
-        <div className="grid gap-3">
-          {PURSUITS.map((p) => (
-            <Link key={p.id} href={`/pursuits/${p.id}`}>
-              <Card className="card-hover border-border/60 cursor-pointer">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Target className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <h3 className="font-semibold text-foreground text-sm leading-snug">{p.title}</h3>
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0 ${p.statusColor}`}>{p.statusLabel}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1"><User className="w-3 h-3" />{p.client}</span>
-                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Due {p.due}</span>
-                        <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{p.value}</span>
-                        <Badge variant="outline" className="text-xs font-medium">{p.service}</Badge>
-                        <span className="text-muted-foreground">Lead: {p.lead}</span>
-                        <span className="font-semibold text-foreground">P(win): {p.probability}%</span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+        <div className="flex items-center gap-3 max-w-md">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search pursuits..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Filter className="w-4 h-4" /> Filter
+          </Button>
         </div>
+
+        {isLoading ? (
+          <div className="grid gap-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <Target className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No pursuits found</p>
+            <p className="text-sm mt-1">Add your first pursuit to get started</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {filtered.map((p: any) => {
+              const isAwarded = p.status === "award";
+              const serviceLines = safeServiceLines(p);
+              const value = p.estimatedValue ? `$${(p.estimatedValue / 1000000).toFixed(1)}M` : "—";
+              const due = p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD";
+
+              return (
+                <Card key={p.id} className={`card-hover border-border/60 ${isAwarded ? "ring-1 ring-emerald-400/40" : ""}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isAwarded ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-primary/10"}`}>
+                        {isAwarded
+                          ? <Trophy className="w-5 h-5 text-emerald-600" />
+                          : <Target className="w-5 h-5 text-primary" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <h3 className="font-semibold text-foreground text-sm leading-snug">{p.title}</h3>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${STATUS_COLORS[p.status] ?? "status-identify"}`}>
+                              {STATUS_LABELS[p.status] ?? p.status}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1"><User className="w-3 h-3" />{p.clientName ?? "—"}</span>
+                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Due {due}</span>
+                          <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{value}</span>
+                          {serviceLines[0] && (
+                            <Badge variant="outline" className="text-xs font-medium">{serviceLines[0]}</Badge>
+                          )}
+                          {p.probability != null && (
+                            <span className="font-semibold text-foreground">P(win): {Math.round(p.probability)}%</span>
+                          )}
+                        </div>
+                      </div>
+                      {/* Convert to Contract button — only shown for Awarded pursuits */}
+                      {isAwarded && (
+                        <Button
+                          size="sm"
+                          className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConvertTarget(p);
+                          }}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Convert to Contract
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Convert to Contract Dialog */}
+      {convertTarget && (
+        <ConvertToContractDialog
+          pursuit={convertTarget}
+          open={!!convertTarget}
+          onClose={() => setConvertTarget(null)}
+        />
+      )}
     </AppLayout>
   );
 }
