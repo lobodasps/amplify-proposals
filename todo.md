@@ -51,6 +51,17 @@
 - [x] Checkpoint save
 - [x] Deliver live preview to user
 
+## Phase 2 — Supabase Integration & Contract → Project Handoff (v1.4)
+- [x] Install @supabase/supabase-js client
+- [x] Store SUPABASE_URL and SUPABASE_SECRET_KEY as environment secrets
+- [x] Create server/supabase.ts helper with testSupabaseConnection()
+- [x] Vitest test for Supabase connection — passes (16 tests total)
+- [x] Inspect live Supabase schema: clients, projects, profiles, companies, owners, phases, tasks, time_entries, billing_rules all confirmed
+- [x] Confirmed JPCL (fddf0d5c) and Strans (e45a26d6) company IDs in Supabase
+- [x] Add contractsRouter.activateContract mutation: generates contract/project numbers, updates Amplify contract to Active, creates project record in Supabase
+- [x] Rewrite Contracts.tsx with real tRPC data, KPI cards, Activate button on Draft contracts, ActivateContractDialog with company selector and billing method
+- [x] Post-activation: contract shows project number + "In Timekeeping" badge
+
 ## Phase 1 — Awarded → Draft Contract Conversion (v1.3)
 - [x] Extend contracts schema with Accordly-compatible fields: contractVehicle, companyRole, billingMethods, NTE ceiling, QB fields, compliance flags, hierarchy, amendments table
 - [x] Push schema migration to TiDB (contract_amendments table added, contracts table extended)

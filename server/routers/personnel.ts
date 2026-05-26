@@ -3,6 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { personnel, projects, contracts, pursuits } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
+import { supabase } from "../supabase";
 
 export const personnelRouter = router({
   list: protectedProcedure.query(async () => {
@@ -185,6 +186,85 @@ export const contractsRouter = router({
       });
       const newContractId = (result as any).insertId;
       return { success: true, contractId: newContractId };
+    }),
+
+  // Activate a contract and create a matching project in Supabase
+  activateContract: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      // Supabase-side fields
+      supabaseCompanyId: z.string().optional(), // UUID of JPCL or Strans in Supabase
+      supabaseOwnerId: z.string().optional(),   // UUID of the agency/owner in Supabase
+      defaultBillingMethod: z.enum(["hourly", "unit", "lump_sum", "cost_plus", "no_charge"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      // Load the contract
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.id)).limit(1);
+      if (!contract) throw new Error("Contract not found");
+      if (contract.status === "active") throw new Error("Contract is already active");
+
+      // Generate contract number if not already set
+      const now = new Date();
+      const year = now.getFullYear().toString().slice(-2);
+      const contractNumber = contract.contractNumber ?? `JPCL-${year}-${String(input.id).padStart(3, "0")}`;
+      const projectNumber = contract.projectNumber ?? `${year}-${String(input.id).padStart(3, "0")}`;
+
+      // 1. Update Amplify contract to Active with generated numbers
+      await db.update(contracts)
+        .set({
+          status: "active",
+          contractNumber,
+          projectNumber,
+        } as any)
+        .where(eq(contracts.id, input.id));
+
+      // 2. Create project record in Supabase for the timekeeping app
+      let supabaseProjectId: string | null = null;
+      let supabaseError: string | null = null;
+
+      try {
+        const projectPayload: Record<string, any> = {
+          project_number: projectNumber,
+          name: contract.title,
+          description: contract.notes ?? null,
+          client_id: null, // Will be linked manually in Vercel app if needed
+          company_id: input.supabaseCompanyId ?? null,
+          owner_id: input.supabaseOwnerId ?? null,
+          status: "active",
+          start_date: contract.startDate ? new Date(contract.startDate).toISOString().split("T")[0] : null,
+          end_date: contract.endDate ? new Date(contract.endDate).toISOString().split("T")[0] : null,
+          budget: contract.computedContractValue ?? null,
+          default_billing_method: input.defaultBillingMethod ?? "hourly",
+        };
+
+        const { data: sbProject, error: sbError } = await supabase
+          .from("projects")
+          .insert(projectPayload)
+          .select("id, project_number")
+          .single();
+
+        if (sbError) {
+          supabaseError = sbError.message;
+          console.error("[Supabase] Failed to create project:", sbError.message);
+        } else {
+          supabaseProjectId = sbProject?.id ?? null;
+          console.log(`[Supabase] Project created: ${sbProject?.project_number} (${supabaseProjectId})`);
+        }
+      } catch (err: any) {
+        supabaseError = err.message;
+        console.error("[Supabase] Exception creating project:", err.message);
+      }
+
+      return {
+        success: true,
+        contractNumber,
+        projectNumber,
+        supabaseProjectId,
+        supabaseError,
+      };
     }),
 
   // Update a contract
