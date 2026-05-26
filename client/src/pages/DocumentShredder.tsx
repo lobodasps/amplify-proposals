@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { RfpContextSelector, useRfpContext } from "@/components/RfpContextSelector";
+import AppLayout from "@/components/AppLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +59,10 @@ export default function DocumentShredder() {
   const [activeTab, setActiveTab] = useState("upload");
 
   const utils = trpc.useUtils();
-  const { data: shreds = [], isLoading: shredsLoading } = trpc.xmlShredder.list.useQuery(undefined);
+  const { pursuitId } = useRfpContext();
+  const { data: shreds = [], isLoading: shredsLoading } = trpc.xmlShredder.list.useQuery(
+    pursuitId ? { pursuitId } : undefined
+  );
   const shredMutation = trpc.xmlShredder.shred.useMutation();
   const deleteMutation = trpc.xmlShredder.delete.useMutation();
 
@@ -92,6 +97,7 @@ export default function DocumentShredder() {
         fileKey,
         mimeType: file.type,
         fileSize: file.size,
+        ...(pursuitId ? { pursuitId } : {}),
       });
 
       setProgress(100);
@@ -150,7 +156,10 @@ export default function DocumentShredder() {
   const displayShred = shredResult ?? (selectedShred?.xmlContent ? selectedShred : null);
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* RFP Context Selector */}
+      <RfpContextSelector />
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -407,5 +416,6 @@ export default function DocumentShredder() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AnnotatedProposalViewer, { type Annotation } from "@/components/AnnotatedProposalViewer";
+import AppLayout from "@/components/AppLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,7 @@ export default function ProposalScorer() {
   );
 
   return (
+    <AppLayout>
     <div className="h-full flex flex-col">
       {/* Page header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50">
@@ -492,5 +494,6 @@ The scorer will identify specific passages that fail to meet the evaluation crit
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

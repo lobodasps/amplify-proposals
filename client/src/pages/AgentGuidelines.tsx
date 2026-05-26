@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import AnnotatedProposalViewer, { type Annotation } from "@/components/AnnotatedProposalViewer";
+import { RfpContextSelector, useRfpContext } from "@/components/RfpContextSelector";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   ThumbsDown, ChevronRight, Zap, BarChart2, AlertTriangle, Plus, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import AppLayout from "@/components/AppLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ export default function AgentGuidelines() {
 
   const [activeStep, setActiveStep] = useState(1);
 
+  const { pursuitId, pursuit } = useRfpContext();
   const approachesMutation = trpc.agentGuidelines.suggestApproaches.useMutation();
   const scoreOutputMutation = trpc.agentGuidelines.scoreOutput.useMutation();
 
@@ -121,7 +124,10 @@ export default function AgentGuidelines() {
       const result = await scoreOutputMutation.mutateAsync({
         output: outputToScore,
         successCriteria: criteria,
-        rfpContext: rfpContext || undefined,
+        rfpContext: rfpContext || (pursuit
+          ? `RFP: ${pursuit.title} | Agency: ${pursuit.clientName ?? ""} | Due: ${pursuit.dueDate ?? ""}`
+          : undefined),
+        ...(pursuitId ? { pursuitId } : {}),
       });
       setScoreResult(result as ScoreResult);
       setActiveStep(4);
@@ -166,7 +172,10 @@ export default function AgentGuidelines() {
   ];
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* RFP Context Selector */}
+      <RfpContextSelector />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -576,5 +585,6 @@ export default function AgentGuidelines() {
         </div>
       )}
     </div>
+    </AppLayout>
   );
 }

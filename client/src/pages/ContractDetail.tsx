@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { getCompanyBadgeClass, KNOWN_COMPANIES } from "../../../shared/contractNumbers";
+import AppLayout from "@/components/AppLayout";
 import {
   ArrowLeft, Building2, DollarSign, FileText, Plus,
   ChevronRight, GitBranch, Pencil, Shield, ExternalLink,
@@ -332,6 +333,7 @@ export default function ContractDetail() {
   const nextStatuses = STATUS_FLOW[contract.status ?? "draft"] ?? [];
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
@@ -535,5 +537,6 @@ export default function ContractDetail() {
       {addChildTarget && <AddChildDialog parentId={addChildTarget.id} parentNumber={addChildTarget.num} parentLevel={addChildTarget.level} open={!!addChildTarget} onClose={() => setAddChildTarget(null)} onSuccess={() => refetch()} />}
       {addAmendTarget && <AddAmendmentDialog contractId={addAmendTarget.id} contractNumber={addAmendTarget.num} type={addAmendTarget.type} open={!!addAmendTarget} onClose={() => setAddAmendTarget(null)} onSuccess={() => refetch()} />}
     </div>
+    </AppLayout>
   );
 }

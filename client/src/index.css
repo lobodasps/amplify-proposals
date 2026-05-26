@@ -39,15 +39,15 @@
   --color-input: oklch(0.88 0.01 250);
   --color-ring: oklch(0.45 0.18 250);
 
-  /* Sidebar */
-  --color-sidebar: oklch(0.14 0.04 255);
-  --color-sidebar-foreground: oklch(0.92 0.02 250);
-  --color-sidebar-primary: oklch(0.60 0.18 250);
+  /* Sidebar — medium slate-blue, lighter and less harsh */
+  --color-sidebar: oklch(0.32 0.06 255);
+  --color-sidebar-foreground: oklch(0.94 0.02 250);
+  --color-sidebar-primary: oklch(0.74 0.18 250);
   --color-sidebar-primary-foreground: oklch(0.99 0 0);
-  --color-sidebar-accent: oklch(0.22 0.05 255);
-  --color-sidebar-accent-foreground: oklch(0.92 0.02 250);
-  --color-sidebar-border: oklch(0.22 0.04 255);
-  --color-sidebar-ring: oklch(0.60 0.18 250);
+  --color-sidebar-accent: oklch(0.40 0.07 255);
+  --color-sidebar-accent-foreground: oklch(0.96 0.02 250);
+  --color-sidebar-border: oklch(0.39 0.05 255);
+  --color-sidebar-ring: oklch(0.74 0.18 250);
 
   /* Chart colors */
   --color-chart-1: oklch(0.45 0.18 250);

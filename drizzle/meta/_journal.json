@@ -57,6 +57,13 @@
       "when": 1779836475952,
       "tag": "0007_whole_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1779837847410,
+      "tag": "0008_melted_swarm",
+      "breakpoints": true
     }
   ]
 }

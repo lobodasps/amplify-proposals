@@ -235,15 +235,15 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border flex-shrink-0 transition-all duration-200",
+        "hidden md:flex flex-col relative bg-sidebar border-r border-sidebar-border flex-shrink-0 transition-all duration-200",
         collapsed ? "w-16" : "w-60"
       )}>
         <SidebarContent />
         {/* Collapse Toggle */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 translate-x-full w-5 h-10 bg-sidebar border border-sidebar-border rounded-r-md flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors z-10"
-          style={{ left: collapsed ? "3.75rem" : "14.75rem" }}
+          className="absolute top-1/2 -translate-y-1/2 w-5 h-10 bg-sidebar border border-sidebar-border rounded-r-md flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors z-10"
+          style={{ right: "-1.25rem" }}
         >
           {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
         </button>
@@ -251,7 +251,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
       {/* Mobile Sidebar Overlay */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="md:hidden fixed inset-0 z-50 flex">
           <div className="fixed inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <aside className="relative w-64 bg-sidebar flex flex-col z-10">
             <SidebarContent />
@@ -264,7 +264,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
         {/* Top Bar */}
         <header className="h-14 border-b border-border bg-card flex items-center gap-3 px-4 flex-shrink-0">
           <button
-            className="lg:hidden p-1.5 rounded-md hover:bg-muted transition-colors"
+            className="md:hidden p-1.5 rounded-md hover:bg-muted transition-colors"
             onClick={() => setMobileOpen(true)}
           >
             <Menu className="w-5 h-5" />

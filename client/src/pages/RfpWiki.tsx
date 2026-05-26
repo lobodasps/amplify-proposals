@@ -22,6 +22,8 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import ReactMarkdown from "react-markdown";
+import { RfpContextSelector, useRfpContext } from "@/components/RfpContextSelector";
+import AppLayout from "@/components/AppLayout";
 
 export default function RfpWiki() {
   const [selectedShredId, setSelectedShredId] = useState<number | null>(null);
@@ -35,7 +37,10 @@ export default function RfpWiki() {
   const [activeSection, setActiveSection] = useState("overview");
 
   const utils = trpc.useUtils();
-  const { data: shreds = [], isLoading: shredsLoading } = trpc.xmlShredder.list.useQuery(undefined);
+  const { pursuitId } = useRfpContext();
+  const { data: shreds = [], isLoading: shredsLoading } = trpc.xmlShredder.list.useQuery(
+    pursuitId ? { pursuitId } : undefined
+  );
   const completedShreds = shreds.filter((s) => s.status === "complete");
 
   const { data: wiki, isLoading: wikiLoading } = trpc.rfpWiki.getByShredId.useQuery(
@@ -50,7 +55,11 @@ export default function RfpWiki() {
     if (!selectedShredId) { toast.error("Select a shredded document first"); return; }
     setCompiling(true);
     try {
-      await compileMutation.mutateAsync({ shredId: selectedShredId, firmContext });
+      await compileMutation.mutateAsync({
+        shredId: selectedShredId,
+        firmContext,
+        ...(pursuitId ? { pursuitId } : {}),
+      });
       utils.rfpWiki.getByShredId.invalidate({ shredId: selectedShredId });
       toast.success("Wiki compiled! Knowledge is now ready for proposal generation.");
     } catch (err: any) {
@@ -107,7 +116,10 @@ export default function RfpWiki() {
   ];
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* RFP Context Selector */}
+      <RfpContextSelector />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -327,5 +339,6 @@ export default function RfpWiki() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { FileText, Upload, Loader2, AlertCircle, CheckCircle2, ExternalLink, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 
 function formatDate(v?: Date | string | null) {
   if (!v) return "—";
@@ -136,6 +137,7 @@ export default function ContractAnalyzer() {
   };
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -186,5 +188,6 @@ export default function ContractAnalyzer() {
         )}
       </div>
     </div>
+    </AppLayout>
   );
 }

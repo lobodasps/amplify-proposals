@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 
 interface Column { key: string; label: string; render?: (row: any) => React.ReactNode; }
 
@@ -315,6 +316,7 @@ function AppSettingsTab() {
 
 export default function Settings() {
   return (
+    <AppLayout>
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
@@ -378,6 +380,7 @@ export default function Settings() {
         <TabsContent value="aiSkills" className="mt-4"><AiSkillsTab /></TabsContent>
       </Tabs>
     </div>
+    </AppLayout>
   );
 }
 

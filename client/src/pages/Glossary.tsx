@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Search, Loader2 } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 
 export default function Glossary() {
   const [search, setSearch] = useState("");
@@ -21,6 +22,7 @@ export default function Glossary() {
   });
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -73,5 +75,6 @@ export default function Glossary() {
         </div>
       )}
     </div>
+    </AppLayout>
   );
 }

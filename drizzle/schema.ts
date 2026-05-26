@@ -910,6 +910,7 @@ export type InsertDocumentShred = typeof documentShreds.$inferInsert;
 export const rfpWikis = mysqlTable("rfp_wikis", {
   id: int("id").autoincrement().primaryKey(),
   shredId: int("shredId").notNull(),
+  pursuitId: int("pursuitId"),
   proposalId: int("proposalId"),
   wikiContent: text("wikiContent"),
   evaluationCriteria: text("evaluationCriteria"),
@@ -942,3 +943,29 @@ export const agentGuidelines = mysqlTable("agent_guidelines", {
 });
 export type AgentGuideline = typeof agentGuidelines.$inferSelect;
 export type InsertAgentGuideline = typeof agentGuidelines.$inferInsert;
+
+// ─── Proposal Scores ──────────────────────────────────────────────────────────
+// Stores every scoring run from the Proposal Scorer, linked to a pursuit.
+// Enables scoring history, trend tracking, and per-section improvement over time.
+export const proposalScores = mysqlTable("proposal_scores", {
+  id: int("id").autoincrement().primaryKey(),
+  pursuitId: int("pursuitId"),
+  proposalId: int("proposalId"),
+  sectionType: varchar("sectionType", { length: 128 }),
+  sectionName: varchar("sectionName", { length: 256 }),
+  proposalText: text("proposalText"),
+  overallScore: int("overallScore"),
+  overallPassed: boolean("overallPassed").default(false),
+  criteriaScores: text("criteriaScores"),   // JSON array
+  annotations: text("annotations"),          // JSON array of inline highlights
+  summary: text("summary"),
+  topImprovements: text("topImprovements"), // JSON array of strings
+  rfpContext: text("rfpContext"),
+  successCriteria: text("successCriteria"), // JSON array of strings
+  provider: varchar("provider", { length: 64 }),
+  model: varchar("model", { length: 128 }),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ProposalScore = typeof proposalScores.$inferSelect;
+export type InsertProposalScore = typeof proposalScores.$inferInsert;

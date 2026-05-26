@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Shield, AlertTriangle, CheckCircle2, RefreshCw, ExternalLink, Loader2, Search } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 
 function formatDate(v?: Date | string | null) {
   if (!v) return "—";
@@ -72,6 +73,7 @@ export default function Compliance() {
   });
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -209,5 +211,6 @@ export default function Compliance() {
         </CardContent>
       </Card>
     </div>
+    </AppLayout>
   );
 }

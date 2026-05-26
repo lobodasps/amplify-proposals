@@ -178,3 +178,19 @@
 - [ ] Pattern 3 — Wire success criteria into generateSection UI: show criteria checklist, require user to confirm criteria before generating
 - [ ] Pattern 3 — Wire multi-approach into generateSection: "Suggest Approaches" button → shows 3 approaches → user picks one → generates section from chosen approach
 - [ ] Wire all three pattern pages into sidebar nav and App.tsx routes
+
+## Phase 7 — RFP-Centric AI Pipeline Architecture (v2.2)
+
+- [ ] Add pursuitId FK to documentShreds, rfpWikis, agentGuidelines tables
+- [ ] Create proposalScores table (pursuitId, sectionType, score, annotations JSON, criteriaScores JSON, proposalText, createdBy, createdAt)
+- [ ] Push schema migration
+- [ ] Build RfpContextSelector component (pursuit picker, persists in localStorage, shows name/agency/due date)
+- [ ] Update DocumentShredder page: RfpContextSelector at top, pass pursuitId to shred mutation, filter history by pursuitId
+- [ ] Update RfpWiki page: RfpContextSelector at top, filter wikis by pursuitId, auto-suggest latest shred for selected pursuit
+- [ ] Update AgentGuidelines page: RfpContextSelector at top, scope guidelines to pursuitId, show per-section guidelines list for the pursuit
+- [ ] Update ProposalScorer page: RfpContextSelector at top, save scores to proposalScores table with pursuitId, show scoring history for pursuit
+- [ ] Add saveScore procedure to agentGuidelines router (saves to proposalScores table)
+- [ ] Add listScores procedure to agentGuidelines router (filters by pursuitId + optional sectionType)
+- [ ] Build RFP Workspace page (/pursuits/:id/workspace): shreds panel, wiki panel, per-section guidelines cards, scoring history with trend
+- [ ] Add "Workspace" button on PursuitDetail page linking to /pursuits/:id/workspace
+- [ ] Wire Workspace quick-launch buttons to each AI tool pre-scoped to the pursuit (?pursuitId= query param)

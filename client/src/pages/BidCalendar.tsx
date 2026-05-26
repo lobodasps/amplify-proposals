@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, ExternalLink, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 
 function formatDate(v?: Date | string | null) {
   if (!v) return "—";
@@ -74,6 +75,7 @@ export default function BidCalendar() {
   };
 
   return (
+    <AppLayout>
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -140,5 +142,6 @@ export default function BidCalendar() {
         </Card>
       )}
     </div>
+    </AppLayout>
   );
 }
