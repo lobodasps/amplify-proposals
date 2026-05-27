@@ -13,6 +13,7 @@ import ProposalWorkspace from "./pages/ProposalWorkspace";
 import KnowledgeHub from "./pages/KnowledgeHub";
 import Assets from "./pages/Assets";
 import Personnel from "./pages/Personnel";
+import Staff from "./pages/Staff";
 import Projects from "./pages/Projects";
 import Pipeline from "./pages/Pipeline";
 import Opportunities from "./pages/Opportunities";
@@ -47,6 +48,7 @@ function Router() {
       <Route path="/knowledge-hub" component={KnowledgeHub} />
       <Route path="/assets" component={Assets} />
       <Route path="/personnel" component={Personnel} />
+      <Route path="/staff" component={Staff} />
       <Route path="/projects" component={Projects} />
       <Route path="/pipeline" component={Pipeline} />
       <Route path="/opportunities" component={Opportunities} />

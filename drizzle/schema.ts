@@ -233,6 +233,7 @@ export const assets = mysqlTable("assets", {
   tags: json("tags"),
   serviceLines: json("serviceLines"),
   projectId: int("projectId"),
+  staffId: int("staffId"),
   version: int("version").default(1),
   parentAssetId: int("parentAssetId"),
   uploadedBy: int("uploadedBy"),

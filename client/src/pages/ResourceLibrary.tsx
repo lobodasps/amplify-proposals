@@ -17,11 +17,12 @@ import {
 import { toast } from "sonner";
 
 const TAB_CONFIGS = [
-  { value: "all", label: "All Assets", folder: null },
+  { value: "all", label: "All", folder: null },
+  { value: "proposal-templates", label: "Proposal Templates", folder: "proposal-templates" },
+  { value: "boilerplate", label: "Boilerplate Text", folder: "boilerplate" },
+  { value: "rate-sheets", label: "Rate Sheets", folder: "rate-sheets" },
   { value: "project-sheets", label: "Project Sheets", folder: "project-sheets" },
   { value: "staff-profiles", label: "Staff Profiles", folder: "staff-profiles" },
-  { value: "rate-sheets", label: "Rate Sheets", folder: "rate-sheets" },
-  { value: "proposal-templates", label: "Proposal Templates", folder: "proposal-templates" },
   { value: "digital-assets", label: "Digital Assets", folder: "digital-assets" },
   { value: "content-blocks", label: "Content Blocks", folder: "content-blocks" },
 ];
@@ -160,7 +161,7 @@ export default function ResourceLibrary() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-xl font-bold">Resource Library</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Manage project sheets, staff profiles, templates, and digital assets.</p>
+            <p className="text-sm text-muted-foreground mt-0.5">Proposal templates, boilerplate text, rate sheets, and supporting assets for proposal writing.</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">

@@ -71,6 +71,13 @@
       "when": 1779839250316,
       "tag": "0009_pale_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1779883800622,
+      "tag": "0010_eminent_mauler",
+      "breakpoints": true
     }
   ]
 }

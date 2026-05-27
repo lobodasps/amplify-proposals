@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts, pursuits, contractAmendments } from "../../drizzle/schema";
+import { personnel, projects, contracts, pursuits, contractAmendments, assets } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { supabase } from "../supabase";
 import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
@@ -47,6 +47,55 @@ export const personnelRouter = router({
       });
       return { success: true };
     }),
+
+  // ── Attachments (stored in assets table with staffId) ──────────────────────
+  listAttachments: protectedProcedure
+    .input(z.object({ staffId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(assets)
+        .where(eq(assets.staffId, input.staffId))
+        .orderBy(desc(assets.createdAt));
+    }),
+
+  addAttachment: protectedProcedure
+    .input(z.object({
+      staffId: z.number(),
+      name: z.string(),
+      fileKey: z.string(),
+      fileUrl: z.string(),
+      mimeType: z.string().optional(),
+      fileSize: z.number().optional(),
+      assetType: z.string().optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.insert(assets).values({
+        name: input.name,
+        fileKey: input.fileKey,
+        fileUrl: input.fileUrl,
+        mimeType: input.mimeType,
+        fileSize: input.fileSize,
+        assetType: (input.assetType as any) ?? "document",
+        description: input.description,
+        staffId: input.staffId,
+        folder: "staff",
+        uploadedBy: ctx.user.id,
+      });
+      return { success: true };
+    }),
+
+  deleteAttachment: protectedProcedure
+    .input(z.object({ assetId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.delete(assets).where(eq(assets.id, input.assetId));
+      return { success: true };
+    }),
 });
 
 export const projectsRouter = router({
@@ -87,6 +136,55 @@ export const projectsRouter = router({
         status: "active",
         createdBy: ctx.user.id,
       });
+      return { success: true };
+    }),
+
+  // ── Attachments (stored in assets table with projectId) ───────────────────
+  listAttachments: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(assets)
+        .where(eq(assets.projectId, input.projectId))
+        .orderBy(desc(assets.createdAt));
+    }),
+
+  addAttachment: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      name: z.string(),
+      fileKey: z.string(),
+      fileUrl: z.string(),
+      mimeType: z.string().optional(),
+      fileSize: z.number().optional(),
+      assetType: z.string().optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.insert(assets).values({
+        name: input.name,
+        fileKey: input.fileKey,
+        fileUrl: input.fileUrl,
+        mimeType: input.mimeType,
+        fileSize: input.fileSize,
+        assetType: (input.assetType as any) ?? "document",
+        description: input.description,
+        projectId: input.projectId,
+        folder: "projects",
+        uploadedBy: ctx.user.id,
+      });
+      return { success: true };
+    }),
+
+  deleteAttachment: protectedProcedure
+    .input(z.object({ assetId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.delete(assets).where(eq(assets.id, input.assetId));
       return { success: true };
     }),
 });

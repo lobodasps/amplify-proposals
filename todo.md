@@ -204,3 +204,34 @@
 - [x] "BD Lifecycle" label at top of expanded sidebar for orientation
 - [x] ConflictDetector page wired into RFP Intelligence group
 - [x] RfpWiki page updated to hybrid architecture (extractIndex + query tabs)
+
+## Firm Records Restructuring (v2.4)
+- [ ] Schema: add staffAttachments table (staffId, fileKey, fileUrl, fileName, fileType, fileSize, uploadedAt)
+- [ ] Schema: add projectAttachments table (projectId, fileKey, fileUrl, fileName, fileType, fileSize, uploadedAt)
+- [ ] Push schema migration
+- [ ] Server: add personnel.addAttachment, personnel.listAttachments, personnel.deleteAttachment procedures
+- [ ] Server: add projects.addAttachment, projects.listAttachments, projects.deleteAttachment procedures
+- [ ] Server: add /api/upload-attachment endpoint for multipart file upload → storagePut
+- [ ] Rewrite Personnel page as Staff page (/staff): staff cards + file attachment panel (resume PDF, headshot, certs)
+- [ ] Rewrite Projects page (/projects): project cards + file attachment panel (photos, drawings, reports)
+- [ ] Absorb Knowledge Hub Content Library tab into Resource Library page (new Content Blocks tab)
+- [ ] Remove Knowledge Hub and Assets (DAM) from sidebar nav
+- [ ] Rename sidebar group from "Firm Knowledge" to "Firm Records"
+- [ ] Sidebar Firm Records group: Staff, Projects, Resource Library, Glossary
+- [ ] Update App.tsx routes: /staff replaces /personnel, keep /personnel as redirect
+- [ ] Remove KnowledgeHub and Assets pages from sidebar nav items
+- [ ] TypeScript check passes with zero errors
+
+## Firm Records Restructuring (v2.3)
+- [x] Extend DB schema: add staffId column to assets table (migration 0010)
+- [x] Update upload.ts: add folder param support (staff, projects, assets, rfp, proposals)
+- [x] Add listAttachments / addAttachment / deleteAttachment to personnelRouter
+- [x] Add listAttachments / addAttachment / deleteAttachment to projectsRouter
+- [x] Create Staff.tsx page: staff cards with file attachment side panel (Sheet)
+- [x] Rewrite Projects.tsx: project cards with file attachment side panel (Sheet)
+- [x] Update ResourceLibrary.tsx: add Boilerplate Text tab, update description
+- [x] Update AppLayout sidebar: replace firm_knowledge group with firm_records group (Staff, Projects, Resource Library, Glossary)
+- [x] Remove Knowledge Hub and Assets (DAM) from sidebar nav
+- [x] Add /staff route to App.tsx
+- [x] TypeScript check: 0 errors
+- [x] All 16 vitest tests passing

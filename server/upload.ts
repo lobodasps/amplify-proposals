@@ -7,6 +7,15 @@ const upload = multer({
   limits: { fileSize: 16 * 1024 * 1024 }, // 16 MB
 });
 
+const ALLOWED_FOLDERS = [
+  "contract-analyzer",
+  "staff",
+  "projects",
+  "assets",
+  "rfp",
+  "proposals",
+] as const;
+
 export function registerUploadRoute(app: Express) {
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
@@ -15,10 +24,15 @@ export function registerUploadRoute(app: Express) {
         res.status(400).json({ error: "No file provided" });
         return;
       }
-      const ext = file.originalname.split(".").pop() ?? "bin";
+      // Allow callers to specify a storage folder; default to contract-analyzer for backwards compat
+      const requestedFolder = (req.body?.folder as string) ?? "contract-analyzer";
+      const folder = ALLOWED_FOLDERS.includes(requestedFolder as any)
+        ? requestedFolder
+        : "contract-analyzer";
+
       const timestamp = Date.now();
       const safeFileName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const key = `contract-analyzer/${timestamp}-${safeFileName}`;
+      const key = `${folder}/${timestamp}-${safeFileName}`;
       const { url } = await storagePut(key, file.buffer, file.mimetype);
       res.json({ url, key, fileName: file.originalname, size: file.size });
     } catch (err: any) {

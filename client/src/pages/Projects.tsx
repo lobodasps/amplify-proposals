@@ -1,153 +1,396 @@
 import AppLayout from "@/components/AppLayout";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
-import { Search, Plus, MapPin, DollarSign, Calendar, Users, FileText, Filter, Building2 } from "lucide-react";
+import {
+  Plus, Search, Building2, MapPin, DollarSign, Calendar,
+  Paperclip, Upload, Trash2, FileText, Image, File, Download,
+  ChevronRight, Filter, Users,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const SERVICE_BADGE: Record<string, string> = {
+const SERVICE_COLORS: Record<string, string> = {
   "Special Inspections": "bg-violet-100 text-violet-700 border-violet-200",
   "Construction Management": "bg-blue-100 text-blue-700 border-blue-200",
   "Traffic Engineering": "bg-teal-100 text-teal-700 border-teal-200",
   "Landscape / Streetscape": "bg-emerald-100 text-emerald-700 border-emerald-200",
   "Environmental": "bg-amber-100 text-amber-700 border-amber-200",
+  special_inspections: "bg-violet-100 text-violet-700 border-violet-200",
+  construction_management: "bg-blue-100 text-blue-700 border-blue-200",
+  traffic_engineering: "bg-teal-100 text-teal-700 border-teal-200",
+  landscape_streetscape: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  environmental: "bg-amber-100 text-amber-700 border-amber-200",
 };
 
-const PROJECTS = [
-  { id: 1, name: "PANYNJ Bayonne Bridge Special Inspection Program", client: "Port Authority NY/NJ", service: "Special Inspections", value: "$1.2M", year: "2024", location: "Bayonne, NJ / Staten Island, NY", pm: "A. Patel, PE", status: "complete", description: "Comprehensive inspection of primary and secondary structural elements of the Bayonne Bridge, including fatigue-prone details, scour evaluation, and load rating updates. Delivered AASHTO-compliant inspection reports and NJDOT Element-Level data.", tags: ["bridge", "PANYNJ", "structural", "scour"] },
-  { id: 2, name: "NYC DDC Bronx Community Center — CM Services", client: "NYC DDC", service: "Construction Management", value: "$4.2M", year: "2026", location: "Bronx, NY", pm: "M. Torres, PE", status: "active", description: "Construction management services for a 45,000 SF community center including resident engineering, inspection, schedule monitoring, RFI/submittal management, and commissioning support.", tags: ["NYC DDC", "community", "CM", "Bronx"] },
-  { id: 3, name: "NYCDOT Queens Boulevard Traffic Signal Modernization", client: "NYC DOT", service: "Traffic Engineering", value: "$680K", year: "2023", location: "Queens, NY", pm: "L. Nguyen, PE", status: "complete", description: "Traffic signal design and timing optimization for 18 intersections along Queens Boulevard. Included pedestrian safety improvements, accessible pedestrian signals (APS), and SCOOT adaptive control integration.", tags: ["NYCDOT", "signals", "Queens", "pedestrian"] },
-  { id: 4, name: "NJ Transit Newark Broad Street Streetscape", client: "NJ Transit", service: "Landscape / Streetscape", value: "$920K", year: "2025", location: "Newark, NJ", pm: "S. Chen, ASLA", status: "active", description: "Streetscape design and construction administration for 0.8 miles of Broad Street adjacent to NJ Transit rail corridor. Included planting, paving, lighting, and stormwater management features.", tags: ["NJ Transit", "streetscape", "Newark", "planting"] },
-  { id: 5, name: "NJDEP Meadowlands Wetland Assessment & Permitting", client: "NJDEP", service: "Environmental", value: "$340K", year: "2024", location: "Meadowlands, NJ", pm: "R. Kim, PE", status: "complete", description: "Phase I/II environmental site assessment, wetland delineation, and NJDEP freshwater wetlands permit application for a 42-acre industrial redevelopment site in the Meadowlands District.", tags: ["NJDEP", "wetlands", "ESA", "permitting"] },
-  { id: 6, name: "NJDOT Route 1&9 Bridge Inspection Program", client: "NJDOT", service: "Special Inspections", value: "$1.8M", year: "2023", location: "Hudson County, NJ", pm: "A. Patel, PE", status: "complete", description: "Routine and in-depth inspection of 42 bridge structures along the Route 1&9 corridor. Delivered NBI-compliant inspection reports, load ratings, and maintenance recommendations.", tags: ["NJDOT", "bridge", "NBI", "Route 1&9"] },
-  { id: 7, name: "NYC Parks Prospect Park Landscape Restoration", client: "NYC Parks", service: "Landscape / Streetscape", value: "$560K", year: "2025", location: "Brooklyn, NY", pm: "S. Chen, ASLA", status: "active", description: "Landscape architecture and construction administration for restoration of 3.2 acres of degraded parkland including native planting, trail improvements, and stormwater bioswales.", tags: ["NYC Parks", "landscape", "restoration", "Brooklyn"] },
-  { id: 8, name: "NJDOT Route 9 Bridge Inspection Services", client: "NJDOT", service: "Special Inspections", value: "$2.4M", year: "2026", location: "Monmouth County, NJ", pm: "A. Patel, PE", status: "active", description: "Ongoing routine inspection program for 28 bridge structures along the Route 9 corridor. Includes biennial routine inspections, element-level data collection, and underwater inspection services.", tags: ["NJDOT", "bridge", "Route 9", "underwater"] },
+const SERVICE_LABELS: Record<string, string> = {
+  special_inspections: "Special Inspections",
+  construction_management: "Construction Management",
+  traffic_engineering: "Traffic Engineering",
+  landscape_streetscape: "Landscape / Streetscape",
+  environmental: "Environmental",
+  other: "Other",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  active: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  completed: "bg-gray-100 text-gray-600 border-gray-200",
+  complete: "bg-gray-100 text-gray-600 border-gray-200",
+  on_hold: "bg-amber-100 text-amber-700 border-amber-200",
+  cancelled: "bg-red-100 text-red-700 border-red-200",
+};
+
+const DEMO_PROJECTS = [
+  { id: 1, name: "PANYNJ Bayonne Bridge Special Inspection Program", clientName: "Port Authority NY/NJ", serviceLine: "special_inspections", contractValue: 1200000, status: "complete", location: "Bayonne, NJ / Staten Island, NY", description: "Comprehensive inspection of primary and secondary structural elements of the Bayonne Bridge, including fatigue-prone details, scour evaluation, and load rating updates.", tags: JSON.stringify(["bridge", "PANYNJ", "structural", "scour"]) },
+  { id: 2, name: "NYC DDC Bronx Community Center — CM Services", clientName: "NYC DDC", serviceLine: "construction_management", contractValue: 4200000, status: "active", location: "Bronx, NY", description: "Construction management services for a 45,000 SF community center including resident engineering, inspection, schedule monitoring, RFI/submittal management, and commissioning support.", tags: JSON.stringify(["NYC DDC", "community", "CM", "Bronx"]) },
+  { id: 3, name: "NYCDOT Queens Boulevard Traffic Signal Modernization", clientName: "NYC DOT", serviceLine: "traffic_engineering", contractValue: 680000, status: "complete", location: "Queens, NY", description: "Traffic signal design and timing optimization for 18 intersections along Queens Boulevard. Included pedestrian safety improvements and SCOOT adaptive control integration.", tags: JSON.stringify(["NYCDOT", "signals", "Queens", "pedestrian"]) },
+  { id: 4, name: "NJ Transit Newark Broad Street Streetscape", clientName: "NJ Transit", serviceLine: "landscape_streetscape", contractValue: 920000, status: "active", location: "Newark, NJ", description: "Streetscape design and construction administration for 0.8 miles of Broad Street adjacent to NJ Transit rail corridor.", tags: JSON.stringify(["NJ Transit", "streetscape", "Newark", "planting"]) },
+  { id: 5, name: "NJDEP Meadowlands Wetland Assessment & Permitting", clientName: "NJDEP", serviceLine: "environmental", contractValue: 340000, status: "complete", location: "Meadowlands, NJ", description: "Phase I/II environmental site assessment, wetland delineation, and NJDEP freshwater wetlands permit application for a 42-acre industrial redevelopment site.", tags: JSON.stringify(["NJDEP", "wetlands", "ESA", "permitting"]) },
+  { id: 6, name: "NJDOT Route 1&9 Bridge Inspection Program", clientName: "NJDOT", serviceLine: "special_inspections", contractValue: 1800000, status: "complete", location: "Hudson County, NJ", description: "Routine and in-depth inspection of 42 bridge structures along the Route 1&9 corridor.", tags: JSON.stringify(["NJDOT", "bridge", "NBI", "Route 1&9"]) },
+];
+
+function parseTags(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function formatCurrency(val?: number | null) {
+  if (!val) return null;
+  if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`;
+  return `$${val.toLocaleString()}`;
+}
+
+function getFileIcon(mimeType?: string | null) {
+  if (!mimeType) return File;
+  if (mimeType.startsWith("image/")) return Image;
+  if (mimeType === "application/pdf" || mimeType.includes("document")) return FileText;
+  return File;
+}
+
+function formatBytes(bytes?: number | null) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AddProjectDialog({ onAdded }: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [description, setDescription] = useState("");
+  const [contractValue, setContractValue] = useState("");
+  const utils = trpc.useUtils();
+
+  const createMutation = trpc.projects.create.useMutation({
+    onSuccess: () => {
+      toast.success("Project added!");
+      utils.projects.list.invalidate();
+      onAdded();
+      setOpen(false);
+      setName(""); setClientName(""); setDescription(""); setContractValue("");
+    },
+    onError: () => toast.error("Failed to add project."),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-amplify-gradient text-white">
+          <Plus className="w-4 h-4 mr-2" /> Add Project
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Add Project Experience</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Project Name *</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. NJDOT Route 9 Bridge Inspection" className="mt-1.5" />
+          </div>
+          <div>
+            <Label>Client / Agency</Label>
+            <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. NJDOT" className="mt-1.5" />
+          </div>
+          <div>
+            <Label>Contract Value ($)</Label>
+            <Input type="number" value={contractValue} onChange={e => setContractValue(e.target.value)} placeholder="e.g. 1200000" className="mt-1.5" />
+          </div>
+          <div>
+            <Label>Description</Label>
+            <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Scope of services, key deliverables..." className="mt-1.5" rows={3} />
+          </div>
+          <Button
+            onClick={() => createMutation.mutate({ name, clientName, description, contractValue: contractValue ? parseFloat(contractValue) : undefined })}
+            disabled={!name.trim() || createMutation.isPending}
+            className="w-full bg-amplify-gradient text-white"
+          >
+            {createMutation.isPending ? "Adding..." : "Add Project"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AttachmentPanel({ project, onClose }: { project: any; onClose: () => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const utils = trpc.useUtils();
+
+  const { data: attachments = [], isLoading } = trpc.projects.listAttachments.useQuery(
+    { projectId: project.id },
+    { enabled: project.id > 0 }
+  );
+
+  const addAttachment = trpc.projects.addAttachment.useMutation({
+    onSuccess: () => { utils.projects.listAttachments.invalidate({ projectId: project.id }); toast.success("File attached."); },
+    onError: () => toast.error("Failed to attach file."),
+  });
+
+  const deleteAttachment = trpc.projects.deleteAttachment.useMutation({
+    onSuccess: () => { utils.projects.listAttachments.invalidate({ projectId: project.id }); toast.success("Attachment removed."); },
+    onError: () => toast.error("Failed to remove attachment."),
+  });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "projects");
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url, key } = await res.json();
+      await addAttachment.mutateAsync({ projectId: project.id, name: file.name, fileKey: key, fileUrl: url, mimeType: file.type, fileSize: file.size, assetType: file.type.startsWith("image/") ? "image" : "document" });
+    } catch (err: any) {
+      toast.error(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const serviceLabel = SERVICE_LABELS[project.serviceLine ?? ""] ?? project.serviceLine ?? "";
+
+  return (
+    <SheetContent className="w-[420px] sm:w-[480px] flex flex-col">
+      <SheetHeader className="border-b pb-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-amplify-blue/10 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-5 h-5 text-amplify-blue" />
+          </div>
+          <div className="min-w-0">
+            <SheetTitle className="text-sm leading-snug">{project.name}</SheetTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">{project.clientName}</p>
+            {serviceLabel && (
+              <Badge variant="outline" className={cn("text-[10px] mt-1 border", SERVICE_COLORS[project.serviceLine ?? ""] ?? "")}>
+                {serviceLabel}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </SheetHeader>
+      <div className="flex-1 overflow-y-auto py-4 space-y-4">
+        <div>
+          <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.dwg,.zip" onChange={handleFileUpload} />
+          <Button variant="outline" size="sm" className="w-full border-dashed" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            <Upload className="w-4 h-4 mr-2" />
+            {uploading ? "Uploading..." : "Upload File (Photos, Drawings, Reports)"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1.5 text-center">PDF, Word, PNG, JPG, DWG, ZIP up to 16 MB</p>
+        </div>
+        {isLoading ? (
+          <div className="space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
+        ) : attachments.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground">
+            <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No files attached yet.</p>
+            <p className="text-xs mt-1">Upload project photos, drawings, or reports above.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{attachments.length} Attachment{attachments.length !== 1 ? "s" : ""}</p>
+            {attachments.map((att: any) => {
+              const Icon = getFileIcon(att.mimeType);
+              return (
+                <div key={att.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors group">
+                  <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                    <Icon className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{att.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatBytes(att.fileSize)}{att.createdAt && ` · ${new Date(att.createdAt).toLocaleDateString()}`}</p>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a href={att.fileUrl} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-7 w-7"><Download className="w-3.5 h-3.5" /></Button>
+                    </a>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteAttachment.mutate({ assetId: att.id })} disabled={deleteAttachment.isPending}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </SheetContent>
+  );
+}
+
+function ProjectCard({ project, onOpenAttachments }: { project: any; onOpenAttachments: (p: any) => void }) {
+  const tags = parseTags(project.tags);
+  const serviceLabel = SERVICE_LABELS[project.serviceLine ?? ""] ?? project.serviceLine ?? "";
+  const statusLabel = (project.status ?? "").replace(/_/g, " ");
+
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm leading-snug text-foreground line-clamp-2">{project.name}</h3>
+            <p className="text-xs text-muted-foreground mt-1">{project.clientName}</p>
+          </div>
+          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-4 border flex-shrink-0 capitalize", STATUS_COLORS[project.status ?? ""] ?? "")}>
+            {statusLabel}
+          </Badge>
+        </div>
+        {project.description && <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{project.description}</p>}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {serviceLabel && (
+            <Badge variant="outline" className={cn("text-[10px] border", SERVICE_COLORS[project.serviceLine ?? ""] ?? "")}>
+              {serviceLabel}
+            </Badge>
+          )}
+          {project.contractValue && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <DollarSign className="w-3 h-3" />{formatCurrency(project.contractValue)}
+            </span>
+          )}
+          {project.location && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="w-3 h-3" />{project.location}
+            </span>
+          )}
+        </div>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {tags.slice(0, 4).map((tag: string) => (
+              <span key={tag} className="text-[10px] bg-muted text-muted-foreground rounded px-1.5 py-0.5">{tag}</span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between pt-2 border-t">
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => toast.success(`${project.name} added to proposal`)}>
+            <Plus className="w-3 h-3" /> Use in Proposal
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={() => onOpenAttachments(project)}>
+            <Paperclip className="w-3 h-3" /> Files <ChevronRight className="w-3 h-3" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const SERVICE_FILTER_OPTIONS = [
+  { value: "all", label: "All Services" },
+  { value: "special_inspections", label: "Special Inspections" },
+  { value: "construction_management", label: "Construction Management" },
+  { value: "traffic_engineering", label: "Traffic Engineering" },
+  { value: "landscape_streetscape", label: "Landscape / Streetscape" },
+  { value: "environmental", label: "Environmental" },
 ];
 
 export default function Projects() {
   const [search, setSearch] = useState("");
   const [activeService, setActiveService] = useState("all");
-  const [activeStatus, setActiveStatus] = useState("all");
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const { data: dbProjects, isLoading, refetch } = trpc.projects.list.useQuery();
 
-  const filtered = PROJECTS.filter(p =>
-    (activeService === "all" || p.service === activeService) &&
-    (activeStatus === "all" || p.status === activeStatus) &&
-    (search === "" ||
+  const projects = (dbProjects && dbProjects.length > 0) ? dbProjects : DEMO_PROJECTS;
+
+  const filtered = projects.filter((p: any) =>
+    (activeService === "all" || p.serviceLine === activeService) &&
+    (!search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.client.toLowerCase().includes(search.toLowerCase()) ||
-      p.tags.some(t => t.toLowerCase().includes(search.toLowerCase())))
+      (p.clientName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      parseTags(p.tags).some((t: string) => t.toLowerCase().includes(search.toLowerCase())))
   );
 
   return (
-    <AppLayout title="Project Experience">
+    <AppLayout title="Projects">
       <div className="p-6 space-y-5">
-        {/* Toolbar */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="font-display font-700 text-xl text-foreground">Projects</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">Past project experience, photos, drawings, and reports</p>
+          </div>
+          <AddProjectDialog onAdded={refetch} />
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search projects by name, client, agency, keyword..."
-              className="pl-9"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+            <Input placeholder="Search by name, client, or tag..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Filter</Button>
-            <Button
-              className="bg-gradient-to-r from-amplify-blue to-amplify-violet text-white font-semibold gap-2"
-              onClick={() => toast.info("Add project form — connect to DB in production")}
-            >
-              <Plus className="w-4 h-4" /> Add Project
-            </Button>
+          <div className="flex gap-1 flex-wrap">
+            {SERVICE_FILTER_OPTIONS.map(opt => (
+              <Button key={opt.value} variant={activeService === opt.value ? "default" : "outline"} size="sm"
+                className={cn("text-xs h-8", activeService === opt.value ? "bg-amplify-blue text-white" : "")}
+                onClick={() => setActiveService(opt.value)}>
+                {opt.label}
+              </Button>
+            ))}
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 flex-wrap">
-          {["all", "Special Inspections", "Construction Management", "Traffic Engineering", "Landscape / Streetscape", "Environmental"].map(s => (
-            <button key={s} onClick={() => setActiveService(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${activeService === s ? "bg-primary text-white border-primary" : "bg-card border-border hover:bg-muted text-foreground"}`}>
-              {s === "all" ? "All Services" : s}
-            </button>
-          ))}
-          <div className="w-px bg-border mx-1" />
-          {["all", "active", "complete"].map(s => (
-            <button key={s} onClick={() => setActiveStatus(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${activeStatus === s ? "bg-primary text-white border-primary" : "bg-card border-border hover:bg-muted text-foreground"}`}>
-              {s === "all" ? "All Status" : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Building2 className="w-4 h-4" />
+          <span>{filtered.length} project{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>Click <Paperclip className="w-3 h-3 inline" /> Files to attach photos, drawings, or reports</span>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: "Total Projects", value: `${PROJECTS.length}`, color: "text-blue-600" },
-            { label: "Active Projects", value: `${PROJECTS.filter(p => p.status === "active").length}`, color: "text-emerald-600" },
-            { label: "Total Value", value: "$12.9M", color: "text-violet-600" },
-            { label: "Agencies Served", value: "7", color: "text-amber-600" },
-          ].map(s => (
-            <Card key={s.label} className="border-border/60">
-              <CardContent className="p-4">
-                <div className={`text-2xl font-bold mb-0.5 ${s.color}`}>{s.value}</div>
-                <div className="text-xs text-muted-foreground">{s.label}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Project List */}
-        <div className="space-y-3">
-          {filtered.map(p => (
-            <Card key={p.id} className="border-border/60 cursor-pointer hover:shadow-md transition-all" onClick={() => toast.info(`Opening project: ${p.name}`)}>
-              <CardContent className="p-5">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="font-semibold text-foreground text-sm leading-snug">{p.name}</h3>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
-                          {p.status}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mb-2">
-                      <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{p.client}</span>
-                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{p.location}</span>
-                      <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{p.value}</span>
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{p.year}</span>
-                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />PM: {p.pm}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed mb-3">{p.description}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${SERVICE_BADGE[p.service] || "bg-muted text-foreground border-border"}`}>
-                        {p.service}
-                      </span>
-                      {p.tags.map(t => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast.success(`${p.name} added to proposal`)}>
-                      <Plus className="w-3 h-3" /> Use in Proposal
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toast.info("Generating project sheet...")}>
-                      <FileText className="w-3 h-3" /> Project Sheet
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-52 rounded-xl" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <Building2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No projects found</p>
+            <p className="text-sm mt-1">Try adjusting your search or add a new project.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filtered.map((project: any) => (
+              <ProjectCard key={project.id} project={project} onOpenAttachments={setSelectedProject} />
+            ))}
+          </div>
+        )}
       </div>
+
+      <Sheet open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)}>
+        {selectedProject && <AttachmentPanel project={selectedProject} onClose={() => setSelectedProject(null)} />}
+      </Sheet>
     </AppLayout>
   );
 }
