@@ -496,7 +496,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                   <SelectTrigger><SelectValue placeholder="Select PM…" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— None —</SelectItem>
-                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
+                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -506,7 +506,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                   <SelectTrigger><SelectValue placeholder="Select accountant…" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— None —</SelectItem>
-                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
+                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

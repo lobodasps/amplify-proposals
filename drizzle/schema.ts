@@ -486,6 +486,7 @@ export const contracts = mysqlTable("contracts", {
   primeName: varchar("primeName", { length: 256 }), // prime contractor if we are sub
   // Key people
   contractManagerId: int("contractManagerId"),
+  contractManagerName: varchar("contractManagerName", { length: 256 }),
   projectManagerName: varchar("projectManagerName", { length: 256 }),
   accountingContactName: varchar("accountingContactName", { length: 256 }),
   // Classification

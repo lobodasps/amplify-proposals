@@ -77,22 +77,46 @@ function downloadCsv(filename: string, rows: any[]) {
 // ─── Create Contract Dialog ──────────────────────────────────────────────────
 function CreateContractDialog({ onClose }: { onClose: () => void }) {
   const utils = trpc.useUtils();
-  const { data: people } = trpc.people.list.useQuery();
-  const { data: orgs } = trpc.organizations.list.useQuery();
-  const [title, setTitle] = useState("");
-  const [contractNumber, setContractNumber] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [clientOrgId, setClientOrgId] = useState<number | undefined>();
-  const [ownerName, setOwnerName] = useState("");
-  const [ownerOrgId, setOwnerOrgId] = useState<number | undefined>();
-  const [contractValue, setContractValue] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [projectManagerId, setProjectManagerId] = useState<string>("__none__");
-  const [projectAccountantId, setProjectAccountantId] = useState<string>("__none__");
-  const [notes, setNotes] = useState("");
-  const [contractVehicle, setContractVehicle] = useState("standalone");
-  const [companyRole, setCompanyRole] = useState("prime");
+  const { data: people = [] } = trpc.people.list.useQuery();
+  const { data: orgs = [] } = trpc.organizations.list.useQuery();
+  const { data: departments = [] } = trpc.departments.list.useQuery();
+  const { data: serviceTypes = [] } = trpc.serviceTypes.list.useQuery();
+  const { data: form254Codes = [] } = trpc.form254Codes.list.useQuery();
+
+  const [form, setForm] = useState({
+    title: "",
+    contractNumber: "",
+    contractVehicle: "standalone",
+    companyRole: "prime",
+    clientOrgId: "__manual__",
+    clientName: "",
+    ownerOrgId: "__manual__",
+    ownerName: "",
+    clientProjectRef: "",
+    contractManagerName: "",
+    primaryLocation: "",
+    contractValue: "",
+    startDate: "",
+    endDate: "",
+    projectManagerId: "__none__",
+    projectAccountantId: "__none__",
+    departmentId: "__none__",
+    form254CodeId: "__none__",
+    serviceTypeIds: [] as number[],
+    qbName: "",
+    timeCode: "",
+    hasNteCeiling: false,
+    nteCeilingAmount: "",
+    billingBasis: "authorized",
+    notes: "",
+  });
+
+  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+
+  const toggleServiceType = (id: number) =>
+    set("serviceTypeIds", form.serviceTypeIds.includes(id)
+      ? form.serviceTypeIds.filter((x: number) => x !== id)
+      : [...form.serviceTypeIds, id]);
 
   const createMutation = trpc.contracts.create.useMutation({
     onSuccess: () => {
@@ -103,26 +127,40 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
     onError: (err) => toast.error(err.message),
   });
 
-  const pms = (people ?? []).filter((p: any) => p.role === "PM" || p.role === "PRINCIPAL");
-  const accountants = (people ?? []).filter((p: any) => p.role === "ACCOUNTANT");
-
   function handleSubmit() {
-    if (!title.trim()) { toast.error("Contract title is required"); return; }
+    if (!form.title.trim()) { toast.error("Contract title is required"); return; }
+    const parseId = (v: string) => v && v !== "__none__" && v !== "__manual__" ? parseInt(v) : undefined;
+    const parseDate = (v: string) => {
+      if (!v) return undefined;
+      const d = new Date(v + "T00:00:00");
+      return isNaN(d.getTime()) ? undefined : d;
+    };
     createMutation.mutate({
-      title: title.trim(),
-      contractNumber: contractNumber.trim() || undefined,
-      clientName: clientName.trim() || undefined,
-      clientOrgId,
-      ownerName: ownerName.trim() || undefined,
-      ownerOrgId,
-      contractValue: contractValue ? parseFloat(contractValue) : undefined,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      projectManagerId: projectManagerId && projectManagerId !== "__none__" ? parseInt(projectManagerId) : undefined,
-      projectAccountantId: projectAccountantId && projectAccountantId !== "__none__" ? parseInt(projectAccountantId) : undefined,
-      notes: notes.trim() || undefined,
-      contractVehicle,
-      companyRole,
+      title: form.title.trim(),
+      contractNumber: form.contractNumber.trim() || undefined,
+      contractVehicle: form.contractVehicle,
+      companyRole: form.companyRole,
+      clientOrgId: parseId(form.clientOrgId),
+      clientName: form.clientName.trim() || undefined,
+      ownerOrgId: parseId(form.ownerOrgId),
+      ownerName: form.ownerName.trim() || undefined,
+      clientProjectRef: form.clientProjectRef.trim() || undefined,
+      contractManagerName: form.contractManagerName.trim() || undefined,
+      primaryLocation: form.primaryLocation.trim() || undefined,
+      contractValue: form.contractValue ? parseFloat(form.contractValue) : undefined,
+      startDate: parseDate(form.startDate),
+      endDate: parseDate(form.endDate),
+      projectManagerId: parseId(form.projectManagerId),
+      projectAccountantId: parseId(form.projectAccountantId),
+      departmentId: parseId(form.departmentId),
+      form254CodeId: parseId(form.form254CodeId),
+      serviceTypeIds: form.serviceTypeIds.length ? form.serviceTypeIds : undefined,
+      qbName: form.qbName.trim() || undefined,
+      timeCode: form.timeCode.trim() || undefined,
+      hasNteCeiling: form.hasNteCeiling,
+      nteCeilingAmount: form.hasNteCeiling && form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
+      billingBasis: form.hasNteCeiling ? form.billingBasis : undefined,
+      notes: form.notes.trim() || undefined,
     });
   }
 
@@ -134,140 +172,239 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
         </DialogTitle>
       </DialogHeader>
       <div className="space-y-4 py-2">
-        {/* Title */}
-        <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Contract Title <span className="text-destructive">*</span></Label>
-          <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Route 9 Bridge Inspection Services" className="h-9" />
-        </div>
-        {/* Contract # and Vehicle */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Contract Number</Label>
-            <Input value={contractNumber} onChange={e => setContractNumber(e.target.value)} placeholder="e.g. JPCL-2024-001" className="h-9" />
+        {/* Core Info */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Core Information</p>
+          <div>
+            <Label className="text-xs">Contract Title <span className="text-destructive">*</span></Label>
+            <Input value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Route 9 Bridge Inspection Services" className="mt-1" />
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Contract Vehicle</Label>
-            <Select value={contractVehicle} onValueChange={setContractVehicle}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="standalone">Standalone</SelectItem>
-                <SelectItem value="idiq">IDIQ</SelectItem>
-                <SelectItem value="msa">MSA</SelectItem>
-                <SelectItem value="on_call">On-Call</SelectItem>
-                <SelectItem value="task_order">Task Order</SelectItem>
-                <SelectItem value="purchase_order">Purchase Order</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Start Date</Label>
+              <Input type="date" value={form.startDate} onChange={e => set("startDate", e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">End Date</Label>
+              <Input type="date" value={form.endDate} onChange={e => set("endDate", e.target.value)} className="mt-1" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Contract Vehicle</Label>
+              <Select value={form.contractVehicle} onValueChange={v => set("contractVehicle", v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standalone">Standalone</SelectItem>
+                  <SelectItem value="idiq">IDIQ</SelectItem>
+                  <SelectItem value="msa">MSA</SelectItem>
+                  <SelectItem value="on_call">On-Call</SelectItem>
+                  <SelectItem value="task_order">Task Order</SelectItem>
+                  <SelectItem value="purchase_order">Purchase Order</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Company Role</Label>
+              <Select value={form.companyRole} onValueChange={v => set("companyRole", v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prime">Prime Consultant</SelectItem>
+                  <SelectItem value="sub">Subconsultant</SelectItem>
+                  <SelectItem value="joint_venture">Joint Venture</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Contract Value ($)</Label>
+              <Input type="number" value={form.contractValue} onChange={e => set("contractValue", e.target.value)} placeholder="0.00" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Contract Number (optional)</Label>
+              <Input value={form.contractNumber} onChange={e => set("contractNumber", e.target.value)} placeholder="Auto-assigned on Activate" className="mt-1" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Primary Location</Label>
+            <Input value={form.primaryLocation} onChange={e => set("primaryLocation", e.target.value)} placeholder="e.g. Middlesex County, NJ" className="mt-1" />
           </div>
         </div>
-        {/* Client and Owner */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Client</Label>
-            <Select
-              value={clientOrgId ? String(clientOrgId) : "__manual__"}
-              onValueChange={v => {
-                if (v === "__manual__") { setClientOrgId(undefined); }
-                else {
-                  const id = parseInt(v);
-                  setClientOrgId(id);
-                  const org = (orgs ?? []).find((o: any) => o.id === id);
-                  if (org) setClientName(org.name);
+
+        {/* Client & Owner */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client & Owner</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Client Organization</Label>
+              <Select value={form.clientOrgId} onValueChange={v => {
+                set("clientOrgId", v);
+                if (v !== "__manual__") {
+                  const org = (orgs as any[]).find((o: any) => o.id === parseInt(v));
+                  if (org) set("clientName", org.name);
                 }
-              }}
-            >
-              <SelectTrigger className="h-9"><SelectValue placeholder="Select or type below" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__manual__">— Enter manually —</SelectItem>
-                {(orgs ?? []).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {!clientOrgId && (
-              <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name" className="h-8 text-xs" />
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Owner</Label>
-            <Select
-              value={ownerOrgId ? String(ownerOrgId) : "__manual__"}
-              onValueChange={v => {
-                if (v === "__manual__") { setOwnerOrgId(undefined); }
-                else {
-                  const id = parseInt(v);
-                  setOwnerOrgId(id);
-                  const org = (orgs ?? []).find((o: any) => o.id === id);
-                  if (org) setOwnerName(org.name);
+              }}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select or enter manually" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">— Enter manually —</SelectItem>
+                  {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {form.clientOrgId === "__manual__" && (
+                <Input value={form.clientName} onChange={e => set("clientName", e.target.value)} placeholder="Client name" className="mt-1 text-xs" />
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">Owner Organization</Label>
+              <Select value={form.ownerOrgId} onValueChange={v => {
+                set("ownerOrgId", v);
+                if (v !== "__manual__") {
+                  const org = (orgs as any[]).find((o: any) => o.id === parseInt(v));
+                  if (org) set("ownerName", org.name);
                 }
-              }}
-            >
-              <SelectTrigger className="h-9"><SelectValue placeholder="Select or type below" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__manual__">— Enter manually —</SelectItem>
-                {(orgs ?? []).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {!ownerOrgId && (
-              <Input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Owner name" className="h-8 text-xs" />
-            )}
+              }}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select or enter manually" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">— Enter manually —</SelectItem>
+                  {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {form.ownerOrgId === "__manual__" && (
+                <Input value={form.ownerName} onChange={e => set("ownerName", e.target.value)} placeholder="Owner name" className="mt-1 text-xs" />
+              )}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Client's Project Reference #</Label>
+            <Input value={form.clientProjectRef} onChange={e => set("clientProjectRef", e.target.value)} placeholder="Client's own project number or reference" className="mt-1" />
           </div>
         </div>
-        {/* Value and Role */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Contract Value ($)</Label>
-            <Input type="number" value={contractValue} onChange={e => setContractValue(e.target.value)} placeholder="0.00" className="h-9" />
+
+        {/* Key Personnel */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Key Personnel</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Project Manager</Label>
+              <Select value={form.projectManagerId} onValueChange={v => set("projectManagerId", v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select PM" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Project Accountant</Label>
+              <Select value={form.projectAccountantId} onValueChange={v => set("projectAccountantId", v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select Accountant" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Company Role</Label>
-            <Select value={companyRole} onValueChange={setCompanyRole}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="prime">Prime Consultant</SelectItem>
-                <SelectItem value="sub">Subconsultant</SelectItem>
-                <SelectItem value="joint_venture">Joint Venture</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        {/* Dates */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Start Date</Label>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">End Date</Label>
-            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9" />
-          </div>
-        </div>
-        {/* PM and Accountant */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Project Manager</Label>
-            <Select value={projectManagerId} onValueChange={setProjectManagerId}>
-              <SelectTrigger className="h-9"><SelectValue placeholder="Select PM" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">— None —</SelectItem>
-                {pms.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Accountant</Label>
-            <Select value={projectAccountantId} onValueChange={setProjectAccountantId}>
-              <SelectTrigger className="h-9"><SelectValue placeholder="Select Accountant" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">— None —</SelectItem>
-                {accountants.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div>
+            <Label className="text-xs">Contract Manager</Label>
+            <Input value={form.contractManagerName} onChange={e => set("contractManagerName", e.target.value)} placeholder="Name of contract manager" className="mt-1" />
           </div>
         </div>
+
+        {/* Classification */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Classification</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Department</Label>
+              <Select value={form.departmentId} onValueChange={v => set("departmentId", v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(departments as any[]).map((d: any) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.code ? ` (${d.code})` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Form 254 Code</Label>
+              <Select value={form.form254CodeId} onValueChange={v => set("form254CodeId", v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select code" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(form254Codes as any[]).map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.code}{c.description ? ` — ${c.description}` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs mb-2 block">Service Type(s)</Label>
+            <div className="flex flex-wrap gap-2">
+              {(serviceTypes as any[]).map((st: any) => (
+                <button key={st.id} type="button" onClick={() => toggleServiceType(st.id)}
+                  className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                    form.serviceTypeIds.includes(st.id)
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-foreground border-border hover:bg-muted"
+                  }`}>
+                  {st.name}{st.code ? ` (${st.code})` : ""}
+                </button>
+              ))}
+              {(serviceTypes as any[]).length === 0 && (
+                <p className="text-xs text-muted-foreground">No service types defined. Add them in Settings → Service Types.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* NTE Ceiling */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NTE Ceiling / Billing</p>
+          <div className="flex items-center gap-3">
+            <input type="checkbox" id="hasNte" checked={form.hasNteCeiling} onChange={e => set("hasNteCeiling", e.target.checked)} className="h-4 w-4" />
+            <Label htmlFor="hasNte" className="text-xs cursor-pointer">This contract has an NTE ceiling</Label>
+          </div>
+          {form.hasNteCeiling && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">NTE Ceiling Amount ($)</Label>
+                <Input type="number" value={form.nteCeilingAmount} onChange={e => set("nteCeilingAmount", e.target.value)} placeholder="0.00" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Billing Basis</Label>
+                <Select value={form.billingBasis} onValueChange={v => set("billingBasis", v)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="authorized">Task Order Model (authorized TOs)</SelectItem>
+                    <SelectItem value="nte_ceiling">On-Call / Direct Bill</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* QB / Timekeeping */}
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">QB / Timekeeping</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">QB Name</Label>
+              <Input value={form.qbName} onChange={e => set("qbName", e.target.value)} placeholder="QuickBooks project name" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Time Code</Label>
+              <Input value={form.timeCode} onChange={e => set("timeCode", e.target.value)} placeholder="Internal time code" className="mt-1" />
+            </div>
+          </div>
+        </div>
+
         {/* Notes */}
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Notes</Label>
-          <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." rows={2} className="text-sm" />
+          <Textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional notes..." rows={2} className="text-sm" />
         </div>
+
         <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300">
           <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>Contract will be created in <strong>Draft</strong> status. Use the Activate action to assign a contract number and create the timekeeping project.</span>
@@ -275,7 +412,7 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
       </div>
       <DialogFooter>
         <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" disabled={!title.trim() || createMutation.isPending} onClick={handleSubmit}>
+        <Button size="sm" disabled={!form.title.trim() || createMutation.isPending} onClick={handleSubmit}>
           <Plus className="w-3.5 h-3.5 mr-1" />
           {createMutation.isPending ? "Creating..." : "Create Contract"}
         </Button>

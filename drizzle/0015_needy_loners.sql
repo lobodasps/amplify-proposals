@@ -1,0 +1,1 @@
+ALTER TABLE `contracts` ADD `contractManagerName` varchar(256);
