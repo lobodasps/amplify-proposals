@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
@@ -71,6 +72,216 @@ function downloadCsv(filename: string, rows: any[]) {
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
   toast.success(`Exported ${rows.length} contracts`);
+}
+
+// ─── Create Contract Dialog ──────────────────────────────────────────────────
+function CreateContractDialog({ onClose }: { onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const { data: people } = trpc.people.list.useQuery();
+  const { data: orgs } = trpc.organizations.list.useQuery();
+  const [title, setTitle] = useState("");
+  const [contractNumber, setContractNumber] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [clientOrgId, setClientOrgId] = useState<number | undefined>();
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerOrgId, setOwnerOrgId] = useState<number | undefined>();
+  const [contractValue, setContractValue] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [projectManagerId, setProjectManagerId] = useState<number | undefined>();
+  const [projectAccountantId, setProjectAccountantId] = useState<number | undefined>();
+  const [notes, setNotes] = useState("");
+  const [contractVehicle, setContractVehicle] = useState("standalone");
+  const [companyRole, setCompanyRole] = useState("prime");
+
+  const createMutation = trpc.contracts.create.useMutation({
+    onSuccess: () => {
+      utils.contracts.list.invalidate();
+      toast.success("Contract created successfully");
+      onClose();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const pms = (people ?? []).filter((p: any) => p.role === "PM" || p.role === "PRINCIPAL");
+  const accountants = (people ?? []).filter((p: any) => p.role === "ACCOUNTANT");
+
+  function handleSubmit() {
+    if (!title.trim()) { toast.error("Contract title is required"); return; }
+    createMutation.mutate({
+      title: title.trim(),
+      contractNumber: contractNumber.trim() || undefined,
+      clientName: clientName.trim() || undefined,
+      clientOrgId,
+      ownerName: ownerName.trim() || undefined,
+      ownerOrgId,
+      contractValue: contractValue ? parseFloat(contractValue) : undefined,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      projectManagerId,
+      projectAccountantId,
+      notes: notes.trim() || undefined,
+      contractVehicle,
+      companyRole,
+    });
+  }
+
+  return (
+    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <FileSignature className="w-5 h-5 text-blue-500" /> New Contract
+        </DialogTitle>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        {/* Title */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Contract Title <span className="text-destructive">*</span></Label>
+          <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Route 9 Bridge Inspection Services" className="h-9" />
+        </div>
+        {/* Contract # and Vehicle */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Contract Number</Label>
+            <Input value={contractNumber} onChange={e => setContractNumber(e.target.value)} placeholder="e.g. JPCL-2024-001" className="h-9" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Contract Vehicle</Label>
+            <Select value={contractVehicle} onValueChange={setContractVehicle}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standalone">Standalone</SelectItem>
+                <SelectItem value="idiq">IDIQ</SelectItem>
+                <SelectItem value="msa">MSA</SelectItem>
+                <SelectItem value="on_call">On-Call</SelectItem>
+                <SelectItem value="task_order">Task Order</SelectItem>
+                <SelectItem value="purchase_order">Purchase Order</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {/* Client and Owner */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Client</Label>
+            <Select
+              value={clientOrgId ? String(clientOrgId) : "__manual__"}
+              onValueChange={v => {
+                if (v === "__manual__") { setClientOrgId(undefined); }
+                else {
+                  const id = parseInt(v);
+                  setClientOrgId(id);
+                  const org = (orgs ?? []).find((o: any) => o.id === id);
+                  if (org) setClientName(org.name);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select or type below" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__manual__">— Enter manually —</SelectItem>
+                {(orgs ?? []).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {!clientOrgId && (
+              <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name" className="h-8 text-xs" />
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Owner</Label>
+            <Select
+              value={ownerOrgId ? String(ownerOrgId) : "__manual__"}
+              onValueChange={v => {
+                if (v === "__manual__") { setOwnerOrgId(undefined); }
+                else {
+                  const id = parseInt(v);
+                  setOwnerOrgId(id);
+                  const org = (orgs ?? []).find((o: any) => o.id === id);
+                  if (org) setOwnerName(org.name);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select or type below" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__manual__">— Enter manually —</SelectItem>
+                {(orgs ?? []).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {!ownerOrgId && (
+              <Input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Owner name" className="h-8 text-xs" />
+            )}
+          </div>
+        </div>
+        {/* Value and Role */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Contract Value ($)</Label>
+            <Input type="number" value={contractValue} onChange={e => setContractValue(e.target.value)} placeholder="0.00" className="h-9" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Company Role</Label>
+            <Select value={companyRole} onValueChange={setCompanyRole}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="prime">Prime Consultant</SelectItem>
+                <SelectItem value="sub">Subconsultant</SelectItem>
+                <SelectItem value="joint_venture">Joint Venture</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {/* Dates */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Start Date</Label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">End Date</Label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9" />
+          </div>
+        </div>
+        {/* PM and Accountant */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Project Manager</Label>
+            <Select value={projectManagerId ? String(projectManagerId) : ""} onValueChange={v => setProjectManagerId(v ? parseInt(v) : undefined)}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select PM" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">— None —</SelectItem>
+                {pms.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Accountant</Label>
+            <Select value={projectAccountantId ? String(projectAccountantId) : ""} onValueChange={v => setProjectAccountantId(v ? parseInt(v) : undefined)}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select Accountant" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">— None —</SelectItem>
+                {accountants.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {/* Notes */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Notes</Label>
+          <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." rows={2} className="text-sm" />
+        </div>
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300">
+          <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>Contract will be created in <strong>Draft</strong> status. Use the Activate action to assign a contract number and create the timekeeping project.</span>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={!title.trim() || createMutation.isPending} onClick={handleSubmit}>
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          {createMutation.isPending ? "Creating..." : "Create Contract"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
 }
 
 // ─── Activate Contract Dialog ─────────────────────────────────────────────────
@@ -196,6 +407,8 @@ export default function Contracts() {
 
   // Activate dialog
   const [activatingContract, setActivatingContract] = useState<any | null>(null);
+  // Create contract dialog
+  const [createOpen, setCreateOpen] = useState(false);
 
   function toggleSort(col: SortColumn) {
     if (sortColumn === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -366,7 +579,7 @@ export default function Contracts() {
             <Button variant="outline" size="sm" onClick={() => downloadCsv("contracts.csv", filteredTopLevel)}>
               <Download className="h-4 w-4 mr-1.5" /> Export CSV
             </Button>
-            <Button size="sm" onClick={() => navigate("/pursuits")}>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-1.5" /> New Contract
             </Button>
           </div>
@@ -781,6 +994,10 @@ export default function Contracts() {
             <ActivateContractDialog contract={activatingContract} onClose={() => setActivatingContract(null)} />
           </Dialog>
         )}
+        {/* Create Contract Dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <CreateContractDialog onClose={() => setCreateOpen(false)} />
+        </Dialog>
       </div>
     </AppLayout>
   );
