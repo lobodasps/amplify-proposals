@@ -1,28 +1,97 @@
 /**
- * RFP Wiki Compiler — Karpathy Pattern 2
+ * RFP Wiki — Hybrid Architecture (Lahoti-safe)
  *
- * Takes shredded XML and synthesizes a living, cross-referenced Markdown wiki.
- * This replaces naive RAG chunking: instead of retrieving arbitrary 500-char
- * fragments, the LLM does one synthesis pass and produces an interlinked wiki
- * that captures relationships between sections, criteria, requirements, and dates.
+ * Write time: LLM extracts STRUCTURED METADATA only — entities, facts, claims,
+ * citations — all tagged with exact XML source paths. No prose is stored as truth.
  *
- * The wiki is then used as the primary context source for:
- *   - generateSection (proposal writing)
- *   - scoreProposal (compliance scoring)
- *   - tailorResume (key personnel matching)
+ * Query time: LLM synthesizes prose answers FROM THE RAW XML, guided by the
+ * structured index as a navigation aid. Every answer cites the exact source.
  *
- * Knowledge compounds over time: the wiki is updated as addenda arrive or
- * lessons learned are added from past proposals.
+ * This preserves chain of custody indefinitely. The structured index is a
+ * librarian's index card, not a book. The raw XML is always the source of truth.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpWikis, documentShreds } from "../../drizzle/schema";
+import {
+  rfpWikis,
+  rfpStructuredIndex,
+  documentShreds,
+} from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CitedFact {
+  value: string;
+  source: string;   // e.g. "RFP-001-Main.pdf, Section 4.2, p.45"
+  xmlPath: string;  // e.g. "/rfp-package/file[@name='RFP-001-Main.pdf']/section[@type='submission']"
+  fileRole?: string; // primary | addendum | exhibit | form | attachment
+}
+
+export interface EvalCriterion extends CitedFact {
+  weight?: string;
+  criterion: string;
+}
+
+export interface KeyPersonnelEntry extends CitedFact {
+  role: string;
+  qualifications: string;
+}
+
+export interface SectionMapEntry {
+  section: string;
+  description: string;
+  xmlPath: string;
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 export const rfpWikiRouter = router({
-  /** Get the wiki for a specific shred */
+
+  /** Get the structured index for a shred */
+  getIndex: protectedProcedure
+    .input(z.object({ shredId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db
+        .select()
+        .from(rfpStructuredIndex)
+        .where(eq(rfpStructuredIndex.shredId, input.shredId))
+        .orderBy(desc(rfpStructuredIndex.extractedAt))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      // Parse all JSON columns
+      return {
+        ...row,
+        submissionDeadlines: safeJson<CitedFact[]>(row.submissionDeadlines),
+        contractValues: safeJson<CitedFact[]>(row.contractValues),
+        evaluationCriteria: safeJson<EvalCriterion[]>(row.evaluationCriteria),
+        eligibilityRequirements: safeJson<CitedFact[]>(row.eligibilityRequirements),
+        submissionRequirements: safeJson<CitedFact[]>(row.submissionRequirements),
+        keyPersonnel: safeJson<KeyPersonnelEntry[]>(row.keyPersonnel),
+        keyDates: safeJson<CitedFact[]>(row.keyDates),
+        pageLimits: safeJson<CitedFact[]>(row.pageLimits),
+        references: safeJson<CitedFact[]>(row.references),
+        scopeItems: safeJson<CitedFact[]>(row.scopeItems),
+        sectionMap: safeJson<SectionMapEntry[]>(row.sectionMap),
+      };
+    }),
+
+  /** List all structured indexes */
+  listIndexes: protectedProcedure
+    .input(z.object({ pursuitId: z.number().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const q = db.select().from(rfpStructuredIndex).orderBy(desc(rfpStructuredIndex.extractedAt)).limit(50);
+      return q;
+    }),
+
+  /** Get the legacy wiki content (kept for backward compat) */
   getByShredId: protectedProcedure
     .input(z.object({ shredId: z.number() }))
     .query(async ({ input }) => {
@@ -37,21 +106,6 @@ export const rfpWikiRouter = router({
       return rows[0] ?? null;
     }),
 
-  /** Get the wiki for a specific proposal */
-  getByProposalId: protectedProcedure
-    .input(z.object({ proposalId: z.number() }))
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return null;
-      const rows = await db
-        .select()
-        .from(rfpWikis)
-        .where(eq(rfpWikis.proposalId, input.proposalId))
-        .orderBy(desc(rfpWikis.compiledAt))
-        .limit(1);
-      return rows[0] ?? null;
-    }),
-
   /** List all wikis */
   list: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -60,30 +114,23 @@ export const rfpWikiRouter = router({
   }),
 
   /**
-   * Compile a wiki from a shredded XML document.
+   * WRITE-TIME: Extract structured metadata from shredded XML.
    *
-   * The LLM reads the XML and produces a structured Markdown wiki with:
-   * - ## Overview: agency, project type, estimated value, submission deadline
-   * - ## Evaluation Criteria: weighted criteria table with cross-refs to sections
-   * - ## Key Requirements: numbered list with section references
-   * - ## Key Personnel: required roles, qualifications, and page limits
-   * - ## Key Dates: timeline table
-   * - ## Section-by-Section Guide: what each section must address
-   * - ## Compliance Checklist: all mandatory items
-   * - ## Strategic Notes: win themes, differentiators, red flags
+   * The LLM extracts facts with exact source citations — never prose summaries.
+   * Each fact is tagged with the XML path it came from so it can always be
+   * traced back to the original document.
+   *
+   * This replaces the old "compile wiki" approach with a safer index-card model.
    */
-  compile: protectedProcedure
+  extractIndex: protectedProcedure
     .input(z.object({
       shredId: z.number(),
-      proposalId: z.number().optional(),
-      /** Optional firm context to include in strategic notes */
-      firmContext: z.string().optional(),
+      pursuitId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
 
-      // Load the shred
       const shredRows = await db
         .select()
         .from(documentShreds)
@@ -97,132 +144,243 @@ export const rfpWikiRouter = router({
         skillType: "wiki_compiler",
         variables: {
           fileName: shred.fileName,
-          xmlContent: shred.xmlContent.slice(0, 60000), // stay within context window
-          firmContext: input.firmContext ?? "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ/NY.",
+          xmlContent: shred.xmlContent.slice(0, 80000),
+          firmContext: "Extract structured facts only. Do not write prose summaries.",
+        },
+        systemOverride: `You are a precise document indexer. Your job is to extract structured facts from an RFP XML document.
+
+CRITICAL RULES:
+1. Extract FACTS with CITATIONS — never write prose summaries
+2. Every fact must include: value (exact text from source), source (file name + section + page), xmlPath (XML path to the element)
+3. If a fact appears in multiple places, list ALL occurrences — this enables conflict detection
+4. For dates: extract the EXACT date string as written in the source, do not normalize
+5. For values: extract the EXACT number/text as written, do not interpret
+6. For requirements: quote the exact requirement text, do not paraphrase
+
+Return a JSON object with these keys:
+{
+  "submissionDeadlines": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "contractValues": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "evaluationCriteria": [{"criterion": "...", "weight": "...", "value": "...", "source": "...", "xmlPath": "..."}],
+  "eligibilityRequirements": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "submissionRequirements": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "keyPersonnel": [{"role": "...", "qualifications": "...", "value": "...", "source": "...", "xmlPath": "..."}],
+  "keyDates": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "pageLimits": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "references": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "scopeItems": [{"value": "...", "source": "...", "xmlPath": "..."}],
+  "sectionMap": [{"section": "...", "description": "...", "xmlPath": "..."}]
+}`,
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "rfp_structured_index",
+            strict: false,
+            schema: {
+              type: "object",
+              properties: {
+                submissionDeadlines: { type: "array", items: { type: "object" } },
+                contractValues: { type: "array", items: { type: "object" } },
+                evaluationCriteria: { type: "array", items: { type: "object" } },
+                eligibilityRequirements: { type: "array", items: { type: "object" } },
+                submissionRequirements: { type: "array", items: { type: "object" } },
+                keyPersonnel: { type: "array", items: { type: "object" } },
+                keyDates: { type: "array", items: { type: "object" } },
+                pageLimits: { type: "array", items: { type: "object" } },
+                references: { type: "array", items: { type: "object" } },
+                scopeItems: { type: "array", items: { type: "object" } },
+                sectionMap: { type: "array", items: { type: "object" } },
+              },
+              additionalProperties: false,
+            },
+          },
         },
       });
 
-      const wikiContent = (result.choices[0]?.message?.content as string) ?? "";
+      const raw = (result.choices[0]?.message?.content as string) ?? "{}";
+      let parsed: Record<string, unknown[]> = {};
+      try { parsed = JSON.parse(raw); } catch { parsed = {}; }
 
-      // Extract structured data from the wiki for quick access
-      // Parse evaluation criteria section
-      const criteriaMatch = wikiContent.match(/## Evaluation Criteria[\s\S]*?(?=##|$)/);
-      const criteriaText = criteriaMatch?.[0] ?? "";
-
-      // Parse key dates section
-      const datesMatch = wikiContent.match(/## Key Dates[\s\S]*?(?=##|$)/);
-      const datesText = datesMatch?.[0] ?? "";
-
-      // Parse key personnel section
-      const personnelMatch = wikiContent.match(/## Key Personnel[\s\S]*?(?=##|$)/);
-      const personnelText = personnelMatch?.[0] ?? "";
-
-      // Parse key requirements section
-      const requirementsMatch = wikiContent.match(/## Key Requirements[\s\S]*?(?=##|$)/);
-      const requirementsText = requirementsMatch?.[0] ?? "";
-
-      // Estimate token count (rough: 1 token ≈ 4 chars)
-      const tokenEstimate = Math.round(wikiContent.length / 4);
-
-      // Check if a wiki already exists for this shred
-      const existingRows = await db
+      // Upsert the structured index
+      const existing = await db
         .select()
-        .from(rfpWikis)
-        .where(eq(rfpWikis.shredId, input.shredId))
+        .from(rfpStructuredIndex)
+        .where(eq(rfpStructuredIndex.shredId, input.shredId))
         .limit(1);
 
-      let wikiId: number;
-      if (existingRows.length > 0) {
-        await db
-          .update(rfpWikis)
-          .set({
-            wikiContent,
-            evaluationCriteria: criteriaText,
-            keyRequirements: requirementsText,
-            keyDates: datesText,
-            keyPersonnel: personnelText,
-            tokenEstimate,
-            compiledAt: new Date(),
-            proposalId: input.proposalId,
-          })
-          .where(eq(rfpWikis.shredId, input.shredId));
-        wikiId = existingRows[0].id;
+      const indexData = {
+        shredId: input.shredId,
+        pursuitId: input.pursuitId,
+        submissionDeadlines: JSON.stringify(parsed.submissionDeadlines ?? []),
+        contractValues: JSON.stringify(parsed.contractValues ?? []),
+        evaluationCriteria: JSON.stringify(parsed.evaluationCriteria ?? []),
+        eligibilityRequirements: JSON.stringify(parsed.eligibilityRequirements ?? []),
+        submissionRequirements: JSON.stringify(parsed.submissionRequirements ?? []),
+        keyPersonnel: JSON.stringify(parsed.keyPersonnel ?? []),
+        keyDates: JSON.stringify(parsed.keyDates ?? []),
+        pageLimits: JSON.stringify(parsed.pageLimits ?? []),
+        references: JSON.stringify(parsed.references ?? []),
+        scopeItems: JSON.stringify(parsed.scopeItems ?? []),
+        sectionMap: JSON.stringify(parsed.sectionMap ?? []),
+        provider: result._provider,
+        model: result._model,
+        createdBy: ctx.user.id,
+      };
+
+      if (existing.length > 0) {
+        await db.update(rfpStructuredIndex).set(indexData).where(eq(rfpStructuredIndex.shredId, input.shredId));
       } else {
-        await db.insert(rfpWikis).values({
-          shredId: input.shredId,
-          proposalId: input.proposalId,
-          wikiContent,
-          evaluationCriteria: criteriaText,
-          keyRequirements: requirementsText,
-          keyDates: datesText,
-          keyPersonnel: personnelText,
-          tokenEstimate,
-          createdBy: ctx.user.id,
-        });
-        const newRows = await db
-          .select()
-          .from(rfpWikis)
-          .where(eq(rfpWikis.shredId, input.shredId))
-          .orderBy(desc(rfpWikis.compiledAt))
-          .limit(1);
-        wikiId = newRows[0]?.id ?? 0;
+        await db.insert(rfpStructuredIndex).values(indexData);
       }
 
       return {
-        id: wikiId,
-        wikiContent,
-        evaluationCriteria: criteriaText,
-        keyRequirements: requirementsText,
-        keyDates: datesText,
-        keyPersonnel: personnelText,
-        tokenEstimate,
+        success: true,
+        index: parsed,
         _provider: result._provider,
         _model: result._model,
       };
     }),
 
   /**
-   * Append an addendum or lesson-learned to an existing wiki.
-   * The LLM reads the existing wiki + new content and produces an updated wiki.
+   * QUERY-TIME: Synthesize a prose answer from the raw XML.
+   *
+   * The structured index guides which parts of the XML are relevant.
+   * The LLM reads the original XML and generates a fresh answer with citations.
+   * Nothing is stored — every call synthesizes from the source.
    */
-  update: protectedProcedure
+  query: protectedProcedure
     .input(z.object({
-      wikiId: z.number(),
-      addendumText: z.string(),
-      updateType: z.enum(["addendum", "lesson_learned", "clarification"]),
+      shredId: z.number(),
+      question: z.string().min(3).max(1000),
+      /** Optional: focus the answer on specific fact types */
+      focusAreas: z.array(z.enum([
+        "submission_deadlines", "contract_values", "evaluation_criteria",
+        "eligibility", "submission_requirements", "key_personnel",
+        "key_dates", "page_limits", "scope", "section_guide",
+      ])).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
 
-      const rows = await db
+      // Load the raw XML (source of truth)
+      const shredRows = await db
         .select()
-        .from(rfpWikis)
-        .where(eq(rfpWikis.id, input.wikiId))
+        .from(documentShreds)
+        .where(eq(documentShreds.id, input.shredId))
         .limit(1);
-      const wiki = rows[0];
-      if (!wiki) throw new Error(`Wiki ${input.wikiId} not found`);
+      const shred = shredRows[0];
+      if (!shred?.xmlContent) throw new Error("Shred not found or has no XML content");
+
+      // Load the structured index as a navigation guide
+      const indexRows = await db
+        .select()
+        .from(rfpStructuredIndex)
+        .where(eq(rfpStructuredIndex.shredId, input.shredId))
+        .limit(1);
+      const index = indexRows[0];
+
+      // Build navigation context from the index (not prose — just pointers)
+      let navContext = "";
+      if (index) {
+        const keyDates = safeJson<CitedFact[]>(index.keyDates);
+        const deadlines = safeJson<CitedFact[]>(index.submissionDeadlines);
+        const criteria = safeJson<EvalCriterion[]>(index.evaluationCriteria);
+        const sectionMap = safeJson<SectionMapEntry[]>(index.sectionMap);
+
+        navContext = `
+INDEX NAVIGATION (use these pointers to find relevant XML sections):
+Key Dates: ${keyDates.map(d => `${d.value} (${d.source})`).join("; ")}
+Deadlines: ${deadlines.map(d => `${d.value} (${d.source})`).join("; ")}
+Evaluation Criteria: ${criteria.map(c => `${c.criterion} ${c.weight ?? ""} (${c.source})`).join("; ")}
+Sections: ${sectionMap.map(s => `${s.section}: ${s.description}`).join("; ")}
+`;
+      }
 
       const result = await invokeLLMWithSkill({
         skillType: "wiki_compiler",
         variables: {
-          fileName: "existing wiki",
-          xmlContent: `<existing_wiki>\n${wiki.wikiContent}\n</existing_wiki>\n\n<update type="${input.updateType}">\n${input.addendumText}\n</update>`,
-          firmContext: "Update the existing wiki to incorporate the new information. Preserve all existing sections and add/modify only what is affected by the update.",
+          fileName: shred.fileName,
+          xmlContent: shred.xmlContent.slice(0, 80000),
+          firmContext: navContext,
         },
+        systemOverride: `You are an expert RFP analyst. Answer the user's question by reading the raw RFP XML document provided.
+
+CRITICAL RULES:
+1. Answer ONLY from the XML content — do not use prior knowledge or make assumptions
+2. Every claim must be followed by a citation in the format [Source: filename, Section X, p.Y]
+3. If the answer appears in multiple places with different values, report ALL of them — this may indicate a conflict
+4. If the information is not in the document, say "Not found in the provided RFP package"
+5. Quote exact text for dates, values, and requirements — do not paraphrase critical facts
+6. If you detect a contradiction while answering, explicitly flag it: ⚠️ CONFLICT DETECTED: ...
+
+${navContext}
+
+Question: ${input.question}`,
       });
 
-      const updatedContent = (result.choices[0]?.message?.content as string) ?? wiki.wikiContent ?? "";
+      const answer = (result.choices[0]?.message?.content as string) ?? "";
 
-      await db
-        .update(rfpWikis)
-        .set({
-          wikiContent: updatedContent,
-          compiledAt: new Date(),
-        })
-        .where(eq(rfpWikis.id, input.wikiId));
+      return {
+        answer,
+        question: input.question,
+        shredId: input.shredId,
+        _provider: result._provider,
+        _model: result._model,
+      };
+    }),
 
-      return { success: true, wikiContent: updatedContent };
+  /**
+   * Legacy: compile a Markdown wiki (kept for backward compat).
+   * Now marked as deprecated — use extractIndex + query instead.
+   */
+  compile: protectedProcedure
+    .input(z.object({
+      shredId: z.number(),
+      proposalId: z.number().optional(),
+      firmContext: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const shredRows = await db
+        .select()
+        .from(documentShreds)
+        .where(eq(documentShreds.id, input.shredId))
+        .limit(1);
+      const shred = shredRows[0];
+      if (!shred) throw new Error(`Shred ${input.shredId} not found`);
+      if (!shred.xmlContent) throw new Error("Shred has no XML content");
+
+      const result = await invokeLLMWithSkill({
+        skillType: "wiki_compiler",
+        variables: {
+          fileName: shred.fileName,
+          xmlContent: shred.xmlContent.slice(0, 60000),
+          firmContext: input.firmContext ?? "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ/NY.",
+        },
+        systemOverride: `IMPORTANT: This wiki is a NAVIGATION GUIDE only, not a source of truth.
+Every section must cite exact XML sources. Do not paraphrase dates, values, or requirements — quote them exactly.
+Mark any detected contradictions with ⚠️ CONFLICT: prefix.`,
+      });
+
+      const wikiContent = (result.choices[0]?.message?.content as string) ?? "";
+      const tokenEstimate = Math.round(wikiContent.length / 4);
+
+      const existing = await db.select().from(rfpWikis).where(eq(rfpWikis.shredId, input.shredId)).limit(1);
+
+      let wikiId: number;
+      if (existing.length > 0) {
+        await db.update(rfpWikis).set({ wikiContent, tokenEstimate, compiledAt: new Date(), proposalId: input.proposalId }).where(eq(rfpWikis.shredId, input.shredId));
+        wikiId = existing[0].id;
+      } else {
+        await db.insert(rfpWikis).values({ shredId: input.shredId, proposalId: input.proposalId, wikiContent, tokenEstimate, createdBy: ctx.user.id });
+        const newRows = await db.select().from(rfpWikis).where(eq(rfpWikis.shredId, input.shredId)).orderBy(desc(rfpWikis.compiledAt)).limit(1);
+        wikiId = newRows[0]?.id ?? 0;
+      }
+
+      return { id: wikiId, wikiContent, tokenEstimate, _provider: result._provider, _model: result._model };
     }),
 
   /** Delete a wiki */
@@ -235,3 +393,10 @@ export const rfpWikiRouter = router({
       return { success: true };
     }),
 });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function safeJson<T>(raw: string | null | undefined): T {
+  if (!raw) return [] as unknown as T;
+  try { return JSON.parse(raw) as T; } catch { return [] as unknown as T; }
+}

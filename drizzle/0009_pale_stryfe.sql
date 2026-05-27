@@ -1,0 +1,43 @@
+CREATE TABLE `rfp_conflicts` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`shredId` int NOT NULL,
+	`pursuitId` int,
+	`conflictType` varchar(64) NOT NULL,
+	`severity` varchar(16) NOT NULL,
+	`title` varchar(512) NOT NULL,
+	`description` text NOT NULL,
+	`conflictingFacts` text NOT NULL,
+	`recommendation` text,
+	`status` varchar(16) DEFAULT 'open',
+	`resolvedNote` text,
+	`resolvedAt` timestamp,
+	`resolvedBy` int,
+	`detectedAt` timestamp NOT NULL DEFAULT (now()),
+	`createdBy` int,
+	`provider` varchar(64),
+	`model` varchar(128),
+	CONSTRAINT `rfp_conflicts_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `rfp_structured_index` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`shredId` int NOT NULL,
+	`pursuitId` int,
+	`submissionDeadlines` text,
+	`contractValues` text,
+	`evaluationCriteria` text,
+	`eligibilityRequirements` text,
+	`submissionRequirements` text,
+	`keyPersonnel` text,
+	`keyDates` text,
+	`pageLimits` text,
+	`references` text,
+	`scopeItems` text,
+	`sectionMap` text,
+	`extractedAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	`createdBy` int,
+	`provider` varchar(64),
+	`model` varchar(128),
+	CONSTRAINT `rfp_structured_index_id` PRIMARY KEY(`id`)
+);

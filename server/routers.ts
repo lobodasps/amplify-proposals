@@ -19,6 +19,7 @@ import { aiSkillsRouter } from "./routers/aiSkills";
 import { xmlShredderRouter } from "./routers/xmlShredder";
 import { rfpWikiRouter } from "./routers/rfpWiki";
 import { agentGuidelinesRouter } from "./routers/agentGuidelines";
+import { rfpConflictsRouter } from "./routers/rfpConflicts";
 
 export const appRouter = router({
   system: systemRouter,
@@ -56,6 +57,7 @@ export const appRouter = router({
   xmlShredder: xmlShredderRouter,
   rfpWiki: rfpWikiRouter,
   agentGuidelines: agentGuidelinesRouter,
+  rfpConflicts: rfpConflictsRouter,
 });
 
 export type AppRouter = typeof appRouter;

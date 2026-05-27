@@ -194,3 +194,13 @@
 - [ ] Build RFP Workspace page (/pursuits/:id/workspace): shreds panel, wiki panel, per-section guidelines cards, scoring history with trend
 - [ ] Add "Workspace" button on PursuitDetail page linking to /pursuits/:id/workspace
 - [ ] Wire Workspace quick-launch buttons to each AI tool pre-scoped to the pursuit (?pursuitId= query param)
+
+## Sidebar Navigation Redesign (v2.3)
+- [x] Redesign AppLayout sidebar: Option A+C — lifecycle-ordered collapsible section groups
+- [x] Groups: Home, Business Development (step 1), Pursuits & Proposals (step 2), RFP Intelligence (step 3), Firm Knowledge, Contracts & Compliance (step 4), Reports & Admin
+- [x] Each group is collapsible with smooth animation; active group auto-expands on navigation
+- [x] Lifecycle step numbers (1–4) shown on BD-workflow groups
+- [x] Collapsed sidebar shows icon-only items with rich tooltips (label + description)
+- [x] "BD Lifecycle" label at top of expanded sidebar for orientation
+- [x] ConflictDetector page wired into RFP Intelligence group
+- [x] RfpWiki page updated to hybrid architecture (extractIndex + query tabs)

@@ -969,3 +969,57 @@ export const proposalScores = mysqlTable("proposal_scores", {
 });
 export type ProposalScore = typeof proposalScores.$inferSelect;
 export type InsertProposalScore = typeof proposalScores.$inferInsert;
+
+// ─── Hybrid Wiki: Structured Index ───────────────────────────────────────────
+// Stores structured metadata extracted from shredded XML at write time.
+// The LLM extracts entities/facts/claims with exact source citations — never prose.
+// Prose synthesis happens at query time from the raw XML, guided by this index.
+export const rfpStructuredIndex = mysqlTable("rfp_structured_index", {
+  id: int("id").autoincrement().primaryKey(),
+  shredId: int("shredId").notNull(),
+  pursuitId: int("pursuitId"),
+  // Structured facts extracted with source citations — JSON arrays of {value, source, xmlPath}
+  submissionDeadlines: text("submissionDeadlines"),
+  contractValues: text("contractValues"),
+  evaluationCriteria: text("evaluationCriteria"),
+  eligibilityRequirements: text("eligibilityRequirements"),
+  submissionRequirements: text("submissionRequirements"),
+  keyPersonnel: text("keyPersonnel"),
+  keyDates: text("keyDates"),
+  pageLimits: text("pageLimits"),
+  references: text("references"),
+  scopeItems: text("scopeItems"),
+  sectionMap: text("sectionMap"),
+  extractedAt: timestamp("extractedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdBy: int("createdBy"),
+  provider: varchar("provider", { length: 64 }),
+  model: varchar("model", { length: 128 }),
+});
+export type RfpStructuredIndex = typeof rfpStructuredIndex.$inferSelect;
+export type InsertRfpStructuredIndex = typeof rfpStructuredIndex.$inferInsert;
+
+// ─── RFP Conflict Detection ───────────────────────────────────────────────────
+// Stores detected contradictions, date discrepancies, and scope conflicts
+// found by comparing structured index facts across all files in the RFP package.
+export const rfpConflicts = mysqlTable("rfp_conflicts", {
+  id: int("id").autoincrement().primaryKey(),
+  shredId: int("shredId").notNull(),
+  pursuitId: int("pursuitId"),
+  conflictType: varchar("conflictType", { length: 64 }).notNull(),
+  severity: varchar("severity", { length: 16 }).notNull(),
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description").notNull(),
+  conflictingFacts: text("conflictingFacts").notNull(), // JSON array
+  recommendation: text("recommendation"),
+  status: varchar("status", { length: 16 }).default("open"),
+  resolvedNote: text("resolvedNote"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedBy: int("resolvedBy"),
+  detectedAt: timestamp("detectedAt").defaultNow().notNull(),
+  createdBy: int("createdBy"),
+  provider: varchar("provider", { length: 64 }),
+  model: varchar("model", { length: 128 }),
+});
+export type RfpConflict = typeof rfpConflicts.$inferSelect;
+export type InsertRfpConflict = typeof rfpConflicts.$inferInsert;

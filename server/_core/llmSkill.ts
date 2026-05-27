@@ -68,6 +68,12 @@ export interface SkillInvokeParams {
       schema: Record<string, unknown>;
     };
   };
+  /**
+   * Override the system prompt from the skill config.
+   * Use when the caller needs a task-specific system prompt that differs from
+   * the generic skill default (e.g. conflict detection vs wiki compilation).
+   */
+  systemOverride?: string;
   /** Append extra content parts to the user message (e.g. file_url for PDFs) */
   extraUserContent?: Array<
     | { type: "text"; text: string }
@@ -521,7 +527,7 @@ async function callOpenAICompat(
 export async function invokeLLMWithSkill(
   params: SkillInvokeParams
 ): Promise<SkillInvokeResult> {
-  const { skillType, variables = {}, responseFormat, extraUserContent } = params;
+  const { skillType, variables = {}, responseFormat, extraUserContent, systemOverride } = params;
 
   // 1. Load skill config from DB (or use defaults)
   let skillRow: {
@@ -565,7 +571,7 @@ export async function invokeLLMWithSkill(
       ? [{ type: "text", text: userText }, ...extraUserContent]
       : userText;
     messages = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemOverride ?? systemPrompt },
       { role: "user", content: userContent },
     ];
   }
