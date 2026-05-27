@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries } from "../../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries, people } from "../../drizzle/schema";
+import { eq, desc, sql, getTableColumns } from "drizzle-orm";
+import { alias } from "drizzle-orm/mysql-core";
 import { supabase } from "../supabase";
 import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
 import { getContractFinancials, persistContractFinancials } from "../contractFinancials";
@@ -194,7 +195,20 @@ export const contractsRouter = router({
   list: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(contracts).orderBy(desc(contracts.createdAt)).limit(200);
+    const pm = alias(people, "pm");
+    const pa = alias(people, "pa");
+    const rows = await db
+      .select({
+        ...getTableColumns(contracts),
+        projectManagerName: sql<string | null>`CONCAT_WS(' ', ${pm.firstName}, ${pm.lastName})`,
+        projectAccountantName: sql<string | null>`CONCAT_WS(' ', ${pa.firstName}, ${pa.lastName})`,
+      })
+      .from(contracts)
+      .leftJoin(pm, eq(contracts.projectManagerId, pm.id))
+      .leftJoin(pa, eq(contracts.projectAccountantId, pa.id))
+      .orderBy(desc(contracts.createdAt))
+      .limit(200);
+    return rows;
   }),
 
   getById: protectedProcedure
@@ -459,6 +473,18 @@ export const contractsRouter = router({
       projectAccountantId: z.number().optional(),
       clientOrgId: z.number().optional(),
       ownerOrgId: z.number().optional(),
+      // New schema fields
+      tierLabelId: z.number().nullable().optional(),
+      amountBehavior: z.enum(["independent", "adds_to_parent", "subtracts_from_parent", "utilizes_parent"]).optional(),
+      structureType: z.string().optional(),
+      contractOwnerId: z.number().nullable().optional(),
+      primeOrgId: z.number().nullable().optional(),
+      coiReceivedDate: z.date().nullable().optional(),
+      fullyExecutedContractDate: z.date().nullable().optional(),
+      primeAgreementDate: z.date().nullable().optional(),
+      hasCOI: z.boolean().optional(),
+      hasSignedContract: z.boolean().optional(),
+      billingMethods: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -490,7 +516,7 @@ export const contractsRouter = router({
       return { contract, children: childrenWithSubs, amendments };
     }),
 
-  // Create a child contract (task order or sub-project)
+  // Create a child contract (task order, phase, sub-project, etc.)
   createChild: protectedProcedure
     .input(z.object({
       parentId: z.number(),
@@ -499,12 +525,19 @@ export const contractsRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
       notes: z.string().optional(),
+      tierLabelId: z.number().optional(),           // FK to order_types — user-defined label (Task Order, Phase, PO, etc.)
+      amountBehavior: z.enum(["independent", "adds_to_parent", "subtracts_from_parent", "utilizes_parent"]).default("adds_to_parent"),
+      projectManagerId: z.number().optional(),
+      projectAccountantId: z.number().optional(),
+      departmentId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [parent] = await db.select().from(contracts).where(eq(contracts.id, input.parentId)).limit(1);
       if (!parent) throw new Error("Parent contract not found");
+
+      if ((parent.level ?? 1) >= 3) throw new Error("Cannot create children below level 3");
 
       const parentNumber = parent.contractNumber ?? "";
       const parentLevel = parent.level ?? 1;
@@ -526,6 +559,8 @@ export const contractsRouter = router({
         projectNumber: childNumber,
         clientId: parent.clientId ?? undefined,
         clientName: parent.clientName ?? undefined,
+        clientOrgId: parent.clientOrgId ?? undefined,
+        ownerOrgId: parent.ownerOrgId ?? undefined,
         status: parent.status === "active" ? "active" : "draft",
         contractVehicle: parent.contractVehicle ?? "standalone",
         companyRole: parent.companyRole ?? "prime",
@@ -537,8 +572,17 @@ export const contractsRouter = router({
         level: childLevel,
         nodeType,
         budgetBehavior: "draws_from_parent",
+        amountBehavior: input.amountBehavior,
+        tierLabelId: input.tierLabelId ?? undefined,
+        projectManagerId: input.projectManagerId ?? parent.projectManagerId ?? undefined,
+        projectAccountantId: input.projectAccountantId ?? parent.projectAccountantId ?? undefined,
+        departmentId: input.departmentId ?? parent.departmentId ?? undefined,
         contractManagerId: ctx.user.id,
-      });
+      } as any);
+
+      // Cascade financials up to parent
+      await persistContractFinancials(input.parentId);
+
       return { success: true, id: (result as any).insertId, contractNumber: childNumber };
     }),
 

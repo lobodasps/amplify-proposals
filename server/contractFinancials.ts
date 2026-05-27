@@ -1,23 +1,27 @@
 /**
  * Contract Financial Model — server-side calculation helper
  *
- * Implements all 15 rules (R1–R15) from docs/contract-financial-model.md
+ * Three-tier recursive rollup:
+ *   Level 1 (root): financials represent L1 own + all L2 + all L3 beneath it
+ *   Level 2 (mid):  financials represent L2 own + all L3 beneath it
+ *   Level 3 (leaf): financials represent L3 own only
  *
- * Two billing modes:
- *  - AUTHORIZED  (Task Order model): children commit value against the NTE ceiling.
- *                 Authorized Value = Σ child computedContractValue.
- *                 Over-ceiling = billed > NTE ceiling.
- *  - NTE_CEILING (On-Call / Direct Bill): no child orders issued; invoices are
- *                 billed directly against the ceiling.
- *                 Authorized Value = ceiling itself.
- *                 Over-ceiling = billed > NTE ceiling.
+ * Child amountBehavior on contracts:
+ *   independent          — child value is standalone; does NOT roll up into parent
+ *   adds_to_parent       — child value adds to parent authorized value
+ *   subtracts_from_parent — child value reduces parent authorized value
+ *   utilizes_parent      — child draws from parent NTE ceiling (AUTHORIZED mode)
  *
- * For non-NTE contracts (hasNteCeiling = false):
- *  - computedContractValue = initialAmount ± ADDS/SUBTRACTS amendments (R1)
- *  - Over-ceiling = billed > computedContractValue (R7)
+ * Amendment amountBehavior:
+ *   adds_to_value        — increases authorized value / ceiling
+ *   subtracts_from_value — decreases authorized value / ceiling
+ *
+ * Two billing modes (billingBasis on root NTE contracts):
+ *   authorized  — children commit value against the NTE ceiling
+ *   nte_ceiling — on-call/direct-bill; no children; invoices billed directly
  */
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "./db";
 import { contracts, contractAmendments, billingEntries } from "../drizzle/schema";
 
@@ -26,23 +30,21 @@ export interface ContractFinancialsResult {
   initialAmount: number;
   effectiveCeiling: number | null;      // null when hasNteCeiling = false
   computedContractValue: number;        // authorized value (ceiling or initial ± amendments)
-  authorizedValue: number;             // for display: ceiling (NTE) or computedContractValue (non-NTE)
+  authorizedValue: number;             // for display
 
-  // NTE-specific (only meaningful when hasNteCeiling = true)
-  ceilingCommittedByChildren: number;  // Σ child computedContractValue (AUTHORIZED mode)
-  ceilingAvailable: number;            // effectiveCeiling − ceilingCommittedByChildren (AUTHORIZED)
-                                       // effectiveCeiling − billedToDate (NTE_CEILING mode)
+  // NTE-specific
+  ceilingCommittedByChildren: number;
+  ceilingAvailable: number;
 
-  // Billing
+  // Billing (recursive: includes all descendants)
   billedToDate: number;
   retainageAmount: number;
-  remaining: number;                   // computedContractValue − billedToDate (non-NTE)
-                                       // effectiveCeiling − billedToDate (NTE)
+  remaining: number;
 
   // Flags
   isBillingOverCeiling: boolean;
-  hasOverBilledChildren: boolean;      // any child where billed > child.computedContractValue
-  billingPercentage: number;           // round(billed / ceiling * 100)
+  hasOverBilledChildren: boolean;
+  billingPercentage: number;
 
   // Burn-rate analytics (NTE contracts only)
   avgMonthlyBurn: number | null;
@@ -53,7 +55,59 @@ export interface ContractFinancialsResult {
   childCount: number;
   billingBasis: string;
   hasNteCeiling: boolean;
+
+  // Hierarchy rollup totals (useful for display)
+  totalDescendantValue: number;   // Σ all descendant computedContractValue
+  totalDescendantBilled: number;  // Σ all descendant billedToDate
 }
+
+// ─── Helper: load all descendants of a contract ───────────────────────────────
+
+async function loadAllDescendants(rootId: number): Promise<typeof contracts.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Load ALL contracts once, then build tree in memory (avoids N+1 queries)
+  const allContracts = await db.select().from(contracts);
+  const byParent = new Map<number, typeof contracts.$inferSelect[]>();
+  for (const c of allContracts) {
+    if (c.parentContractId != null) {
+      const list = byParent.get(c.parentContractId) ?? [];
+      list.push(c);
+      byParent.set(c.parentContractId, list);
+    }
+  }
+
+  const result: typeof contracts.$inferSelect[] = [];
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const children = byParent.get(current) ?? [];
+    for (const child of children) {
+      result.push(child);
+      queue.push(child.id);
+    }
+  }
+  return result;
+}
+
+// ─── Helper: compute amendment totals for a single contract ──────────────────
+
+function computeAmendmentTotals(amendments: typeof contractAmendments.$inferSelect[]) {
+  let addsTotal = 0;
+  let subtractsTotal = 0;
+  for (const a of amendments) {
+    const behavior = a.amountBehavior ?? "adds_to_value";
+    const magnitude = a.amountChange != null ? Math.abs(a.amountChange) : Math.abs(a.amount ?? 0);
+    if (behavior === "adds_to_value") addsTotal += magnitude;
+    else if (behavior === "subtracts_from_value") subtractsTotal += magnitude;
+    else if ((a.amount ?? 0) < 0) subtractsTotal += Math.abs(a.amount ?? 0);
+    else addsTotal += Math.abs(a.amount ?? 0);
+  }
+  return { addsTotal, subtractsTotal };
+}
+
+// ─── Main financial calculation ───────────────────────────────────────────────
 
 export async function getContractFinancials(
   contractId: number
@@ -61,7 +115,7 @@ export async function getContractFinancials(
   const db = await getDb();
   if (!db) return null;
 
-  // Load contract
+  // Load the contract itself
   const [contract] = await db
     .select()
     .from(contracts)
@@ -75,92 +129,101 @@ export async function getContractFinancials(
   const initialAmount = contract.value ?? 0;
 
   // Load amendments for this contract
-  const amendments = await db
+  const ownAmendments = await db
     .select()
     .from(contractAmendments)
     .where(eq(contractAmendments.contractId, contractId));
 
-  // Compute adds and subtracts from amendments (R1, R2, R15)
-  let addsTotal = 0;
-  let subtractsTotal = 0;
-  for (const a of amendments) {
-    const behavior = a.amountBehavior ?? "adds_to_value";
-    const magnitude = a.amountChange != null ? Math.abs(a.amountChange) : Math.abs(a.amount ?? 0);
-    if (behavior === "adds_to_value") addsTotal += magnitude;
-    else if (behavior === "subtracts_from_value") subtractsTotal += magnitude;
-    // Legacy: if amountBehavior not set but amount is negative, treat as subtraction
-    else if ((a.amount ?? 0) < 0) subtractsTotal += Math.abs(a.amount ?? 0);
-    else addsTotal += Math.abs(a.amount ?? 0);
-  }
+  const { addsTotal, subtractsTotal } = computeAmendmentTotals(ownAmendments);
 
-  // Effective ceiling (R2, R15): ADDS/SUBTRACTS change the ceiling; no other amendment type does
+  // Effective ceiling and own computed value
   const effectiveCeiling = hasNTE ? nteCeilingAmount + addsTotal - subtractsTotal : null;
-
-  // computedContractValue (R1 non-NTE, R2 NTE)
-  const computedContractValue = hasNTE
+  const ownComputedValue = hasNTE
     ? (effectiveCeiling ?? 0)
     : initialAmount + addsTotal - subtractsTotal;
 
-  // Load direct children
-  const children = await db
-    .select()
-    .from(contracts)
-    .where(eq(contracts.parentContractId, contractId));
+  // Load all descendants (recursive)
+  const descendants = await loadAllDescendants(contractId);
+  const directChildren = descendants.filter(c => c.parentContractId === contractId);
+  const childCount = directChildren.length;
 
-  const childCount = children.length;
+  // Compute recursive descendant totals
+  // For each descendant, its contribution to the root depends on amountBehavior
+  let totalDescendantValue = 0;
+  let totalDescendantBilled = 0;
+  let hasOverBilledChildren = false;
 
-  // Ceiling committed by children (AUTHORIZED mode only — R4 analog)
-  const ceilingCommittedByChildren = children.reduce(
+  for (const desc of descendants) {
+    const behavior = (desc as any).amountBehavior ?? "independent";
+    const descValue = desc.computedContractValue ?? desc.value ?? 0;
+    const descBilled = desc.totalBilledAmount ?? 0;
+
+    // Only roll up value for non-independent children
+    if (behavior !== "independent") {
+      if (behavior === "adds_to_parent" || behavior === "utilizes_parent") {
+        totalDescendantValue += descValue;
+      } else if (behavior === "subtracts_from_parent") {
+        totalDescendantValue -= descValue;
+      }
+    }
+
+    totalDescendantBilled += descBilled;
+
+    if (descBilled > descValue && descValue > 0) {
+      hasOverBilledChildren = true;
+    }
+  }
+
+  // Ceiling committed by direct children (AUTHORIZED mode)
+  const ceilingCommittedByChildren = directChildren.reduce(
     (sum, c) => sum + (c.computedContractValue ?? c.value ?? 0),
     0
   );
 
-  // Billed to date
-  // For NTE_CEILING (on-call): use contract.totalBilledAmount (QB feed / billing entries)
-  // For AUTHORIZED (task order): roll up billed from children (R4 analog)
+  // computedContractValue for this node
+  // For non-NTE: own value ± non-independent descendant values
+  const computedContractValue = hasNTE
+    ? (effectiveCeiling ?? 0)
+    : ownComputedValue + Math.max(0, totalDescendantValue);
+
+  // Billed to date (recursive)
   let billedToDate: number;
   if (hasNTE && billingBasis === "authorized") {
-    // Roll up from children
-    billedToDate = children.reduce(
+    // Roll up from direct children (they in turn roll up from their children)
+    billedToDate = directChildren.reduce(
       (sum, c) => sum + (c.totalBilledAmount ?? 0),
       0
     );
+  } else if (descendants.length > 0) {
+    // Non-NTE with children: own billed + all descendant billed
+    billedToDate = (contract.totalBilledAmount ?? 0) + totalDescendantBilled;
   } else {
-    // Direct billing (on-call) or non-NTE: use contract's own totalBilledAmount
     billedToDate = contract.totalBilledAmount ?? 0;
   }
 
-  // Retainage
+  // Retainage (own only — descendants track their own)
   const retainageAmount = contract.retainageAmount ?? 0;
 
-  // Remaining (R6)
+  // Remaining
   const ceiling = effectiveCeiling ?? computedContractValue;
   const remaining = ceiling - billedToDate;
 
   // Available for new orders
   let ceilingAvailable: number;
   if (hasNTE && billingBasis === "authorized") {
-    // Available = ceiling − committed by children
     ceilingAvailable = (effectiveCeiling ?? 0) - ceilingCommittedByChildren;
   } else if (hasNTE && billingBasis === "nte_ceiling") {
-    // On-call: available = ceiling − billed
     ceilingAvailable = (effectiveCeiling ?? 0) - billedToDate;
   } else {
     ceilingAvailable = 0;
   }
 
-  // Over-ceiling check (R7)
-  // Always compare billed against the NTE ceiling (not authorized value) when hasNTE
+  // Over-ceiling check
   const isBillingOverCeiling = hasNTE
     ? billedToDate > (effectiveCeiling ?? 0)
     : billedToDate > computedContractValue;
 
-  // Over-billed children (R8 analog): any child where billed > child authorized
-  const hasOverBilledChildren = children.some(
-    (c) => (c.totalBilledAmount ?? 0) > (c.computedContractValue ?? c.value ?? 0)
-  );
-
-  // Billing percentage (R9): always against ceiling when NTE
+  // Billing percentage
   const denominator = hasNTE ? (effectiveCeiling ?? 0) : computedContractValue;
   const billingPercentage = denominator > 0 ? Math.round((billedToDate / denominator) * 100) : 0;
 
@@ -212,16 +275,20 @@ export async function getContractFinancials(
     childCount,
     billingBasis,
     hasNteCeiling: hasNTE,
+    totalDescendantValue,
+    totalDescendantBilled,
   };
 }
 
 /**
  * Persist the computed financials back to the contract row so the list view
  * and other queries always see up-to-date KPIs without re-computing.
+ * Also cascades up to the parent chain so L1 always reflects L2+L3 changes.
  */
 export async function persistContractFinancials(contractId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+
   const fin = await getContractFinancials(contractId);
   if (!fin) return;
 
@@ -234,4 +301,14 @@ export async function persistContractFinancials(contractId: number): Promise<voi
       isBillingOverCeiling: fin.isBillingOverCeiling,
     } as any)
     .where(eq(contracts.id, contractId));
+
+  // Cascade up: if this contract has a parent, recalculate the parent too
+  const [self] = await db.select({ parentContractId: contracts.parentContractId })
+    .from(contracts)
+    .where(eq(contracts.id, contractId))
+    .limit(1);
+
+  if (self?.parentContractId) {
+    await persistContractFinancials(self.parentContractId);
+  }
 }

@@ -531,11 +531,25 @@ export const contracts = mysqlTable("contracts", {
   primeAgreementRequired: boolean("primeAgreementRequired").default(false),
   primeAgreementOnFile: boolean("primeAgreementOnFile").default(false),
   clientBillingInfoOnFile: boolean("clientBillingInfoOnFile").default(false),
+  // Compliance flags (extended)
+  coiReceivedDate: timestamp("coiReceivedDate"),
+  fullyExecutedContractDate: timestamp("fullyExecutedContractDate"),
+  primeAgreementDate: timestamp("primeAgreementDate"),
+  hasCOI: boolean("hasCOI").default(false),
+  hasSignedContract: boolean("hasSignedContract").default(false),
+  // Contract structure
+  structureType: varchar("structureType", { length: 64 }).default("CONTRACT_IS_PROJECT"), // CONTRACT_IS_PROJECT | CONTRACT_HAS_SUBPROJECTS
+  // Additional key personnel
+  contractOwnerId: int("contractOwnerId"), // FK to people — contract administrator
+  // Additional organization FKs
+  primeOrgId: int("primeOrgId"), // FK to organizations — prime contractor when we are sub
   // Hierarchy (for task orders / sub-projects)
   parentContractId: int("parentContractId"), // self-referencing for child contracts
   level: int("level").default(1), // 1=root, 2=task order, 3=sub-project
+  tierLabelId: int("tierLabelId"), // FK to order_types — user-defined label for this tier (Task Order, Phase, PO, etc.)
   nodeType: varchar("nodeType", { length: 32 }).default("contract"), // contract | project | sub_project | phase
   budgetBehavior: varchar("budgetBehavior", { length: 32 }).default("draws_from_parent"), // draws_from_parent | adds_to_parent | independent
+  amountBehavior: varchar("amountBehavior", { length: 32 }).default("independent"), // independent | adds_to_parent | subtracts_from_parent | utilizes_parent — how this child affects parent financials
   // Documents and notes
   documentUrl: text("documentUrl"),
   documentKey: text("documentKey"),

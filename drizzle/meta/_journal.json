@@ -99,6 +99,13 @@
       "when": 1779907773207,
       "tag": "0013_tired_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1779911921363,
+      "tag": "0014_chief_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

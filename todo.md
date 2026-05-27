@@ -347,3 +347,44 @@
 - [ ] Pre-built Reports tab: Retainage Summary (CSV export)
 - [ ] Query Builder tab: table selector, field/operator/value filters, run query, export CSV
 - [ ] Wire Analytics into sidebar and App.tsx routes
+
+## Contract Hierarchy & Import Gaps (Session 3)
+
+### Schema Additions
+- [x] Add tierLabelId (FK to orderTypes) to contracts table
+- [x] Add amountBehavior to contracts table (adds_to_parent / subtracts_from_parent / independent / utilizes_parent)
+- [x] Add compliance fields: coiRequired, coiReceived, coiReceivedDate, coiExpirationDate
+- [x] Add compliance fields: fullyExecutedContractReceived, fullyExecutedContractDate
+- [x] Add compliance fields: primeAgreementRequired, primeAgreementOnFile, primeAgreementDate
+- [x] Add hasCOI, hasSignedContract boolean fields to contracts
+- [x] Add billingMethods JSON array to contracts (LUMP_SUM, T_AND_M, COST_PLUS, UNIT_PRICE)
+- [x] Add structureType to contracts (CONTRACT_IS_PROJECT / CONTRACT_HAS_SUBPROJECTS)
+- [x] Add contractOwnerId (FK to people) to contracts
+- [x] Add primeOrgId (FK to organizations) to contracts
+- [x] Push migration with pnpm db:push
+
+### Server / Financial Rollup
+- [x] Fix getContractFinancials() to do recursive rollup: L1=L1+L2+L3, L2=L2+L3
+- [x] Update createChild to accept tierLabelId and amountBehavior
+- [x] Update contracts.create and contracts.update to accept all new fields
+
+### UI Updates
+- [ ] ContractDetail: show tier label from orderTypes on child order rows
+- [ ] ContractDetail: amountBehavior badge on child contracts
+- [ ] EditContractDialog: tierLabelId selector, amountBehavior for L2/L3
+- [ ] EditContractDialog: compliance fields (COI, executed contract, prime agreement)
+- [ ] EditContractDialog: billingMethods multi-select, structureType, contractOwnerId, primeOrgId
+- [x] Contracts page: remove All Entities filter, add PM and Accountant filter dropdowns
+
+### Import Tab in Settings
+- [x] Add Import tab to Settings page
+- [x] Import: Organizations CSV/Excel with download template
+- [x] Import: People CSV/Excel with download template
+- [x] Import: Contracts CSV/Excel with download template (supports level + parentProjectNumber)
+- [x] Import: Amendments CSV/Excel with download template
+- [x] Import: Billing/QB update CSV with download template
+- [x] Import: Service Types CSV with download template
+- [x] Import: Glossary Terms CSV with download template
+- [x] Import: Opportunities CSV with download template
+- [x] Server: bulk import tRPC procedures (8 data types, client-side CSV parse)
+- [x] Show per-row errors + imported count after each import

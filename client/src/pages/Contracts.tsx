@@ -182,9 +182,10 @@ export default function Contracts() {
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
-  const [filterCompany, setFilterCompany] = useState("ALL");
   const [filterClient, setFilterClient] = useState("ALL");
   const [filterOwner, setFilterOwner] = useState("ALL");
+  const [filterPM, setFilterPM] = useState("ALL");
+  const [filterAccountant, setFilterAccountant] = useState("ALL");
 
   // Sort
   const [sortColumn, setSortColumn] = useState<SortColumn>("projectNumber");
@@ -217,8 +218,10 @@ export default function Contracts() {
     Array.from(new Set(allContracts.map(c => c.clientName).filter(Boolean))) as string[], [allContracts]);
   const uniqueOwners = useMemo(() =>
     Array.from(new Set(allContracts.map(c => c.ownerName).filter(Boolean))) as string[], [allContracts]);
-  const uniqueCompanies = useMemo(() =>
-    Array.from(new Set(allContracts.map(c => c.performingCompanyName).filter(Boolean))) as string[], [allContracts]);
+  const uniquePMs = useMemo(() =>
+    Array.from(new Set(allContracts.map(c => (c as any).projectManagerName).filter(Boolean))) as string[], [allContracts]);
+  const uniqueAccountants = useMemo(() =>
+    Array.from(new Set(allContracts.map(c => (c as any).projectAccountantName).filter(Boolean))) as string[], [allContracts]);
 
   // Parent → children map
   const childrenByParent = useMemo(() => {
@@ -257,12 +260,13 @@ export default function Contracts() {
       const q = searchTerm.toLowerCase();
       if (q && !`${c.contractNumber} ${c.projectNumber} ${c.title} ${c.clientName} ${c.ownerName}`.toLowerCase().includes(q)) return false;
       if (filterStatus !== "ALL" && c.status !== filterStatus) return false;
-      if (filterCompany !== "ALL" && c.performingCompanyName !== filterCompany) return false;
       if (filterClient !== "ALL" && c.clientName !== filterClient) return false;
       if (filterOwner !== "ALL" && c.ownerName !== filterOwner) return false;
+      if (filterPM !== "ALL" && (c as any).projectManagerName !== filterPM) return false;
+      if (filterAccountant !== "ALL" && (c as any).projectAccountantName !== filterAccountant) return false;
       return true;
     });
-  }, [allContracts, searchTerm, filterStatus, filterCompany, filterClient, filterOwner]);
+  }, [allContracts, searchTerm, filterStatus, filterClient, filterOwner, filterPM, filterAccountant]);
 
   // Sort
   const sortedTopLevel = useMemo(() => {
@@ -326,7 +330,7 @@ export default function Contracts() {
     return { active: active.length, draft: draft.length, totalAuthorized, totalBilled, expiring, in30, in60, in90: in90d, atRisk: atRisk.length };
   }, [allContracts]);
 
-  const hasFilters = searchTerm || filterStatus !== "ALL" || filterCompany !== "ALL" || filterClient !== "ALL" || filterOwner !== "ALL";
+  const hasFilters = searchTerm || filterStatus !== "ALL" || filterClient !== "ALL" || filterOwner !== "ALL" || filterPM !== "ALL" || filterAccountant !== "ALL";
 
   const sortProps = { sortColumn, sortDir, onSort: toggleSort };
 
@@ -509,7 +513,7 @@ export default function Contracts() {
                 className="pl-10"
               />
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
                 <SelectContent>
@@ -517,13 +521,6 @@ export default function Contracts() {
                   {CONTRACT_STATUSES.map(s => (
                     <SelectItem key={s} value={s}>{s.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterCompany} onValueChange={setFilterCompany}>
-                <SelectTrigger><SelectValue placeholder="All Entities" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Entities</SelectItem>
-                  {uniqueCompanies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filterClient} onValueChange={setFilterClient}>
@@ -540,6 +537,20 @@ export default function Contracts() {
                   {uniqueOwners.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Select value={filterPM} onValueChange={setFilterPM}>
+                <SelectTrigger><SelectValue placeholder="All Project Managers" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Project Managers</SelectItem>
+                  {uniquePMs.map(pm => <SelectItem key={pm} value={pm}>{pm}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filterAccountant} onValueChange={setFilterAccountant}>
+                <SelectTrigger><SelectValue placeholder="All Accountants" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Accountants</SelectItem>
+                  {uniqueAccountants.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             {hasFilters && (
               <div className="flex items-center gap-3">
@@ -547,8 +558,9 @@ export default function Contracts() {
                   Showing {filteredTopLevel.length} of {allContracts.filter(c => !c.parentContractId).length} top-level contracts
                 </p>
                 <Button variant="ghost" size="sm" onClick={() => {
-                  setSearchTerm(""); setFilterStatus("ALL"); setFilterCompany("ALL");
+                  setSearchTerm(""); setFilterStatus("ALL");
                   setFilterClient("ALL"); setFilterOwner("ALL");
+                  setFilterPM("ALL"); setFilterAccountant("ALL");
                 }}>
                   Clear Filters
                 </Button>
@@ -587,8 +599,9 @@ export default function Contracts() {
                 <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
                 <h3 className="text-lg font-medium">No contracts match your filters</h3>
                 <Button variant="outline" onClick={() => {
-                  setSearchTerm(""); setFilterStatus("ALL"); setFilterCompany("ALL");
+                  setSearchTerm(""); setFilterStatus("ALL");
                   setFilterClient("ALL"); setFilterOwner("ALL");
+                  setFilterPM("ALL"); setFilterAccountant("ALL");
                 }}>Clear Filters</Button>
               </div>
             ) : (

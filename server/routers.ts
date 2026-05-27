@@ -20,6 +20,7 @@ import { xmlShredderRouter } from "./routers/xmlShredder";
 import { rfpWikiRouter } from "./routers/rfpWiki";
 import { agentGuidelinesRouter } from "./routers/agentGuidelines";
 import { rfpConflictsRouter } from "./routers/rfpConflicts";
+import { bulkImportRouter } from "./routers/bulkImport";
 
 export const appRouter = router({
   system: systemRouter,
@@ -58,6 +59,7 @@ export const appRouter = router({
   rfpWiki: rfpWikiRouter,
   agentGuidelines: agentGuidelinesRouter,
   rfpConflicts: rfpConflictsRouter,
+  bulkImport: bulkImportRouter,
 });
 
 export type AppRouter = typeof appRouter;

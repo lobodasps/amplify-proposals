@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle, Upload } from "lucide-react";
+import { ImportTab } from "@/components/ImportTab";
 import AppLayout from "@/components/AppLayout";
 
 interface Column { key: string; label: string; render?: (row: any) => React.ReactNode; }
@@ -336,6 +337,7 @@ export default function Settings() {
           <TabsTrigger value="reminders">Reminders</TabsTrigger>
           <TabsTrigger value="appSettings">App Settings</TabsTrigger>
           <TabsTrigger value="aiSkills" className="flex items-center gap-1"><Brain className="h-3 w-3" />AI Skills</TabsTrigger>
+          <TabsTrigger value="import" className="flex items-center gap-1"><Upload className="h-3 w-3" />Import</TabsTrigger>
         </TabsList>
         <TabsContent value="entities" className="mt-4"><EntitiesTab /></TabsContent>
         <TabsContent value="organizations" className="mt-4"><OrganizationsTab /></TabsContent>
@@ -378,6 +380,7 @@ export default function Settings() {
         </TabsContent>
         <TabsContent value="appSettings" className="mt-4"><AppSettingsTab /></TabsContent>
         <TabsContent value="aiSkills" className="mt-4"><AiSkillsTab /></TabsContent>
+        <TabsContent value="import" className="mt-4"><ImportTab /></TabsContent>
       </Tabs>
     </div>
     </AppLayout>
