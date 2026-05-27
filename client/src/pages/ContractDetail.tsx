@@ -813,6 +813,43 @@ export default function ContractDetail() {
                   );
                 })}
               </tbody>
+              {/* Footer: committed vs ceiling totals */}
+              {(() => {
+                const totalCommitted = children.reduce((sum: number, c: any) => sum + (c.computedContractValue ?? c.value ?? 0), 0);
+                const totalBilledAll = children.reduce((sum: number, c: any) => sum + (c.totalBilledAmount ?? 0), 0);
+                const nteCeiling = contract.nteCeilingAmount ?? 0;
+                const overCommittedAmt = totalCommitted - nteCeiling;
+                const isOverCommitted = nteCeiling > 0 && totalCommitted > nteCeiling;
+                return (
+                  <tfoot>
+                    <tr className={`border-t-2 text-sm font-semibold ${isOverCommitted ? "bg-red-50" : "bg-muted/30"}`}>
+                      <td className="p-3" colSpan={5}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>Total Committed</span>
+                          {isOverCommitted ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-100 border border-red-300 rounded px-1.5 py-0.5">
+                              ⚠ Over-Committed by {formatCurrency(overCommittedAmt)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-normal">
+                              {formatCurrency(nteCeiling - totalCommitted)} remaining capacity
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground font-normal mt-0.5">NTE Ceiling: {formatCurrency(nteCeiling)}</p>
+                      </td>
+                      <td className={`p-3 text-right font-mono ${isOverCommitted ? "text-red-600" : ""}`}>
+                        {formatCurrency(totalCommitted)}
+                        {isOverCommitted && <div className="text-xs text-red-500 font-normal">{Math.round((totalCommitted / nteCeiling) * 100)}% of ceiling</div>}
+                      </td>
+                      <td className="p-3 text-right font-mono">{formatCurrency(totalBilledAll)}</td>
+                      <td className={`p-3 text-right font-mono text-sm ${isOverCommitted ? "text-red-600" : "text-muted-foreground"}`}>
+                        {nteCeiling > 0 ? `${Math.round((totalCommitted / nteCeiling) * 100)}%` : "—"}
+                      </td>
+                    </tr>
+                  </tfoot>
+                );
+              })()}
             </table>
           </CardContent>
         </Card>

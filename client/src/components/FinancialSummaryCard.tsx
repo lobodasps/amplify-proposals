@@ -81,6 +81,9 @@ function FullFinancialCard({ financials: f, className }: { financials: ContractF
   const ceiling = f.effectiveCeiling ?? f.computedContractValue;
   const burnPct = ceiling > 0 ? Math.min(100, Math.round((f.billedToDate / ceiling) * 100)) : 0;
   const committedPct = ceiling > 0 ? Math.min(100, Math.round((f.ceilingCommittedByChildren / ceiling) * 100)) : 0;
+  // Over-committed: sum of task order values exceeds the NTE ceiling
+  const isOverCommitted = isNTE && isAuthorized && f.ceilingCommittedByChildren > ceiling;
+  const overCommittedBy = isOverCommitted ? f.ceilingCommittedByChildren - ceiling : 0;
 
   // Progress bar: green up to 75%, amber 75-90%, red 90%+
   const barColor = burnPct >= 90 ? "bg-red-400" : burnPct >= 75 ? "bg-amber-300" : "bg-emerald-400";
@@ -97,7 +100,12 @@ function FullFinancialCard({ financials: f, className }: { financials: ContractF
                 <AlertTriangle className="h-3 w-3" /> Over Ceiling
               </Badge>
             )}
-            {f.hasOverBilledChildren && !f.isBillingOverCeiling && (
+            {isOverCommitted && (
+              <Badge variant="outline" className="bg-red-500/20 text-red-200 border-red-400 text-xs gap-1">
+                <AlertTriangle className="h-3 w-3" /> Over-Committed by {fmtCompact(overCommittedBy)}
+              </Badge>
+            )}
+            {f.hasOverBilledChildren && !f.isBillingOverCeiling && !isOverCommitted && (
               <Badge variant="outline" className="bg-amber-500/20 text-amber-200 border-amber-400 text-xs gap-1">
                 <AlertTriangle className="h-3 w-3" /> Child Over-Billed
               </Badge>
@@ -132,24 +140,38 @@ function FullFinancialCard({ financials: f, className }: { financials: ContractF
               <p className="text-xs text-primary-foreground/50 mt-0.5">maximum spend cap</p>
             </div>
 
-            {/* Authorized Value */}
+            {/* Committed / Authorized Value */}
             <div>
-              <p className="text-primary-foreground/70 text-xs font-medium uppercase tracking-wide">Authorized Value</p>
-              <p className="text-xl font-bold font-mono mt-1">{fmt(f.authorizedValue)}</p>
-              <p className="text-xs text-primary-foreground/50 mt-0.5">
-                {ceiling > 0 ? `${Math.round((f.authorizedValue / ceiling) * 100)}% of ceiling` : "—"}
+              <p className="text-primary-foreground/70 text-xs font-medium uppercase tracking-wide">
+                {isAuthorized ? "Committed" : "Authorized Value"}
               </p>
+              <p className={`text-xl font-bold font-mono mt-1 ${isOverCommitted ? "text-red-300" : ""}`}>
+                {isAuthorized ? fmt(f.ceilingCommittedByChildren) : fmt(f.authorizedValue)}
+              </p>
+              <p className="text-xs text-primary-foreground/50 mt-0.5">
+                {isAuthorized
+                  ? ceiling > 0
+                    ? `${Math.round((f.ceilingCommittedByChildren / ceiling) * 100)}% of ceiling${isOverCommitted ? " ⚠ over" : ""}`
+                    : "—"
+                  : ceiling > 0 ? `${Math.round((f.authorizedValue / ceiling) * 100)}% of ceiling` : "—"}
+              </p>
+              {isAuthorized && isOverCommitted && (
+                <p className="text-xs text-red-300 mt-0.5 font-medium">+{fmt(overCommittedBy)} over ceiling</p>
+              )}
             </div>
 
             {/* Available */}
             <div>
               <p className="text-primary-foreground/70 text-xs font-medium uppercase tracking-wide">Available</p>
-              <p className={`text-xl font-bold font-mono mt-1 ${f.ceilingAvailable < 0 ? "text-red-300" : ""}`}>
+              <p className={`text-xl font-bold font-mono mt-1 ${f.ceilingAvailable < 0 ? "text-red-300" : "text-emerald-200"}`}>
                 {fmt(f.ceilingAvailable)}
               </p>
               <p className="text-xs text-primary-foreground/50 mt-0.5">
                 {isOnCall ? "ceiling − billed" : "ceiling − committed"}
               </p>
+              {f.ceilingAvailable < 0 && (
+                <p className="text-xs text-red-300 mt-0.5 font-medium">OVER-COMMITTED</p>
+              )}
             </div>
 
             {/* Billed to Date */}
@@ -227,10 +249,10 @@ function FullFinancialCard({ financials: f, className }: { financials: ContractF
             </div>
             <div className="relative h-3 rounded-full bg-primary-foreground/10 overflow-hidden">
               {/* Committed bar (task order model only) */}
-              {isAuthorized && committedPct > burnPct && (
+              {isAuthorized && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-primary-foreground/20 rounded-full"
-                  style={{ width: `${committedPct}%` }}
+                  className={`absolute inset-y-0 left-0 rounded-full ${isOverCommitted ? "bg-red-500/40" : "bg-primary-foreground/20"}`}
+                  style={{ width: `${Math.min(100, committedPct)}%` }}
                 />
               )}
               {/* Billed bar */}

@@ -290,13 +290,13 @@ const s06 = await insertContract({
   clientName: "PANYNJ", clientOrgId: ORG_PANYNJ, ownerName: "PANYNJ", ownerOrgId: ORG_PANYNJ,
   performingCompanyName: "JPCL", status: "active", level: 1,
   value: 0, computedContractValue: 0,
-  hasNteCeiling: true, nteCeilingAmount: 1000000, billingBasis: "nte_ceiling",
+  hasNteCeiling: true, nteCeilingAmount: 1000000, billingBasis: "authorized",
   structureType: "CONTRACT_HAS_SUBPROJECTS",
   projectManagerId: PM_TORRES, projectAccountantId: ACCT_CHEN,
   startDate: d("2023-06-01"), endDate: d("2026-05-31"),
   coiRequired: true, coiReceived: true, hasCOI: true,
   fullyExecutedContractReceived: true, hasSignedContract: true, clientBillingInfoOnFile: true,
-  notes: "TEST S06: IDIQ $1M NTE. Three TOs totaling $1.15M — OVER-COMMITTED by $150K.",
+  notes: "TEST S06: IDIQ $1M NTE. Task Order Model. Three TOs totaling $1.15M — OVER-COMMITTED by $150K.",
 });
 const s06_to1 = await insertContract({
   title: "S06-TO1 — Bridge Inspection Task Order ($400K)",
@@ -361,13 +361,13 @@ const s08 = await insertContract({
   clientName: "NJDOT", clientOrgId: ORG_NJDOT, ownerName: "NJDOT", ownerOrgId: ORG_NJDOT,
   performingCompanyName: "JPCL", status: "active", level: 1,
   value: 0, computedContractValue: 0,
-  hasNteCeiling: true, nteCeilingAmount: 2000000, billingBasis: "nte_ceiling",
+  hasNteCeiling: true, nteCeilingAmount: 2000000, billingBasis: "authorized",
   structureType: "CONTRACT_HAS_SUBPROJECTS",
   projectManagerId: PM_TORRES, projectAccountantId: ACCT_RUSSO,
   startDate: d("2022-01-01"), endDate: d("2027-12-31"),
   coiRequired: true, coiReceived: true, hasCOI: true,
   fullyExecutedContractReceived: true, hasSignedContract: true, clientBillingInfoOnFile: true,
-  notes: "TEST S08: IDIQ $2M NTE. 3 TOs: $350K+$425K+$280K=$1.055M committed. Billed $720K. L1 rollup test.",
+  notes: "TEST S08: IDIQ $2M NTE. Task Order Model. 3 TOs: $350K+$425K+$280K=$1.055M committed. Billed $720K. L1 rollup test.",
 });
 const s08_to1 = await insertContract({
   title: "S08-TO1 — Route 9 Bridge Inspection ($350K, Fully Billed)",
