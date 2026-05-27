@@ -88,8 +88,8 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
   const [contractValue, setContractValue] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [projectManagerId, setProjectManagerId] = useState<number | undefined>();
-  const [projectAccountantId, setProjectAccountantId] = useState<number | undefined>();
+  const [projectManagerId, setProjectManagerId] = useState<string>("__none__");
+  const [projectAccountantId, setProjectAccountantId] = useState<string>("__none__");
   const [notes, setNotes] = useState("");
   const [contractVehicle, setContractVehicle] = useState("standalone");
   const [companyRole, setCompanyRole] = useState("prime");
@@ -118,8 +118,8 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
       contractValue: contractValue ? parseFloat(contractValue) : undefined,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      projectManagerId,
-      projectAccountantId,
+      projectManagerId: projectManagerId && projectManagerId !== "__none__" ? parseInt(projectManagerId) : undefined,
+      projectAccountantId: projectAccountantId && projectAccountantId !== "__none__" ? parseInt(projectAccountantId) : undefined,
       notes: notes.trim() || undefined,
       contractVehicle,
       companyRole,
@@ -244,20 +244,20 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Project Manager</Label>
-            <Select value={projectManagerId ? String(projectManagerId) : ""} onValueChange={v => setProjectManagerId(v ? parseInt(v) : undefined)}>
+            <Select value={projectManagerId} onValueChange={setProjectManagerId}>
               <SelectTrigger className="h-9"><SelectValue placeholder="Select PM" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— None —</SelectItem>
+                <SelectItem value="__none__">— None —</SelectItem>
                 {pms.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Accountant</Label>
-            <Select value={projectAccountantId ? String(projectAccountantId) : ""} onValueChange={v => setProjectAccountantId(v ? parseInt(v) : undefined)}>
+            <Select value={projectAccountantId} onValueChange={setProjectAccountantId}>
               <SelectTrigger className="h-9"><SelectValue placeholder="Select Accountant" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— None —</SelectItem>
+                <SelectItem value="__none__">— None —</SelectItem>
                 {accountants.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}</SelectItem>)}
               </SelectContent>
             </Select>

@@ -23,6 +23,86 @@ const STATUS_COLORS: Record<string, string> = {
   submit: "status-submit", award: "status-award", lost: "status-lost", no_go: "status-no-go",
 };
 
+// ── Create Pursuit Dialog ─────────────────────────────────────────────────
+function CreatePursuitDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const [title, setTitle] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [rfpNumber, setRfpNumber] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [estimatedValue, setEstimatedValue] = useState("");
+
+  const createMutation = trpc.pursuits.create.useMutation({
+    onSuccess: () => {
+      utils.pursuits.list.invalidate();
+      toast.success("Pursuit created successfully");
+      setTitle(""); setClientName(""); setRfpNumber(""); setDueDate(""); setEstimatedValue("");
+      onClose();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function handleSubmit() {
+    if (!title.trim()) { toast.error("Pursuit title is required"); return; }
+    createMutation.mutate({
+      title: title.trim(),
+      clientName: clientName.trim() || undefined,
+      rfpNumber: rfpNumber.trim() || undefined,
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      estimatedValue: estimatedValue ? parseFloat(estimatedValue) : undefined,
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Target className="w-5 h-5 text-amplify-blue" /> New Pursuit
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Pursuit Title <span className="text-destructive">*</span></Label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Route 9 Bridge Inspection Services" className="h-9" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Client Name</Label>
+              <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. NJDOT" className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">RFP / Solicitation #</Label>
+              <Input value={rfpNumber} onChange={e => setRfpNumber(e.target.value)} placeholder="e.g. RFP-2024-001" className="h-9" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Proposal Due Date</Label>
+              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Estimated Value ($)</Label>
+              <Input type="number" value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} placeholder="0.00" className="h-9" />
+            </div>
+          </div>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300">
+            <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>Pursuit will be created in <strong>Identify</strong> stage. Move it through the pipeline as it progresses.</span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={!title.trim() || createMutation.isPending} onClick={handleSubmit}>
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            {createMutation.isPending ? "Creating..." : "Create Pursuit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Convert to Contract Dialog ─────────────────────────────────────────────────
 function ConvertToContractDialog({
   pursuit,
@@ -163,6 +243,7 @@ function ConvertToContractDialog({
 export default function Pursuits() {
   const [search, setSearch] = useState("");
   const [convertTarget, setConvertTarget] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const { data: dbPursuits, isLoading } = trpc.pursuits.list.useQuery(undefined as any);
 
   const pursuits = dbPursuits && dbPursuits.length > 0 ? dbPursuits : [];
@@ -191,7 +272,7 @@ export default function Pursuits() {
             <h1 className="text-2xl font-display font-bold text-foreground">Pursuits</h1>
             <p className="text-muted-foreground mt-1">Track every pursuit from identification through award</p>
           </div>
-          <Button className="bg-amplify-gradient text-white font-semibold gap-2">
+          <Button className="bg-amplify-gradient text-white font-semibold gap-2" onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> New Pursuit
           </Button>
         </div>
@@ -282,6 +363,9 @@ export default function Pursuits() {
           </div>
         )}
       </div>
+
+      {/* Create Pursuit Dialog */}
+      <CreatePursuitDialog open={createOpen} onClose={() => setCreateOpen(false)} />
 
       {/* Convert to Contract Dialog */}
       {convertTarget && (
