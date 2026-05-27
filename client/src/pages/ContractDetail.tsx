@@ -817,12 +817,15 @@ export default function ContractDetail() {
               {(() => {
                 const totalCommitted = children.reduce((sum: number, c: any) => sum + (c.computedContractValue ?? c.value ?? 0), 0);
                 const totalBilledAll = children.reduce((sum: number, c: any) => sum + (c.totalBilledAmount ?? 0), 0);
-                const nteCeiling = contract.nteCeilingAmount ?? 0;
+                // Use effectiveCeiling from financials (includes approved amendments) rather than raw nteCeilingAmount
+                const originalCeiling = contract.nteCeilingAmount ?? 0;
+                const nteCeiling = (financialsData?.effectiveCeiling ?? originalCeiling) ?? 0;
+                const ceilingWasAmended = nteCeiling !== originalCeiling && originalCeiling > 0;
                 const overCommittedAmt = totalCommitted - nteCeiling;
                 const isOverCommitted = nteCeiling > 0 && totalCommitted > nteCeiling;
                 return (
                   <tfoot>
-                    <tr className={`border-t-2 text-sm font-semibold ${isOverCommitted ? "bg-red-50" : "bg-muted/30"}`}>
+                    <tr className={`border-t-2 text-sm font-semibold ${isOverCommitted ? "bg-red-50 dark:bg-red-950/20" : "bg-muted/30"}`}>
                       <td className="p-3" colSpan={5}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>Total Committed</span>
@@ -836,7 +839,14 @@ export default function ContractDetail() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground font-normal mt-0.5">NTE Ceiling: {formatCurrency(nteCeiling)}</p>
+                        <p className="text-xs text-muted-foreground font-normal mt-0.5">
+                          NTE Ceiling: {formatCurrency(nteCeiling)}
+                          {ceilingWasAmended && (
+                            <span className="ml-1.5 text-amber-600 dark:text-amber-400">
+                              (amended from {formatCurrency(originalCeiling)})
+                            </span>
+                          )}
+                        </p>
                       </td>
                       <td className={`p-3 text-right font-mono ${isOverCommitted ? "text-red-600" : ""}`}>
                         {formatCurrency(totalCommitted)}
