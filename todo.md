@@ -272,3 +272,10 @@
 - [x] UI: EditContractDialog — NTE toggle, NTE Ceiling Amount field, Billing Basis selector with explanatory text
 - [x] TypeScript: zero errors
 - [x] Tests: 16 passing
+
+## Supabase Storage Migration (DAM backend)
+- [x] Create 'dam' bucket in Supabase Storage (private, 50 MB file limit)
+- [x] Rewrite server/storage.ts — storagePut/storageGet/storageGetSignedUrl now use Supabase SDK
+- [x] Rewrite server/_core/storageProxy.ts — /manus-storage/:key generates Supabase signed URL and 307-redirects
+- [x] Upload endpoint limit raised from 16 MB to 50 MB to match bucket limit
+- [x] TypeScript: zero errors; 16 tests passing

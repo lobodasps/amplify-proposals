@@ -4,7 +4,7 @@ import { storagePut } from "./storage";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 16 * 1024 * 1024 }, // 16 MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB (matches Supabase dam bucket limit)
 });
 
 const ALLOWED_FOLDERS = [
