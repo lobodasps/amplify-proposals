@@ -269,8 +269,8 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
 
   const [form, setForm] = useState({
     title: contract.title ?? "",
-    clientOrgId: String(contract.clientOrgId ?? ""),
-    ownerOrgId: String(contract.ownerOrgId ?? ""),
+    clientOrgId: contract.clientOrgId ? String(contract.clientOrgId) : "__none__",
+    ownerOrgId: contract.ownerOrgId ? String(contract.ownerOrgId) : "__none__",
     clientName: contract.clientName ?? "",
     ownerName: contract.ownerName ?? "",
     clientProjectRef: (contract as any).clientProjectRef ?? "",
@@ -283,11 +283,11 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
     qbName: contract.qbName ?? "",
     timeCode: contract.timeCode ?? "",
     isPublic: (contract as any).isPublic !== false,
-    departmentId: String((contract as any).departmentId ?? ""),
+    departmentId: (contract as any).departmentId ? String((contract as any).departmentId) : "__none__",
     serviceTypeIds: parseServiceTypeIds((contract as any).serviceTypeIds),
-    form254CodeId: String((contract as any).form254CodeId ?? ""),
-    projectManagerId: String((contract as any).projectManagerId ?? ""),
-    projectAccountantId: String((contract as any).projectAccountantId ?? ""),
+    form254CodeId: (contract as any).form254CodeId ? String((contract as any).form254CodeId) : "__none__",
+    projectManagerId: (contract as any).projectManagerId ? String((contract as any).projectManagerId) : "__none__",
+    projectAccountantId: (contract as any).projectAccountantId ? String((contract as any).projectAccountantId) : "__none__",
     notes: contract.notes ?? "",
     hasNteCeiling: contract.hasNteCeiling ?? false,
     nteCeilingAmount: contract.nteCeilingAmount ? String(contract.nteCeilingAmount) : "",
@@ -365,7 +365,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 }}>
                   <SelectTrigger><SelectValue placeholder="Select client…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -384,7 +384,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 }}>
                   <SelectTrigger><SelectValue placeholder="Select owner…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -409,7 +409,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 <Select value={form.projectManagerId} onValueChange={v => setForm(f => ({ ...f, projectManagerId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select PM…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -419,7 +419,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 <Select value={form.projectAccountantId} onValueChange={v => setForm(f => ({ ...f, projectAccountantId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select accountant…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -440,7 +440,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 <Select value={form.departmentId} onValueChange={v => setForm(f => ({ ...f, departmentId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select department…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(departments as any[]).map((d: any) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.code ? ` (${d.code})` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -450,7 +450,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
                 <Select value={form.form254CodeId} onValueChange={v => setForm(f => ({ ...f, form254CodeId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select code…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— None —</SelectItem>
+                    <SelectItem value="__none__">— None —</SelectItem>
                     {(form254Codes as any[]).map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.code}{c.description ? ` — ${c.description}` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -527,8 +527,8 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             title: form.title,
             clientName: form.clientName,
             ownerName: form.ownerName,
-            clientOrgId: form.clientOrgId ? parseInt(form.clientOrgId) : undefined,
-            ownerOrgId: form.ownerOrgId ? parseInt(form.ownerOrgId) : undefined,
+            clientOrgId: (form.clientOrgId && form.clientOrgId !== "__none__") ? parseInt(form.clientOrgId) : undefined,
+            ownerOrgId: (form.ownerOrgId && form.ownerOrgId !== "__none__") ? parseInt(form.ownerOrgId) : undefined,
             clientProjectRef: form.clientProjectRef || undefined,
             contractManagerName: form.contractManagerName || undefined,
             primaryLocation: form.primaryLocation || undefined,
@@ -539,11 +539,11 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             qbName: form.qbName || undefined,
             timeCode: form.timeCode || undefined,
             isPublic: form.isPublic,
-            departmentId: form.departmentId ? parseInt(form.departmentId) : undefined,
+            departmentId: (form.departmentId && form.departmentId !== "__none__") ? parseInt(form.departmentId) : undefined,
             serviceTypeIds: form.serviceTypeIds.length > 0 ? form.serviceTypeIds : undefined,
-            form254CodeId: form.form254CodeId ? parseInt(form.form254CodeId) : undefined,
-            projectManagerId: form.projectManagerId ? parseInt(form.projectManagerId) : undefined,
-            projectAccountantId: form.projectAccountantId ? parseInt(form.projectAccountantId) : undefined,
+            form254CodeId: (form.form254CodeId && form.form254CodeId !== "__none__") ? parseInt(form.form254CodeId) : undefined,
+            projectManagerId: (form.projectManagerId && form.projectManagerId !== "__none__") ? parseInt(form.projectManagerId) : undefined,
+            projectAccountantId: (form.projectAccountantId && form.projectAccountantId !== "__none__") ? parseInt(form.projectAccountantId) : undefined,
             notes: form.notes || undefined,
             hasNteCeiling: form.hasNteCeiling,
             nteCeilingAmount: form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
