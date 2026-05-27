@@ -19,7 +19,8 @@ import AppLayout from "@/components/AppLayout";
 import {
   ArrowLeft, Building2, DollarSign, FileText, Plus,
   ChevronRight, GitBranch, Pencil, Shield, ExternalLink,
-  Loader2, AlertCircle, RefreshCw, Upload, TrendingUp, TrendingDown
+  Loader2, AlertCircle, RefreshCw, Upload, TrendingUp, TrendingDown,
+  Trash2, ToggleLeft, ToggleRight
 } from "lucide-react";
 
 function formatCurrency(v?: number | null) {
@@ -149,6 +150,70 @@ function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, o
           <Button disabled={!amountChange || parseFloat(amountChange) <= 0 || addAmendment.isPending}
             onClick={() => addAmendment.mutate({ contractId, type, amountBehavior, amountChange: parseFloat(amountChange), description: description || undefined })}>
             {addAmendment.isPending ? "Saving…" : `Add ${label}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditAmendmentDialog({ amendment, open, onClose, onSuccess }: {
+  amendment: any; open: boolean; onClose: () => void; onSuccess: () => void;
+}) {
+  const label = amendment.amendmentType === "amendment" ? "Amendment" : "Change Order";
+  const [amountBehavior, setAmountBehavior] = useState<"adds_to_value" | "subtracts_from_value">(
+    amendment.amountBehavior ?? ((amendment.amount ?? 0) >= 0 ? "adds_to_value" : "subtracts_from_value")
+  );
+  const [amountChange, setAmountChange] = useState(
+    String(amendment.amountChange ?? Math.abs(amendment.amount ?? 0))
+  );
+  const [description, setDescription] = useState(amendment.description ?? "");
+  const [date, setDate] = useState(
+    amendment.amendmentDate ? new Date(amendment.amendmentDate).toISOString().split("T")[0] : ""
+  );
+  const update = trpc.contracts.updateAmendment.useMutation({
+    onSuccess: () => { toast.success(`${label} updated`); onSuccess(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Edit {label} {amendment.amendmentNumber}</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label>Effect on Contract Value</Label>
+            <Select value={amountBehavior} onValueChange={v => setAmountBehavior(v as any)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="adds_to_value">Add to Value / Ceiling Increase</SelectItem>
+                <SelectItem value="subtracts_from_value">Deduct from Value / Ceiling Decrease</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Amount (positive number) *</Label>
+            <Input type="number" min="0" value={amountChange} onChange={e => setAmountChange(e.target.value)} placeholder="e.g. 25000" />
+          </div>
+          <div className="space-y-1">
+            <Label>Date</Label>
+            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Description</Label>
+            <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!amountChange || parseFloat(amountChange) <= 0 || update.isPending}
+            onClick={() => update.mutate({
+              amendmentId: amendment.id,
+              amountBehavior,
+              amountChange: parseFloat(amountChange),
+              description: description || undefined,
+              date: date ? new Date(date) : undefined,
+            })}>
+            {update.isPending ? "Saving…" : "Save Changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -661,7 +726,17 @@ export default function ContractDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [addChildTarget, setAddChildTarget] = useState<{ id: number; num: string; level: number } | null>(null);
   const [addAmendTarget, setAddAmendTarget] = useState<{ id: number; num: string; type: "amendment" | "change_order" } | null>(null);
+  const [editAmendment, setEditAmendment] = useState<any | null>(null);
   const [qbImportOpen, setQbImportOpen] = useState(false);
+
+  const setAmendmentStatus = trpc.contracts.setAmendmentStatus.useMutation({
+    onSuccess: () => { toast.success("Status updated"); refetch(); refetchFinancials(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteAmendment = trpc.contracts.deleteAmendment.useMutation({
+    onSuccess: () => { toast.success("Deleted"); refetch(); refetchFinancials(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (isLoading) {
     return <div className="p-8 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
@@ -1014,9 +1089,44 @@ export default function ContractDetail() {
                             </span>
                           </td>
                           <td className="p-3">
-                            <Badge variant="outline" className={a.approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : a.approvalStatus === "rejected" ? "bg-rose-50 text-rose-700 border-rose-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
-                              {a.approvalStatus ?? "pending"}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <button
+                                title={a.approvalStatus === "inactive" ? "Click to activate" : "Click to deactivate"}
+                                className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full border transition-colors ${
+                                  a.approvalStatus === "inactive"
+                                    ? "bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200"
+                                    : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                }`}
+                                onClick={() => setAmendmentStatus.mutate({
+                                  amendmentId: a.id,
+                                  status: a.approvalStatus === "inactive" ? "active" : "inactive",
+                                })}
+                                disabled={setAmendmentStatus.isPending}
+                              >
+                                {a.approvalStatus === "inactive"
+                                  ? <><ToggleLeft className="h-3 w-3" /> Inactive</>
+                                  : <><ToggleRight className="h-3 w-3" /> Active</>}
+                              </button>
+                              <button
+                                title="Edit"
+                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => setEditAmendment(a)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                title="Delete"
+                                className="p-1 rounded hover:bg-rose-50 text-muted-foreground hover:text-rose-600 transition-colors"
+                                onClick={() => {
+                                  if (confirm(`Delete ${a.amendmentNumber}? This cannot be undone.`)) {
+                                    deleteAmendment.mutate({ amendmentId: a.id });
+                                  }
+                                }}
+                                disabled={deleteAmendment.isPending}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1065,6 +1175,7 @@ export default function ContractDetail() {
       {editOpen && <EditContractDialog contract={contract} open={editOpen} onClose={() => setEditOpen(false)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
       {addChildTarget && <AddChildDialog parentId={addChildTarget.id} parentNumber={addChildTarget.num} parentLevel={addChildTarget.level} open={!!addChildTarget} onClose={() => setAddChildTarget(null)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
       {addAmendTarget && <AddAmendmentDialog contractId={addAmendTarget.id} contractNumber={addAmendTarget.num} type={addAmendTarget.type} open={!!addAmendTarget} onClose={() => setAddAmendTarget(null)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
+      {editAmendment && <EditAmendmentDialog amendment={editAmendment} open={!!editAmendment} onClose={() => setEditAmendment(null)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
       {qbImportOpen && <QbImportDialog contractId={contractId} open={qbImportOpen} onClose={() => setQbImportOpen(false)} onSuccess={() => { refetch(); refetchFinancials(); setQbImportOpen(false); }} />}
     </div>
     </AppLayout>

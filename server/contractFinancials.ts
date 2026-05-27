@@ -97,6 +97,9 @@ function computeAmendmentTotals(amendments: typeof contractAmendments.$inferSele
   let addsTotal = 0;
   let subtractsTotal = 0;
   for (const a of amendments) {
+    // Skip inactive amendments — only active ones affect the effective value/ceiling
+    const status = (a as any).approvalStatus ?? "active";
+    if (status === "inactive") continue;
     const behavior = a.amountBehavior ?? "adds_to_value";
     const magnitude = a.amountChange != null ? Math.abs(a.amountChange) : Math.abs(a.amount ?? 0);
     if (behavior === "adds_to_value") addsTotal += magnitude;

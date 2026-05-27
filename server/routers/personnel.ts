@@ -822,4 +822,67 @@ export const contractsRouter = router({
       }
       return { success: true, matched, unmatched, results };
     }),
+
+  // Toggle an amendment between active and inactive
+  setAmendmentStatus: protectedProcedure
+    .input(z.object({
+      amendmentId: z.number(),
+      status: z.enum(["active", "inactive"]),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [amendment] = await db.select().from(contractAmendments)
+        .where(eq(contractAmendments.id, input.amendmentId)).limit(1);
+      if (!amendment) throw new Error("Amendment not found");
+      await db.update(contractAmendments)
+        .set({ approvalStatus: input.status } as any)
+        .where(eq(contractAmendments.id, input.amendmentId));
+      // Recompute — effectiveCeiling only counts active amendments
+      await persistContractFinancials(amendment.contractId);
+      return { success: true };
+    }),
+
+  // Edit an amendment (amount, description, date, effect direction)
+  updateAmendment: protectedProcedure
+    .input(z.object({
+      amendmentId: z.number(),
+      amountBehavior: z.enum(["adds_to_value", "subtracts_from_value"]).optional(),
+      amountChange: z.number().min(0).optional(),
+      description: z.string().optional(),
+      date: z.date().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [amendment] = await db.select().from(contractAmendments)
+        .where(eq(contractAmendments.id, input.amendmentId)).limit(1);
+      if (!amendment) throw new Error("Amendment not found");
+      const behavior = input.amountBehavior ?? amendment.amountBehavior ?? "adds_to_value";
+      const magnitude = input.amountChange ?? amendment.amountChange ?? Math.abs(amendment.amount ?? 0);
+      const signedAmount = behavior === "subtracts_from_value" ? -magnitude : magnitude;
+      await db.update(contractAmendments).set({
+        amountBehavior: behavior,
+        amountChange: magnitude,
+        amount: signedAmount,
+        description: input.description !== undefined ? input.description : (amendment.description ?? undefined),
+        amendmentDate: input.date ?? amendment.amendmentDate ?? new Date(),
+      } as any).where(eq(contractAmendments.id, input.amendmentId));
+      await persistContractFinancials(amendment.contractId);
+      return { success: true };
+    }),
+
+  // Delete an amendment
+  deleteAmendment: protectedProcedure
+    .input(z.object({ amendmentId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [amendment] = await db.select().from(contractAmendments)
+        .where(eq(contractAmendments.id, input.amendmentId)).limit(1);
+      if (!amendment) throw new Error("Amendment not found");
+      await db.delete(contractAmendments).where(eq(contractAmendments.id, input.amendmentId));
+      await persistContractFinancials(amendment.contractId);
+      return { success: true };
+    }),
 });
