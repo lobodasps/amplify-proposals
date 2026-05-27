@@ -697,7 +697,14 @@ export default function ContractDetail() {
             <Button size="sm" variant="outline" onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "change_order" })}>
               <Plus className="h-3 w-3 mr-1" /> Add Change Order
             </Button>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              <a
+                href="data:text/csv;charset=utf-8,Date%2CInvoice%20%23%2CCustomer%2CAmount%2CMemo%2FDescription%0A2025-01-15%2CINV-001%2CJPCL%20Engineering%2C12500.00%2CJanuary%20services%0A2025-02-15%2CINV-002%2CJPCL%20Engineering%2C18750.00%2CFebruary%20services"
+                download="quickbooks-import-template.csv"
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+              >
+                Download template
+              </a>
               <Button size="sm" variant="outline" onClick={() => setQbImportOpen(true)}>
                 <Upload className="h-3 w-3 mr-1" /> Import QB CSV
               </Button>
