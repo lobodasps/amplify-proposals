@@ -71,8 +71,10 @@ function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, on
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
   const [notes, setNotes] = useState("");
+  const [tierLabelId, setTierLabelId] = useState<string>("__none__");
+  const { data: orderTypes = [] } = trpc.orderTypes.list.useQuery();
   const createChild = trpc.contracts.createChild.useMutation({
-    onSuccess: (data) => { toast.success(`Created ${data.contractNumber}`); onSuccess(); onClose(); setTitle(""); setValue(""); setNotes(""); },
+    onSuccess: (data) => { toast.success(`Created ${data.contractNumber}`); onSuccess(); onClose(); setTitle(""); setValue(""); setNotes(""); setTierLabelId("__none__"); },
     onError: (e) => toast.error(e.message),
   });
   const childLabel = parentLevel === 1 ? "Task Order" : "Sub-Project";
@@ -86,6 +88,19 @@ function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, on
             <Input value={title} onChange={e => setTitle(e.target.value)} placeholder={`${childLabel} description`} />
           </div>
           <div className="space-y-1">
+            <Label>Order Type</Label>
+            <Select value={tierLabelId} onValueChange={setTierLabelId}>
+              <SelectTrigger><SelectValue placeholder="Select order type…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— None —</SelectItem>
+                {orderTypes.map((ot: any) => (
+                  <SelectItem key={ot.id} value={String(ot.id)}>{ot.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">How this {childLabel.toLowerCase()} is labeled (Task Order, Phase, PO, etc.)</p>
+          </div>
+          <div className="space-y-1">
             <Label>Contract Value</Label>
             <Input type="number" value={value} onChange={e => setValue(e.target.value)} placeholder="0.00" />
           </div>
@@ -97,7 +112,13 @@ function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, on
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button disabled={!title.trim() || createChild.isPending}
-            onClick={() => createChild.mutate({ parentId, title: title.trim(), contractValue: value ? parseFloat(value) : undefined, notes: notes || undefined })}>
+            onClick={() => createChild.mutate({
+              parentId,
+              title: title.trim(),
+              contractValue: value ? parseFloat(value) : undefined,
+              notes: notes || undefined,
+              tierLabelId: (tierLabelId && tierLabelId !== "__none__") ? parseInt(tierLabelId) : undefined,
+            })}>
             {createChild.isPending ? "Creating…" : `Add ${childLabel}`}
           </Button>
         </DialogFooter>
@@ -671,7 +692,7 @@ function HierarchyNode({ node, depth = 0, onAddChild, onAddAmendment }: {
   onAddAmendment: (id: number, num: string, type: "amendment" | "change_order") => void;
 }) {
   const [, navigate] = useLocation();
-  const nodeLabel = NODE_LABELS[node.nodeType ?? "contract"] ?? "Contract";
+  const nodeLabel = node.tierLabelName ?? NODE_LABELS[node.nodeType ?? "contract"] ?? "Contract";
   const canHaveChildren = (node.level ?? 1) < 3;
   return (
     <div>
@@ -850,9 +871,10 @@ export default function ContractDetail() {
                   const childBilled = child.totalBilledAmount ?? 0;
                   const childPct = childValue > 0 ? Math.round((childBilled / childValue) * 100) : 0;
                   const isOverBilled = childBilled > childValue;
-                  const orderTypeLabel = child.nodeType === "task_order" ? "Task Order"
+                  const orderTypeLabel = child.tierLabelName
+                    ?? (child.nodeType === "task_order" ? "Task Order"
                     : child.nodeType === "sub_project" ? "Sub-Project"
-                    : "Purchase Order";
+                    : "Order");
                   return (
                     <tr key={child.id} className="border-b last:border-0 hover:bg-muted/20 cursor-pointer"
                       onClick={() => navigate(`/contracts/${child.id}`)}

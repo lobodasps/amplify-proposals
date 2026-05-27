@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries, people } from "../../drizzle/schema";
+import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries, people, orderTypes } from "../../drizzle/schema";
 import { eq, desc, sql, getTableColumns } from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 import { supabase } from "../supabase";
@@ -504,16 +504,26 @@ export const contractsRouter = router({
       if (!contract) return null;
       // Get all descendants (children and their children)
       const allContracts = await db.select().from(contracts).orderBy(contracts.contractNumber);
+      // Resolve tier label names from order_types table
+      const allOrderTypes = await db.select().from(orderTypes);
+      const orderTypeMap = new Map(allOrderTypes.map(ot => [ot.id, ot.name]));
+      const resolveTierLabel = (c: typeof allContracts[0]) =>
+        c.tierLabelId ? (orderTypeMap.get(c.tierLabelId) ?? null) : null;
       const children = allContracts.filter(c => c.parentContractId === input.id);
       const childrenWithSubs = children.map(child => ({
         ...child,
-        subProjects: allContracts.filter(c => c.parentContractId === child.id),
+        tierLabelName: resolveTierLabel(child),
+        subProjects: allContracts.filter(c => c.parentContractId === child.id).map(sub => ({
+          ...sub,
+          tierLabelName: resolveTierLabel(sub),
+        })),
       }));
+      const contractWithLabel = { ...contract, tierLabelName: resolveTierLabel(contract) };
       // Get amendments and change orders
       const amendments = await db.select().from(contractAmendments)
         .where(eq(contractAmendments.contractId, input.id))
         .orderBy(contractAmendments.amendmentNumber);
-      return { contract, children: childrenWithSubs, amendments };
+      return { contract: contractWithLabel, children: childrenWithSubs, amendments };
     }),
 
   // Create a child contract (task order, phase, sub-project, etc.)
