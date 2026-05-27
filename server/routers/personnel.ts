@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { personnel, projects, contracts, pursuits, contractAmendments, assets } from "../../drizzle/schema";
+import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { supabase } from "../supabase";
 import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
+import { getContractFinancials, persistContractFinancials } from "../contractFinancials";
 
 export const personnelRouter = router({
   list: protectedProcedure.query(async () => {
@@ -424,6 +425,9 @@ export const contractsRouter = router({
       clientName: z.string().optional(),
       contractManagerName: z.string().optional(),
       primaryLocation: z.string().optional(),
+      hasNteCeiling: z.boolean().optional(),
+      nteCeilingAmount: z.number().optional(),
+      billingBasis: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -512,7 +516,8 @@ export const contractsRouter = router({
     .input(z.object({
       contractId: z.number(),
       type: z.enum(["amendment", "change_order"]),
-      amount: z.number(),
+      amountBehavior: z.enum(["adds_to_value", "subtracts_from_value"]).default("adds_to_value"),
+      amountChange: z.number().min(0), // always positive magnitude
       description: z.string().optional(),
       date: z.date().optional(),
     }))
@@ -522,7 +527,6 @@ export const contractsRouter = router({
       const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.contractId)).limit(1);
       if (!contract) throw new Error("Contract not found");
 
-      // Count existing amendments/COs of this type for this contract
       const { generateAmendmentNumber, generateChangeOrderNumber } = await import("../../shared/contractNumbers");
       const existing = await db.select({ amendmentNumber: contractAmendments.amendmentNumber })
         .from(contractAmendments)
@@ -536,21 +540,25 @@ export const contractsRouter = router({
         ? generateAmendmentNumber(baseNumber, seq)
         : generateChangeOrderNumber(baseNumber, seq);
 
+      // Signed amount for legacy column (negative when subtracting)
+      const signedAmount = input.amountBehavior === "subtracts_from_value"
+        ? -input.amountChange
+        : input.amountChange;
+
       await db.insert(contractAmendments).values({
         contractId: input.contractId,
         amendmentType: input.type === "amendment" ? "amendment" : "change_order",
         amendmentNumber,
-        amount: input.amount,
+        amount: signedAmount,
+        amountBehavior: input.amountBehavior,
+        amountChange: input.amountChange,
         description: input.description,
         amendmentDate: input.date ?? new Date(),
         approvalStatus: "pending",
-      });
+      } as any);
 
-      // Update computedContractValue on the contract
-      const newValue = (contract.computedContractValue ?? contract.value ?? 0) + input.amount;
-      await db.update(contracts)
-        .set({ computedContractValue: newValue } as any)
-        .where(eq(contracts.id, input.contractId));
+      // Recompute and persist financials using the canonical helper
+      await persistContractFinancials(input.contractId);
 
       return { success: true, amendmentNumber };
     }),
@@ -564,5 +572,128 @@ export const contractsRouter = router({
       return db.select().from(contractAmendments)
         .where(eq(contractAmendments.contractId, input.contractId))
         .orderBy(contractAmendments.amendmentNumber);
+    }),
+
+  // Get computed financials for a contract (used by ContractDetail page)
+  getFinancials: protectedProcedure
+    .input(z.object({ contractId: z.number() }))
+    .query(async ({ input }) => {
+      return getContractFinancials(input.contractId);
+    }),
+
+  // Recalculate all financial KPIs for a contract (manual trigger)
+  recalculateFinancials: protectedProcedure
+    .input(z.object({ contractId: z.number() }))
+    .mutation(async ({ input }) => {
+      await persistContractFinancials(input.contractId);
+      return getContractFinancials(input.contractId);
+    }),
+
+  // Import QB CSV: parse rows, upsert billing entries, recalculate
+  importQbCsv: protectedProcedure
+    .input(z.object({
+      contractId: z.number(),
+      // Each row from the CSV
+      rows: z.array(z.object({
+        invoiceNumber: z.string().optional(),
+        invoiceDate: z.string().optional(),
+        amount: z.number(),
+        description: z.string().optional(),
+        qbInvoiceId: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const row of input.rows) {
+        // Skip if qbInvoiceId already exists
+        if (row.qbInvoiceId) {
+          const existing = await db.select({ id: billingEntries.id })
+            .from(billingEntries)
+            .where(eq(billingEntries.qbInvoiceId, row.qbInvoiceId))
+            .limit(1);
+          if (existing.length > 0) { skipped++; continue; }
+        }
+
+        await db.insert(billingEntries).values({
+          contractId: input.contractId,
+          invoiceNumber: row.invoiceNumber,
+          invoiceDate: row.invoiceDate ? new Date(row.invoiceDate) : undefined,
+          amount: row.amount,
+          billedAmount: row.amount,
+          description: row.description,
+          source: "import",
+          qbInvoiceId: row.qbInvoiceId,
+        });
+        imported++;
+      }
+
+      // Recalculate totals from all billing entries
+      const allEntries = await db.select().from(billingEntries)
+        .where(eq(billingEntries.contractId, input.contractId));
+      const totalBilled = allEntries.reduce((s, e) => s + (e.billedAmount ?? e.amount ?? 0), 0);
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.contractId)).limit(1);
+      if (contract) {
+        const ceiling = contract.hasNteCeiling
+          ? (contract.nteCeilingAmount ?? 0)
+          : (contract.computedContractValue ?? contract.value ?? 0);
+        const billingPct = ceiling > 0 ? Math.round((totalBilled / ceiling) * 100) : 0;
+        await db.update(contracts).set({
+          totalBilledAmount: totalBilled,
+          billingPercentage: billingPct,
+          isBillingOverCeiling: totalBilled > ceiling,
+          lastInvoicedDate: new Date(),
+        }).where(eq(contracts.id, input.contractId));
+      }
+
+      await persistContractFinancials(input.contractId);
+      return { success: true, imported, skipped };
+    }),
+
+  // Update billed amount on a billing entry (inline edit)
+  updateBillingEntry: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      billedAmount: z.number(),
+      invoiceNumber: z.string().optional(),
+      invoiceDate: z.string().optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [entry] = await db.select().from(billingEntries).where(eq(billingEntries.id, input.id)).limit(1);
+      if (!entry) throw new Error("Entry not found");
+
+      await db.update(billingEntries).set({
+        billedAmount: input.billedAmount,
+        amount: input.billedAmount,
+        invoiceNumber: input.invoiceNumber ?? entry.invoiceNumber ?? undefined,
+        invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : entry.invoiceDate ?? undefined,
+        description: input.description ?? entry.description ?? undefined,
+      } as any).where(eq(billingEntries.id, input.id));
+
+      // Recalculate contract totals
+      const allEntries = await db.select().from(billingEntries)
+        .where(eq(billingEntries.contractId, entry.contractId));
+      const totalBilled = allEntries.reduce((s, e) => s + (e.billedAmount ?? e.amount ?? 0), 0);
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, entry.contractId)).limit(1);
+      if (contract) {
+        const ceiling = contract.hasNteCeiling
+          ? (contract.nteCeilingAmount ?? 0)
+          : (contract.computedContractValue ?? contract.value ?? 0);
+        const billingPct = ceiling > 0 ? Math.round((totalBilled / ceiling) * 100) : 0;
+        await db.update(contracts).set({
+          totalBilledAmount: totalBilled,
+          billingPercentage: billingPct,
+          isBillingOverCeiling: totalBilled > ceiling,
+        }).where(eq(contracts.id, entry.contractId));
+      }
+      await persistContractFinancials(entry.contractId);
+      return { success: true };
     }),
 });

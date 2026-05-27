@@ -19,7 +19,7 @@ import AppLayout from "@/components/AppLayout";
 import {
   ArrowLeft, Building2, DollarSign, FileText, Plus,
   ChevronRight, GitBranch, Pencil, Shield, ExternalLink,
-  Loader2, AlertCircle
+  Loader2, AlertCircle, RefreshCw, Upload, TrendingUp, TrendingDown
 } from "lucide-react";
 
 function formatCurrency(v?: number | null) {
@@ -109,11 +109,12 @@ function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, o
   contractId: number; contractNumber: string; type: "amendment" | "change_order";
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
-  const [amount, setAmount] = useState("");
+  const [amountBehavior, setAmountBehavior] = useState<"adds_to_value" | "subtracts_from_value">("adds_to_value");
+  const [amountChange, setAmountChange] = useState("");
   const [description, setDescription] = useState("");
   const label = type === "amendment" ? "Amendment" : "Change Order";
   const addAmendment = trpc.contracts.addAmendment.useMutation({
-    onSuccess: (data) => { toast.success(`${label} ${data.amendmentNumber} added`); onSuccess(); onClose(); setAmount(""); setDescription(""); },
+    onSuccess: (data) => { toast.success(`${label} ${data.amendmentNumber} added`); onSuccess(); onClose(); setAmountChange(""); setDescription(""); },
     onError: (e) => toast.error(e.message),
   });
   return (
@@ -122,8 +123,21 @@ function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, o
         <DialogHeader><DialogTitle>Add {label} to {contractNumber}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1">
-            <Label>Amount (+ add / − deduct) *</Label>
-            <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g. 25000 or -5000" />
+            <Label>Effect on Contract Value</Label>
+            <Select value={amountBehavior} onValueChange={v => setAmountBehavior(v as any)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="adds_to_value">Add to Value / Ceiling Increase</SelectItem>
+                <SelectItem value="subtracts_from_value">Deduct from Value / Ceiling Decrease</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Amount (positive number) *</Label>
+            <Input type="number" min="0" value={amountChange} onChange={e => setAmountChange(e.target.value)} placeholder="e.g. 25000" />
+            <p className="text-xs text-muted-foreground">
+              {amountBehavior === "adds_to_value" ? "Will increase" : "Will decrease"} the contract/ceiling value by this amount.
+            </p>
           </div>
           <div className="space-y-1">
             <Label>Description</Label>
@@ -132,10 +146,108 @@ function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, o
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!amount || addAmendment.isPending}
-            onClick={() => addAmendment.mutate({ contractId, type, amount: parseFloat(amount), description: description || undefined })}>
+          <Button disabled={!amountChange || parseFloat(amountChange) <= 0 || addAmendment.isPending}
+            onClick={() => addAmendment.mutate({ contractId, type, amountBehavior, amountChange: parseFloat(amountChange), description: description || undefined })}>
             {addAmendment.isPending ? "Saving…" : `Add ${label}`}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QbImportDialog({ contractId, open, onClose, onSuccess }: { contractId: number; open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [step, setStep] = useState<"upload" | "preview" | "done">("upload");
+  const importMutation = trpc.contracts.importQbCsv.useMutation({
+    onSuccess: (result) => { toast.success(`Imported ${result.imported} billing rows`); onSuccess(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split("\n").filter(Boolean);
+      const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, ""));
+      const rows = lines.slice(1, 6).map(line => {
+        const vals = line.split(",").map(v => v.trim().replace(/"/g, ""));
+        return Object.fromEntries(headers.map((h, i) => [h, vals[i] ?? ""]));
+      });
+      setPreview(rows);
+      setStep("preview");
+    };
+    reader.readAsText(f);
+  };
+
+  const handleImport = () => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split("\n").filter(Boolean);
+      const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, "").toLowerCase());
+      const rows = lines.slice(1).map(line => {
+        const vals = line.split(",").map(v => v.trim().replace(/"/g, ""));
+        const row: Record<string, string> = {};
+        headers.forEach((h, i) => { row[h] = vals[i] ?? ""; });
+        // Try common QB column name variants
+        const amountStr = row["amount"] ?? row["total"] ?? row["invoice amount"] ?? "0";
+        const amount = parseFloat(amountStr.replace(/[$,]/g, "")) || 0;
+        return {
+          invoiceNumber: row["invoice #"] ?? row["invoice number"] ?? row["num"] ?? undefined,
+          invoiceDate: row["date"] ?? row["invoice date"] ?? undefined,
+          amount,
+          description: row["memo"] ?? row["description"] ?? row["item description"] ?? undefined,
+          qbInvoiceId: row["invoice #"] ?? row["invoice number"] ?? undefined,
+        };
+      }).filter(r => r.amount !== 0);
+      importMutation.mutate({ contractId, rows });
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>Import QuickBooks Billing CSV</DialogTitle></DialogHeader>
+        {step === "upload" && (
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">Upload a QuickBooks invoice export CSV. The importer expects columns: <code className="text-xs bg-muted px-1 rounded">Date, Invoice #, Customer, Amount, Memo/Description</code>. Existing billing entries for this contract will be replaced.</p>
+            <Input type="file" accept=".csv" onChange={handleFileChange} />
+          </div>
+        )}
+        {step === "preview" && (
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">Preview (first 5 rows). Confirm to import all rows and recalculate financials.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border rounded">
+                <thead className="bg-muted/50">
+                  <tr>{preview[0] && Object.keys(preview[0]).map(h => <th key={h} className="p-2 text-left font-medium border-b">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, i) => (
+                    <tr key={i} className="border-b last:border-0">
+                      {Object.values(row).map((v: any, j) => <td key={j} className="p-2 text-muted-foreground">{v}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground">Showing first 5 rows. All rows will be imported on confirm.</p>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          {step === "preview" && (
+            <Button onClick={handleImport} disabled={importMutation.isPending}>
+              {importMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : "Confirm Import"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -155,6 +267,9 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
     qbName: contract.qbName ?? "",
     timeCode: contract.timeCode ?? "",
     notes: contract.notes ?? "",
+    hasNteCeiling: contract.hasNteCeiling ?? false,
+    nteCeilingAmount: contract.nteCeilingAmount ? String(contract.nteCeilingAmount) : "",
+    billingBasis: contract.billingBasis ?? "authorized",
   });
   const update = trpc.contracts.update.useMutation({
     onSuccess: () => { toast.success("Contract updated"); onSuccess(); onClose(); },
@@ -164,7 +279,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Edit Contract</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+        <div className="space-y-3 py-2 max-h-[65vh] overflow-y-auto pr-1">
           {([["Title", "title"], ["Client", "clientName"], ["Owner / Agency", "ownerName"], ["Contract Manager", "contractManagerName"], ["Location", "primaryLocation"], ["QB Name", "qbName"], ["Time Code", "timeCode"]] as [string, string][]).map(([label, key]) => (
             <div key={key}>
               <Label>{label}</Label>
@@ -184,11 +299,47 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             <div><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
             <div><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
           </div>
+          {/* NTE / Billing Basis section */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/30">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NTE &amp; Billing Basis</p>
+            <div className="flex items-center gap-3">
+              <Switch checked={form.hasNteCeiling} onCheckedChange={v => setForm(f => ({ ...f, hasNteCeiling: v }))} id="nte-toggle" />
+              <Label htmlFor="nte-toggle" className="cursor-pointer">This contract has an NTE Ceiling</Label>
+            </div>
+            {form.hasNteCeiling && (
+              <>
+                <div>
+                  <Label>NTE Ceiling Amount</Label>
+                  <Input type="number" min="0" value={form.nteCeilingAmount} onChange={e => setForm(f => ({ ...f, nteCeilingAmount: e.target.value }))} placeholder="e.g. 5000000" />
+                </div>
+                <div>
+                  <Label>Billing Basis</Label>
+                  <Select value={form.billingBasis} onValueChange={v => setForm(f => ({ ...f, billingBasis: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="authorized">Task Order Model — work issued via discrete child orders</SelectItem>
+                      <SelectItem value="nte_ceiling">On-Call / Direct Bill — no child orders, bill directly against ceiling</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {form.billingBasis === "nte_ceiling"
+                      ? "Available = Ceiling − Billed. No over-budget flag until billed exceeds ceiling."
+                      : "Available = Ceiling − Committed (sum of child order values)."}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
           <div><Label>Notes</Label><Textarea rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => update.mutate({ id: contract.id, ...form, startDate: form.startDate ? new Date(form.startDate) : undefined, endDate: form.endDate ? new Date(form.endDate) : undefined })} disabled={update.isPending}>
+          <Button onClick={() => update.mutate({
+            id: contract.id, ...form,
+            startDate: form.startDate ? new Date(form.startDate) : undefined,
+            endDate: form.endDate ? new Date(form.endDate) : undefined,
+            nteCeilingAmount: form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
+          })} disabled={update.isPending}>
             {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
           </Button>
         </DialogFooter>
@@ -285,14 +436,23 @@ export default function ContractDetail() {
   const contractId = parseInt(params.id ?? "0");
 
   const { data, isLoading, refetch } = trpc.contracts.getWithChildren.useQuery({ id: contractId }, { enabled: !!contractId });
+  const { data: financialsData, refetch: refetchFinancials } = trpc.contracts.getFinancials.useQuery(
+    { contractId },
+    { enabled: !!contractId }
+  );
   const updateStatus = trpc.contracts.update.useMutation({
-    onSuccess: () => { toast.success("Status updated"); refetch(); },
+    onSuccess: () => { toast.success("Status updated"); refetch(); refetchFinancials(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const recalculate = trpc.contracts.recalculateFinancials.useMutation({
+    onSuccess: () => { toast.success("Financials recalculated"); refetch(); refetchFinancials(); },
     onError: (e) => toast.error(e.message),
   });
 
   const [editOpen, setEditOpen] = useState(false);
   const [addChildTarget, setAddChildTarget] = useState<{ id: number; num: string; level: number } | null>(null);
   const [addAmendTarget, setAddAmendTarget] = useState<{ id: number; num: string; type: "amendment" | "change_order" } | null>(null);
+  const [qbImportOpen, setQbImportOpen] = useState(false);
 
   if (isLoading) {
     return <div className="p-8 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
@@ -318,7 +478,8 @@ export default function ContractDetail() {
   const nodeLabel = NODE_LABELS[contract.nodeType ?? "contract"] ?? "Contract";
   const endWarning = getEndDateWarning(contract.endDate);
   const allocatedToChildren = children.reduce((sum: number, c: any) => sum + (c.value ?? 0), 0);
-  const financials = {
+  // Use server-computed financials when available; fall back to inline for non-NTE
+  const financials = financialsData ?? {
     selfContractValue: contract.value ?? 0,
     authorizedValue: contract.computedContractValue ?? contract.value ?? 0,
     allocatedToChildren,
@@ -326,6 +487,10 @@ export default function ContractDetail() {
     remaining: (contract.computedContractValue ?? contract.value ?? 0) - (contract.totalBilledAmount ?? 0),
     descendantCount: children.length,
   };
+  // Attach contract dates to financials for burn-rate display
+  const financialsWithDates = financialsData
+    ? { ...financialsData, contract: { startDate: contract.startDate, endDate: contract.endDate } }
+    : financials;
   const STATUS_FLOW: Record<string, string[]> = {
     draft: ["negotiation", "active"], negotiation: ["executed", "draft"], executed: ["active", "on_hold"],
     active: ["on_hold", "completed", "terminated"], on_hold: ["active", "terminated"], completed: [], terminated: [],
@@ -363,10 +528,86 @@ export default function ContractDetail() {
       </div>
 
       {/* Financial Summary Card */}
-      <FinancialSummaryCard financials={financials} />
+      <FinancialSummaryCard financials={financialsWithDates as any} />
 
       {/* Compliance Bar */}
       <ComplianceBar contract={contract} />
+
+      {/* Task Order Portfolio (NTE + AUTHORIZED mode with children) */}
+      {contract.hasNteCeiling && contract.billingBasis === "authorized" && children.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <DollarSign className="h-4 w-4" />Task Order Portfolio
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">
+                {children.length} total • {children.filter((c: any) => c.status === "active").length} active • {children.filter((c: any) => c.status === "completed").length} closed
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className="text-left p-3 font-medium text-muted-foreground">Contract #</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Name / Title</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Order Type</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Effect on Parent</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">Value</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">Billed to Date</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {children.map((child: any) => {
+                  const childValue = child.computedContractValue ?? child.value ?? 0;
+                  const childBilled = child.totalBilledAmount ?? 0;
+                  const childPct = childValue > 0 ? Math.round((childBilled / childValue) * 100) : 0;
+                  const isOverBilled = childBilled > childValue;
+                  const orderTypeLabel = child.nodeType === "task_order" ? "Task Order"
+                    : child.nodeType === "sub_project" ? "Sub-Project"
+                    : "Purchase Order";
+                  return (
+                    <tr key={child.id} className="border-b last:border-0 hover:bg-muted/20 cursor-pointer"
+                      onClick={() => navigate(`/contracts/${child.id}`)}
+                    >
+                      <td className="p-3 font-mono font-medium text-primary">{child.contractNumber ?? `#${child.id}`}</td>
+                      <td className="p-3 max-w-xs">
+                        <p className="font-medium truncate">{child.title}</p>
+                      </td>
+                      <td className="p-3">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-300 text-xs">
+                          {orderTypeLabel}
+                        </Badge>
+                      </td>
+                      <td className="p-3">
+                        <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300 text-xs font-medium">
+                          Utilizes Contract Value
+                        </Badge>
+                      </td>
+                      <td className="p-3">
+                        <Badge variant="outline" className={`text-xs ${STATUS_COLORS[child.status ?? "draft"]}`}>
+                          {STATUS_LABELS[child.status ?? "draft"]}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-right font-mono font-medium">{formatCurrency(childValue)}</td>
+                      <td className={`p-3 text-right font-mono font-medium ${isOverBilled ? "text-rose-600" : ""}`}>
+                        {formatCurrency(childBilled)}
+                        {isOverBilled && <span className="ml-1 text-xs">⚠️</span>}
+                      </td>
+                      <td className={`p-3 text-right font-mono text-sm ${isOverBilled ? "text-rose-600" : childPct >= 90 ? "text-amber-600" : "text-muted-foreground"}`}>
+                        {childPct}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
@@ -449,13 +690,22 @@ export default function ContractDetail() {
         </TabsContent>
 
         <TabsContent value="amendments" className="mt-4 space-y-4">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "amendment" })}>
               <Plus className="h-3 w-3 mr-1" /> Add Amendment
             </Button>
             <Button size="sm" variant="outline" onClick={() => setAddAmendTarget({ id: contract.id, num: contract.contractNumber ?? "", type: "change_order" })}>
               <Plus className="h-3 w-3 mr-1" /> Add Change Order
             </Button>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setQbImportOpen(true)}>
+                <Upload className="h-3 w-3 mr-1" /> Import QB CSV
+              </Button>
+              <Button size="sm" variant="outline" disabled={recalculate.isPending}
+                onClick={() => recalculate.mutate({ contractId })}>
+                <RefreshCw className={`h-3 w-3 mr-1 ${recalculate.isPending ? "animate-spin" : ""}`} /> Recalculate
+              </Button>
+            </div>
           </div>
           {amendments.length === 0 ? (
             <Card><CardContent className="py-10 text-center text-muted-foreground text-sm">No amendments or change orders yet.</CardContent></Card>
@@ -470,38 +720,54 @@ export default function ContractDetail() {
                       <th className="text-left p-3 font-medium text-muted-foreground">Date</th>
                       <th className="text-left p-3 font-medium text-muted-foreground">Description</th>
                       <th className="text-right p-3 font-medium text-muted-foreground">Amount</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Effect</th>
                       <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {amendments.map((a: any) => (
-                      <tr key={a.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="p-3 font-mono font-medium">{a.amendmentNumber}</td>
-                        <td className="p-3">
-                          <Badge variant="outline" className={a.amendmentType === "amendment" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
-                            {a.amendmentType === "amendment" ? "Amendment" : "Change Order"}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-muted-foreground">{formatDate(a.amendmentDate)}</td>
-                        <td className="p-3 text-muted-foreground max-w-xs truncate">{a.description ?? "—"}</td>
-                        <td className={`p-3 text-right font-medium font-mono ${(a.amount ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                          {(a.amount ?? 0) >= 0 ? "+" : ""}{formatCurrency(a.amount)}
-                        </td>
-                        <td className="p-3">
-                          <Badge variant="outline" className={a.approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : a.approvalStatus === "rejected" ? "bg-rose-50 text-rose-700 border-rose-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
-                            {a.approvalStatus ?? "pending"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
+                    {amendments.map((a: any) => {
+                      const behavior = a.amountBehavior ?? ((a.amount ?? 0) >= 0 ? "adds_to_value" : "subtracts_from_value");
+                      const magnitude = a.amountChange ?? Math.abs(a.amount ?? 0);
+                      return (
+                        <tr key={a.id} className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="p-3 font-mono font-medium">{a.amendmentNumber}</td>
+                          <td className="p-3">
+                            <Badge variant="outline" className={a.amendmentType === "amendment" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
+                              {a.amendmentType === "amendment" ? "Amendment" : "Change Order"}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-muted-foreground">{formatDate(a.amendmentDate)}</td>
+                          <td className="p-3 text-muted-foreground max-w-xs truncate">{a.description ?? "—"}</td>
+                          <td className={`p-3 text-right font-medium font-mono ${behavior === "adds_to_value" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {behavior === "adds_to_value" ? "+" : "−"}{formatCurrency(magnitude)}
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium ${
+                              behavior === "adds_to_value" ? "text-emerald-700" : "text-rose-700"
+                            }`}>
+                              {behavior === "adds_to_value"
+                                ? <><TrendingUp className="h-3 w-3" /> Increase</>
+                                : <><TrendingDown className="h-3 w-3" /> Decrease</>}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="outline" className={a.approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : a.approvalStatus === "rejected" ? "bg-rose-50 text-rose-700 border-rose-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
+                              {a.approvalStatus ?? "pending"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="bg-muted/30 font-medium">
-                      <td colSpan={4} className="p-3 text-right text-muted-foreground">Total Adjustments</td>
-                      <td className={`p-3 text-right font-mono ${(totalAmendments + totalChangeOrders) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      <td colSpan={4} className="p-3 text-right text-muted-foreground">Net Adjustment</td>
+                      <td className={`p-3 text-right font-mono ${
+                        (totalAmendments + totalChangeOrders) >= 0 ? "text-emerald-600" : "text-rose-600"
+                      }`}>
                         {(totalAmendments + totalChangeOrders) >= 0 ? "+" : ""}{formatCurrency(totalAmendments + totalChangeOrders)}
                       </td>
-                      <td />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
@@ -533,9 +799,10 @@ export default function ContractDetail() {
         </TabsContent>
       </Tabs>
 
-      {editOpen && <EditContractDialog contract={contract} open={editOpen} onClose={() => setEditOpen(false)} onSuccess={() => refetch()} />}
-      {addChildTarget && <AddChildDialog parentId={addChildTarget.id} parentNumber={addChildTarget.num} parentLevel={addChildTarget.level} open={!!addChildTarget} onClose={() => setAddChildTarget(null)} onSuccess={() => refetch()} />}
-      {addAmendTarget && <AddAmendmentDialog contractId={addAmendTarget.id} contractNumber={addAmendTarget.num} type={addAmendTarget.type} open={!!addAmendTarget} onClose={() => setAddAmendTarget(null)} onSuccess={() => refetch()} />}
+      {editOpen && <EditContractDialog contract={contract} open={editOpen} onClose={() => setEditOpen(false)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
+      {addChildTarget && <AddChildDialog parentId={addChildTarget.id} parentNumber={addChildTarget.num} parentLevel={addChildTarget.level} open={!!addChildTarget} onClose={() => setAddChildTarget(null)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
+      {addAmendTarget && <AddAmendmentDialog contractId={addAmendTarget.id} contractNumber={addAmendTarget.num} type={addAmendTarget.type} open={!!addAmendTarget} onClose={() => setAddAmendTarget(null)} onSuccess={() => { refetch(); refetchFinancials(); }} />}
+      {qbImportOpen && <QbImportDialog contractId={contractId} open={qbImportOpen} onClose={() => setQbImportOpen(false)} onSuccess={() => { refetch(); refetchFinancials(); setQbImportOpen(false); }} />}
     </div>
     </AppLayout>
   );

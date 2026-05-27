@@ -530,7 +530,9 @@ export const contractAmendments = mysqlTable("contract_amendments", {
   amendmentType: varchar("amendmentType", { length: 64 }).default("amendment"), // amendment | change_order | task_order
   amendmentNumber: varchar("amendmentNumber", { length: 64 }), // e.g. CO-001, TO-002
   amendmentDate: timestamp("amendmentDate"),
-  amount: float("amount").notNull().default(0), // positive = add, negative = deduct
+  amount: float("amount").notNull().default(0), // positive = add, negative = deduct (legacy; kept for compatibility)
+  amountBehavior: varchar("amountBehavior", { length: 32 }).default("adds_to_value"), // adds_to_value | subtracts_from_value
+  amountChange: float("amountChange"), // explicit magnitude (positive); if null, falls back to abs(amount)
   description: text("description"),
   approvalStatus: varchar("approvalStatus", { length: 32 }).default("pending"), // pending | approved | rejected
   createdAt: timestamp("createdAt").defaultNow().notNull(),
