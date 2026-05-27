@@ -279,3 +279,17 @@
 - [x] Rewrite server/_core/storageProxy.ts — /manus-storage/:key generates Supabase signed URL and 307-redirects
 - [x] Upload endpoint limit raised from 16 MB to 50 MB to match bucket limit
 - [x] TypeScript: zero errors; 16 tests passing
+
+## DAM Tagging & Filtering System
+- [x] Schema: add tags JSON column to assets table; add assetTags lookup table (id, name, color, createdAt)
+- [x] Schema: push migration (asset_tags table)
+- [x] Server: assets.listTags procedure (returns all tags with usage counts)
+- [x] Server: assets.createTag procedure (name + color)
+- [x] Server: assets.deleteTag procedure
+- [x] Server: assets.list updated — filter by tagIds[], assetType, search, folder
+- [x] Server: assets.updateTags procedure (set tags on an asset)
+- [x] UI: TagBadge component (colored pill with optional remove button)
+- [x] UI: TagFilterBar component (multi-select tag chips + asset type dropdown + search input)
+- [x] UI: Resource Library page — wire real trpc.assets.list with tag/type/search filters
+- [x] UI: Asset card — show tag badges, click to open tag editor popover
+- [x] UI: Tag Manager panel in Settings (create/delete tags, see usage count)

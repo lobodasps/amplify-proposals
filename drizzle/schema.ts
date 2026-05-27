@@ -245,6 +245,18 @@ export const assets = mysqlTable("assets", {
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = typeof assets.$inferInsert;
 
+// ─── Asset Tags (DAM tag definitions) ────────────────────────────────────────
+
+export const assetTags = mysqlTable("asset_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull().unique(),
+  color: varchar("color", { length: 32 }).default("#6366f1"), // hex or tailwind color token
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AssetTag = typeof assetTags.$inferSelect;
+export type InsertAssetTag = typeof assetTags.$inferInsert;
+
 // ─── Boilerplate / Content Library ───────────────────────────────────────────
 
 export const contentLibrary = mysqlTable("content_library", {
