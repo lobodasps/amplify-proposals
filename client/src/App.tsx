@@ -35,6 +35,7 @@ import RfpWiki from "./pages/RfpWiki";
 import AgentGuidelines from "./pages/AgentGuidelines";
 import ProposalScorer from "./pages/ProposalScorer";
 import ConflictDetector from "./pages/ConflictDetector";
+import FileLibrary from "./pages/FileLibrary";
 
 function Router() {
   return (
@@ -64,6 +65,7 @@ function Router() {
       <Route path="/bid-calendar" component={BidCalendar} />
       <Route path="/help" component={Help} />
       <Route path="/resource-library" component={ResourceLibrary} />
+      <Route path="/file-library" component={FileLibrary} />
       <Route path="/opportunities/:id" component={OpportunityDetail} />
       <Route path="/document-shredder" component={DocumentShredder} />
       <Route path="/rfp-wiki" component={RfpWiki} />

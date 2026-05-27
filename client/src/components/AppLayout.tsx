@@ -52,6 +52,7 @@ import {
   Brain,
   Gavel,
   LineChart,
+  HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -212,6 +213,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/projects",
         icon: Building2,
         description: "Past project experience with attachments",
+      },
+      {
+        label: "File Library (DAM)",
+        href: "/file-library",
+        icon: HardDrive,
+        description: "Browse & manage all uploaded files",
       },
       {
         label: "Resource Library",
