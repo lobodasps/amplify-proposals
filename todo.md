@@ -293,3 +293,57 @@
 - [x] UI: Resource Library page — wire real trpc.assets.list with tag/type/search filters
 - [x] UI: Asset card — show tag badges, click to open tag editor popover
 - [x] UI: Tag Manager panel in Settings (create/delete tags, see usage count)
+
+## Replit Parity — Contract Fields, Lookup Tables, QB Import, Analytics (v2.4)
+
+### Schema
+- [ ] Add qbName, clientProjectRef, isPublic, departmentId, serviceTypeIds, form254CodeId, projectManagerId, projectAccountantId, approvalStatus to contracts table
+- [ ] Add departments lookup table (id, name, description, active, createdAt)
+- [ ] Add serviceTypes lookup table (id, name, description, active, createdAt)
+- [ ] Add form254Codes lookup table (id, code, description, active, createdAt)
+- [ ] Push migration
+
+### Server Routers
+- [ ] Add departmentsRouter (list, create, update, delete)
+- [ ] Add serviceTypesRouter (list, create, update, delete)
+- [ ] Add form254CodesRouter (list, create, update, delete)
+- [ ] Update contracts router: expose new fields in create/update/list procedures
+- [ ] Add analytics router (byClient, byOwner, byAmendmentType, byAmendmentBehavior)
+- [ ] Add QB bulk import endpoint (match by projectNumber or qbName, update billing fields, recalculate)
+
+### Settings Page
+- [ ] Add Departments tab to Settings
+- [ ] Add Service Types tab to Settings
+- [ ] Add Form 254 Codes tab to Settings
+
+### Contract Dialogs
+- [ ] Add QB Name field to create/edit contract dialogs (all 3 levels)
+- [ ] Add Client Project Reference field
+- [ ] Add Public/Private sector toggle
+- [ ] Add Department dropdown (from lookup)
+- [ ] Add Service Types multi-select (from lookup)
+- [ ] Add Form 254 Code dropdown (from lookup)
+- [ ] Add Project Manager dropdown (from staff)
+- [ ] Add Project Accountant dropdown (from staff)
+- [ ] Make initial contract amount editable in Edit dialog
+
+### QB Bulk Import Page
+- [ ] Create QbBulkImport.tsx page with CSV upload
+- [ ] Preview matched/unmatched rows before import
+- [ ] Import and recalculate all financial KPIs
+- [ ] Download CSV template
+- [ ] Add to sidebar under Contracts & Compliance
+
+### Analytics Module
+- [ ] Overview tab: amendment behavior cards (Additions/Deductions)
+- [ ] Overview tab: amendment type breakdown cards
+- [ ] Overview tab: client analytics table (sortable)
+- [ ] Overview tab: owner analytics table
+- [ ] Pre-built Reports tab: Contracts by Status (CSV export)
+- [ ] Pre-built Reports tab: Revenue by Client (CSV export)
+- [ ] Pre-built Reports tab: Revenue by Owner (CSV export)
+- [ ] Pre-built Reports tab: Expiring Contracts next 6 months (CSV export)
+- [ ] Pre-built Reports tab: Billed vs Authorized NTE (CSV export)
+- [ ] Pre-built Reports tab: Retainage Summary (CSV export)
+- [ ] Query Builder tab: table selector, field/operator/value filters, run query, export CSV
+- [ ] Wire Analytics into sidebar and App.tsx routes

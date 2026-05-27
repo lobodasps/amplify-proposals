@@ -509,9 +509,20 @@ export const contracts = mysqlTable("contracts", {
   isBillingOverCeiling: boolean("isBillingOverCeiling").default(false),
   computedContractValue: float("computedContractValue").default(0), // initial + amendments
   qbName: varchar("qbName", { length: 256 }), // QuickBooks project name
+  clientProjectRef: varchar("clientProjectRef", { length: 256 }), // Client's own project reference number
   timeCode: varchar("timeCode", { length: 128 }), // Timekeeping identifier
   performingCompanyId: varchar("performingCompanyId", { length: 64 }), // Supabase company UUID (JPCL or Strans)
   performingCompanyName: varchar("performingCompanyName", { length: 64 }), // e.g. 'JPCL' or 'Strans'
+  // Classification FKs
+  departmentId: int("departmentId"), // FK to departments
+  serviceTypeIds: json("serviceTypeIds"), // array of FK IDs to service_types
+  form254CodeId: int("form254CodeId"), // FK to form_254_codes
+  // Key personnel FKs
+  projectManagerId: int("projectManagerId"), // FK to personnel
+  projectAccountantId: int("projectAccountantId"), // FK to personnel
+  // Organization FKs (dropdown instead of free text)
+  clientOrgId: int("clientOrgId"), // FK to organizations (client)
+  ownerOrgId: int("ownerOrgId"), // FK to organizations (owner/agency)
   // Compliance flags
   coiRequired: boolean("coiRequired").default(false),
   coiReceived: boolean("coiReceived").default(false),

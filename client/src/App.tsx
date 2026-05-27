@@ -35,7 +35,8 @@ import RfpWiki from "./pages/RfpWiki";
 import AgentGuidelines from "./pages/AgentGuidelines";
 import ProposalScorer from "./pages/ProposalScorer";
 import ConflictDetector from "./pages/ConflictDetector";
-import FileLibrary from "./pages/FileLibrary";
+import FileLibrary from "@/pages/FileLibrary";
+import QbSync from "@/pages/QbSync";
 
 function Router() {
   return (
@@ -72,6 +73,7 @@ function Router() {
       <Route path="/agent-guidelines" component={AgentGuidelines} />
       <Route path="/proposal-scorer" component={ProposalScorer} />
       <Route path="/conflict-detector" component={ConflictDetector} />
+      <Route path="/qb-sync" component={QbSync} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

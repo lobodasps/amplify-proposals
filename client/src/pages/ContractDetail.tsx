@@ -255,52 +255,239 @@ function QbImportDialog({ contractId, open, onClose, onSuccess }: { contractId: 
 }
 
 function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: any; open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const { data: orgs = [] } = trpc.organizations.list.useQuery({});
+  const { data: people = [] } = trpc.people.list.useQuery({});
+  const { data: departments = [] } = trpc.departments.list.useQuery();
+  const { data: serviceTypes = [] } = trpc.serviceTypes.list.useQuery();
+  const { data: form254Codes = [] } = trpc.form254Codes.list.useQuery();
+
+  const parseServiceTypeIds = (v: any): number[] => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.map(Number);
+    try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(Number) : []; } catch { return []; }
+  };
+
   const [form, setForm] = useState({
     title: contract.title ?? "",
+    clientOrgId: String(contract.clientOrgId ?? ""),
+    ownerOrgId: String(contract.ownerOrgId ?? ""),
     clientName: contract.clientName ?? "",
     ownerName: contract.ownerName ?? "",
+    clientProjectRef: (contract as any).clientProjectRef ?? "",
     contractManagerName: (contract as any).contractManagerName ?? "",
     primaryLocation: contract.primaryLocation ?? "",
     status: contract.status ?? "draft",
     startDate: contract.startDate ? new Date(contract.startDate).toISOString().split("T")[0] : "",
     endDate: contract.endDate ? new Date(contract.endDate).toISOString().split("T")[0] : "",
+    initialAmount: contract.value != null ? String(contract.value) : "",
     qbName: contract.qbName ?? "",
     timeCode: contract.timeCode ?? "",
+    isPublic: (contract as any).isPublic !== false,
+    departmentId: String((contract as any).departmentId ?? ""),
+    serviceTypeIds: parseServiceTypeIds((contract as any).serviceTypeIds),
+    form254CodeId: String((contract as any).form254CodeId ?? ""),
+    projectManagerId: String((contract as any).projectManagerId ?? ""),
+    projectAccountantId: String((contract as any).projectAccountantId ?? ""),
     notes: contract.notes ?? "",
     hasNteCeiling: contract.hasNteCeiling ?? false,
     nteCeilingAmount: contract.nteCeilingAmount ? String(contract.nteCeilingAmount) : "",
     billingBasis: contract.billingBasis ?? "authorized",
   });
+
   const update = trpc.contracts.update.useMutation({
     onSuccess: () => { toast.success("Contract updated"); onSuccess(); onClose(); },
     onError: (e) => toast.error(e.message),
   });
+
+  const toggleServiceType = (id: number) => {
+    setForm(f => ({
+      ...f,
+      serviceTypeIds: f.serviceTypeIds.includes(id)
+        ? f.serviceTypeIds.filter(x => x !== id)
+        : [...f.serviceTypeIds, id],
+    }));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>Edit Contract</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-2 max-h-[65vh] overflow-y-auto pr-1">
-          {([["Title", "title"], ["Client", "clientName"], ["Owner / Agency", "ownerName"], ["Contract Manager", "contractManagerName"], ["Location", "primaryLocation"], ["QB Name", "qbName"], ["Time Code", "timeCode"]] as [string, string][]).map(([label, key]) => (
-            <div key={key}>
-              <Label>{label}</Label>
-              <Input value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+        <div className="space-y-4 py-2 max-h-[72vh] overflow-y-auto pr-1">
+
+          {/* Core Info */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Core Information</p>
+            <div>
+              <Label>Title *</Label>
+              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
             </div>
-          ))}
-          <div>
-            <Label>Status</Label>
-            <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <div><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Sector</Label>
+                <Select value={form.isPublic ? "public" : "private"} onValueChange={v => setForm(f => ({ ...f, isPublic: v === "public" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public</SelectItem>
+                    <SelectItem value="private">Private</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Initial Contract Amount</Label>
+              <Input type="number" min="0" value={form.initialAmount} onChange={e => setForm(f => ({ ...f, initialAmount: e.target.value }))} placeholder="0.00" />
+              <p className="text-xs text-muted-foreground mt-1">Original contract value before any amendments.</p>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
-            <div><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+
+          {/* Client & Owner */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client &amp; Owner</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Client (Organization)</Label>
+                <Select value={form.clientOrgId} onValueChange={v => {
+                  const org = (orgs as any[]).find(o => String(o.id) === v);
+                  setForm(f => ({ ...f, clientOrgId: v, clientName: org?.name ?? f.clientName }));
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Select client…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Client Name (override)</Label>
+                <Input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="Auto-filled from org" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Owner / Agency (Organization)</Label>
+                <Select value={form.ownerOrgId} onValueChange={v => {
+                  const org = (orgs as any[]).find(o => String(o.id) === v);
+                  setForm(f => ({ ...f, ownerOrgId: v, ownerName: org?.name ?? f.ownerName }));
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Select owner…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(orgs as any[]).map((o: any) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Owner Name (override)</Label>
+                <Input value={form.ownerName} onChange={e => setForm(f => ({ ...f, ownerName: e.target.value }))} placeholder="Auto-filled from org" />
+              </div>
+            </div>
+            <div>
+              <Label>Client's Project Reference #</Label>
+              <Input value={form.clientProjectRef} onChange={e => setForm(f => ({ ...f, clientProjectRef: e.target.value }))} placeholder="Client's own project number or name" />
+            </div>
           </div>
-          {/* NTE / Billing Basis section */}
-          <div className="border rounded-md p-3 space-y-3 bg-muted/30">
+
+          {/* Key Personnel */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Key Personnel</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Project Manager</Label>
+                <Select value={form.projectManagerId} onValueChange={v => setForm(f => ({ ...f, projectManagerId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select PM…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Project Accountant</Label>
+                <Select value={form.projectAccountantId} onValueChange={v => setForm(f => ({ ...f, projectAccountantId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select accountant…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(people as any[]).map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName}{p.title ? ` — ${p.title}` : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Contract Manager</Label>
+              <Input value={form.contractManagerName} onChange={e => setForm(f => ({ ...f, contractManagerName: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Classification */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Classification</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Department</Label>
+                <Select value={form.departmentId} onValueChange={v => setForm(f => ({ ...f, departmentId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select department…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(departments as any[]).map((d: any) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.code ? ` (${d.code})` : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Form 254 Code</Label>
+                <Select value={form.form254CodeId} onValueChange={v => setForm(f => ({ ...f, form254CodeId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select code…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {(form254Codes as any[]).map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.code}{c.description ? ` — ${c.description}` : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="mb-2 block">Service Type(s)</Label>
+              <div className="flex flex-wrap gap-2">
+                {(serviceTypes as any[]).map((st: any) => (
+                  <button key={st.id} type="button" onClick={() => toggleServiceType(st.id)}
+                    className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                      form.serviceTypeIds.includes(st.id)
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-foreground border-border hover:bg-muted"
+                    }`}>
+                    {st.name}{st.code ? ` (${st.code})` : ""}
+                  </button>
+                ))}
+                {(serviceTypes as any[]).length === 0 && (
+                  <p className="text-xs text-muted-foreground">No service types defined. Add them in Settings → Service Types.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* QB / Timekeeping */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">QuickBooks &amp; Timekeeping</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>QB Name</Label><Input value={form.qbName} onChange={e => setForm(f => ({ ...f, qbName: e.target.value }))} placeholder="Exact name in QuickBooks" /></div>
+              <div><Label>Time Code</Label><Input value={form.timeCode} onChange={e => setForm(f => ({ ...f, timeCode: e.target.value }))} placeholder="e.g. TC-001" /></div>
+            </div>
+            <div><Label>Primary Location</Label><Input value={form.primaryLocation} onChange={e => setForm(f => ({ ...f, primaryLocation: e.target.value }))} /></div>
+          </div>
+
+          {/* NTE / Billing Basis */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NTE &amp; Billing Basis</p>
             <div className="flex items-center gap-3">
               <Switch checked={form.hasNteCeiling} onCheckedChange={v => setForm(f => ({ ...f, hasNteCeiling: v }))} id="nte-toggle" />
@@ -330,15 +517,37 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
               </>
             )}
           </div>
+
           <div><Label>Notes</Label><Textarea rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => update.mutate({
-            id: contract.id, ...form,
+            id: contract.id,
+            title: form.title,
+            clientName: form.clientName,
+            ownerName: form.ownerName,
+            clientOrgId: form.clientOrgId ? parseInt(form.clientOrgId) : undefined,
+            ownerOrgId: form.ownerOrgId ? parseInt(form.ownerOrgId) : undefined,
+            clientProjectRef: form.clientProjectRef || undefined,
+            contractManagerName: form.contractManagerName || undefined,
+            primaryLocation: form.primaryLocation || undefined,
+            status: form.status,
             startDate: form.startDate ? new Date(form.startDate) : undefined,
             endDate: form.endDate ? new Date(form.endDate) : undefined,
+            value: form.initialAmount ? parseFloat(form.initialAmount) : undefined,
+            qbName: form.qbName || undefined,
+            timeCode: form.timeCode || undefined,
+            isPublic: form.isPublic,
+            departmentId: form.departmentId ? parseInt(form.departmentId) : undefined,
+            serviceTypeIds: form.serviceTypeIds.length > 0 ? form.serviceTypeIds : undefined,
+            form254CodeId: form.form254CodeId ? parseInt(form.form254CodeId) : undefined,
+            projectManagerId: form.projectManagerId ? parseInt(form.projectManagerId) : undefined,
+            projectAccountantId: form.projectAccountantId ? parseInt(form.projectAccountantId) : undefined,
+            notes: form.notes || undefined,
+            hasNteCeiling: form.hasNteCeiling,
             nteCeilingAmount: form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
+            billingBasis: form.billingBasis,
           })} disabled={update.isPending}>
             {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
           </Button>

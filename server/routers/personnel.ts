@@ -220,6 +220,17 @@ export const contractsRouter = router({
       companyRole: z.string().optional(),
       primaryLocation: z.string().optional(),
       notes: z.string().optional(),
+      qbName: z.string().optional(),
+      clientProjectRef: z.string().optional(),
+      isPublic: z.boolean().optional(),
+      departmentId: z.number().optional(),
+      serviceTypeIds: z.array(z.number()).optional(),
+      form254CodeId: z.number().optional(),
+      projectManagerId: z.number().optional(),
+      projectAccountantId: z.number().optional(),
+      clientOrgId: z.number().optional(),
+      ownerOrgId: z.number().optional(),
+      ownerName: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -238,6 +249,17 @@ export const contractsRouter = router({
         companyRole: input.companyRole ?? "prime",
         primaryLocation: input.primaryLocation,
         notes: input.notes,
+        qbName: input.qbName,
+        clientProjectRef: input.clientProjectRef,
+        isPublic: input.isPublic ?? true,
+        departmentId: input.departmentId,
+        serviceTypeIds: input.serviceTypeIds ? JSON.stringify(input.serviceTypeIds) : null,
+        form254CodeId: input.form254CodeId,
+        projectManagerId: input.projectManagerId,
+        projectAccountantId: input.projectAccountantId,
+        clientOrgId: input.clientOrgId,
+        ownerOrgId: input.ownerOrgId,
+        ownerName: input.ownerName,
         status: "draft",
         contractManagerId: ctx.user.id,
       });
@@ -428,6 +450,15 @@ export const contractsRouter = router({
       hasNteCeiling: z.boolean().optional(),
       nteCeilingAmount: z.number().optional(),
       billingBasis: z.string().optional(),
+      clientProjectRef: z.string().optional(),
+      isPublic: z.boolean().optional(),
+      departmentId: z.number().optional(),
+      serviceTypeIds: z.array(z.number()).optional(),
+      form254CodeId: z.number().optional(),
+      projectManagerId: z.number().optional(),
+      projectAccountantId: z.number().optional(),
+      clientOrgId: z.number().optional(),
+      ownerOrgId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -695,5 +726,56 @@ export const contractsRouter = router({
       }
       await persistContractFinancials(entry.contractId);
       return { success: true };
+    }),
+
+  // ─── Bulk QB Import (global, multi-contract) ───────────────────────────────
+  bulkImportQb: protectedProcedure
+    .input(z.object({
+      asOfDate: z.string(),
+      rows: z.array(z.object({
+        contractIdentifier: z.string(),
+        billedToDate: z.number(),
+        retainageAmount: z.number().optional(),
+        lastInvoiceDate: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const allContracts = await db.select({
+        id: contracts.id,
+        contractNumber: contracts.contractNumber,
+        qbName: contracts.qbName,
+        hasNteCeiling: contracts.hasNteCeiling,
+        nteCeilingAmount: contracts.nteCeilingAmount,
+        computedContractValue: contracts.computedContractValue,
+        value: contracts.value,
+      }).from(contracts);
+      const results: { identifier: string; matched: boolean; contractId?: number; contractNumber?: string }[] = [];
+      let matched = 0;
+      let unmatched = 0;
+      for (const row of input.rows) {
+        const id = row.contractIdentifier.trim().toLowerCase();
+        const contract = allContracts.find(c =>
+          (c.qbName && c.qbName.toLowerCase() === id) ||
+          (c.contractNumber && c.contractNumber.toLowerCase() === id)
+        );
+        if (!contract) { results.push({ identifier: row.contractIdentifier, matched: false }); unmatched++; continue; }
+        const ceiling = contract.hasNteCeiling
+          ? (contract.nteCeilingAmount ?? 0)
+          : (contract.computedContractValue ?? contract.value ?? 0);
+        const billingPct = ceiling > 0 ? Math.round((row.billedToDate / ceiling) * 100) : 0;
+        await db.update(contracts).set({
+          totalBilledAmount: row.billedToDate,
+          retainageAmount: row.retainageAmount ?? undefined,
+          billingPercentage: billingPct,
+          isBillingOverCeiling: row.billedToDate > ceiling,
+          lastInvoicedDate: row.lastInvoiceDate ? new Date(row.lastInvoiceDate) : new Date(input.asOfDate),
+        } as any).where(eq(contracts.id, contract.id));
+        await persistContractFinancials(contract.id);
+        results.push({ identifier: row.contractIdentifier, matched: true, contractId: contract.id, contractNumber: contract.contractNumber ?? undefined });
+        matched++;
+      }
+      return { success: true, matched, unmatched, results };
     }),
 });

@@ -1,19 +1,20 @@
+import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { pursuits, proposals } from "../../drizzle/schema";
-import { count, notInArray, inArray } from "drizzle-orm";
+import { pursuits, proposals, contracts, contractAmendments, organizations } from "../../drizzle/schema";
+import { count, notInArray, inArray, sql, and, gte, lte, eq, isNotNull } from "drizzle-orm";
+
+function formatCurrency(v: number) {
+  return v;
+}
 
 export const analyticsRouter = router({
   dashboard: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) {
       return {
-        totalPursuits: 24,
-        activePursuits: 18,
-        proposalsInProgress: 8,
-        pipelineValue: 14200000,
-        winRate: 38,
-        proposalsSubmittedYTD: 47,
+        totalPursuits: 24, activePursuits: 18, proposalsInProgress: 8,
+        pipelineValue: 14200000, winRate: 38, proposalsSubmittedYTD: 47,
         upcomingDeadlines: 5,
         pursuitsByStatus: [
           { status: "identify", count: 8, value: 3200000 },
@@ -25,56 +26,30 @@ export const analyticsRouter = router({
         recentActivity: [],
       };
     }
-
     try {
       const [totalPursuitsResult] = await db.select({ count: count() }).from(pursuits);
-      const [activePursuitsResult] = await db
-        .select({ count: count() })
-        .from(pursuits)
+      const [activePursuitsResult] = await db.select({ count: count() }).from(pursuits)
         .where(notInArray(pursuits.status, ["award", "lost", "no_go"]));
-      const [proposalsInProgressResult] = await db
-        .select({ count: count() })
-        .from(proposals)
+      const [proposalsInProgressResult] = await db.select({ count: count() }).from(proposals)
         .where(inArray(proposals.status, ["draft", "in_review"]));
-
-      const pursuitStatusCounts = await db
-        .select({ status: pursuits.status, count: count() })
-        .from(pursuits)
-        .groupBy(pursuits.status);
-
+      const pursuitStatusCounts = await db.select({ status: pursuits.status, count: count() })
+        .from(pursuits).groupBy(pursuits.status);
       const awardedCount = pursuitStatusCounts.find(r => r.status === "award")?.count ?? 0;
       const lostCount = pursuitStatusCounts.find(r => r.status === "lost")?.count ?? 0;
       const totalDecided = awardedCount + lostCount;
       const winRate = totalDecided > 0 ? Math.round((awardedCount / totalDecided) * 100) : 0;
-
       return {
         totalPursuits: totalPursuitsResult?.count ?? 0,
         activePursuits: activePursuitsResult?.count ?? 0,
         proposalsInProgress: proposalsInProgressResult?.count ?? 0,
-        pipelineValue: 14200000,
-        winRate,
-        proposalsSubmittedYTD: 47,
-        upcomingDeadlines: 5,
-        pursuitsByStatus: pursuitStatusCounts.map(r => ({
-          status: r.status ?? "identify",
-          count: r.count,
-          value: 0,
-        })),
+        pipelineValue: 14200000, winRate,
+        proposalsSubmittedYTD: 47, upcomingDeadlines: 5,
+        pursuitsByStatus: pursuitStatusCounts.map(r => ({ status: r.status ?? "identify", count: r.count, value: 0 })),
         recentActivity: [],
       };
     } catch (err) {
       console.error("[analytics.dashboard] query error:", err);
-      return {
-        totalPursuits: 0,
-        activePursuits: 0,
-        proposalsInProgress: 0,
-        pipelineValue: 0,
-        winRate: 0,
-        proposalsSubmittedYTD: 0,
-        upcomingDeadlines: 0,
-        pursuitsByStatus: [],
-        recentActivity: [],
-      };
+      return { totalPursuits: 0, activePursuits: 0, proposalsInProgress: 0, pipelineValue: 0, winRate: 0, proposalsSubmittedYTD: 0, upcomingDeadlines: 5, pursuitsByStatus: [], recentActivity: [] };
     }
   }),
 
@@ -127,4 +102,215 @@ export const analyticsRouter = router({
       { month: "May '26", value: 14200000 },
     ];
   }),
+
+  // ─── Contract Analytics ─────────────────────────────────────────────────────
+
+  contractOverview: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { behaviorSummary: [], typeSummary: [], clientAnalytics: [], ownerAnalytics: [] };
+
+    // Amendment behavior summary (ADDS_TO_VALUE / SUBTRACTS_FROM_VALUE)
+    const amendments = await db.select().from(contractAmendments);
+    const behaviorMap: Record<string, { count: number; totalAmount: number }> = {};
+    for (const a of amendments) {
+      const behavior = (a as any).amountBehavior ?? "ADDS_TO_VALUE";
+      const amount = (a as any).amountChange ?? Math.abs((a as any).amount ?? 0);
+      if (!behaviorMap[behavior]) behaviorMap[behavior] = { count: 0, totalAmount: 0 };
+      behaviorMap[behavior].count++;
+      behaviorMap[behavior].totalAmount += amount;
+    }
+    const behaviorSummary = Object.entries(behaviorMap).map(([behavior, v]) => ({ behavior, ...v }));
+
+    // Amendment type summary
+    const typeMap: Record<string, { count: number; totalAmount: number }> = {};
+    for (const a of amendments) {
+      const type = (a as any).amendmentType ?? "AMENDMENT";
+      const amount = (a as any).amountChange ?? Math.abs((a as any).amount ?? 0);
+      if (!typeMap[type]) typeMap[type] = { count: 0, totalAmount: 0 };
+      typeMap[type].count++;
+      typeMap[type].totalAmount += amount;
+    }
+    const typeSummary = Object.entries(typeMap).map(([type, v]) => ({ type, ...v }));
+
+    // Client analytics
+    const allContracts = await db.select().from(contracts);
+    const clientMap: Record<string, { client: string; contractCount: number; totalInitialAmount: number; totalAmendments: number; finalAmount: number; totalBilled: number }> = {};
+    for (const c of allContracts) {
+      const clientKey = (c as any).clientName ?? "Unknown";
+      if (!clientMap[clientKey]) clientMap[clientKey] = { client: clientKey, contractCount: 0, totalInitialAmount: 0, totalAmendments: 0, finalAmount: 0, totalBilled: 0 };
+      clientMap[clientKey].contractCount++;
+      clientMap[clientKey].totalInitialAmount += (c as any).value ?? 0;
+      clientMap[clientKey].finalAmount += (c as any).computedContractValue ?? (c as any).value ?? 0;
+      clientMap[clientKey].totalBilled += (c as any).totalBilledAmount ?? 0;
+    }
+    const clientAnalytics = Object.values(clientMap).sort((a, b) => b.finalAmount - a.finalAmount);
+
+    // Owner analytics
+    const ownerMap: Record<string, { owner: string; contractCount: number; totalAmount: number; contracts: { id: number; projectName: string; client: string; initialAmount: number }[] }> = {};
+    for (const c of allContracts) {
+      const ownerKey = (c as any).ownerName ?? "Unknown";
+      if (!ownerMap[ownerKey]) ownerMap[ownerKey] = { owner: ownerKey, contractCount: 0, totalAmount: 0, contracts: [] };
+      ownerMap[ownerKey].contractCount++;
+      ownerMap[ownerKey].totalAmount += (c as any).computedContractValue ?? (c as any).value ?? 0;
+      ownerMap[ownerKey].contracts.push({
+        id: c.id,
+        projectName: c.title,
+        client: (c as any).clientName ?? "—",
+        initialAmount: (c as any).value ?? 0,
+      });
+    }
+    const ownerAnalytics = Object.values(ownerMap).sort((a, b) => b.totalAmount - a.totalAmount);
+
+    return { behaviorSummary, typeSummary, clientAnalytics, ownerAnalytics };
+  }),
+
+  // Pre-built reports
+  contractsByStatus: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({ status: contracts.status, count: count(), totalValue: sql<number>`sum(${contracts.value})` })
+      .from(contracts).groupBy(contracts.status);
+    return rows.map(r => ({ status: r.status ?? "draft", count: r.count, totalValue: Number(r.totalValue ?? 0) }));
+  }),
+
+  revenueByClient: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const allContracts = await db.select().from(contracts);
+    const map: Record<string, { client: string; count: number; totalValue: number; billed: number }> = {};
+    for (const c of allContracts) {
+      const key = (c as any).clientName ?? "Unknown";
+      if (!map[key]) map[key] = { client: key, count: 0, totalValue: 0, billed: 0 };
+      map[key].count++;
+      map[key].totalValue += (c as any).computedContractValue ?? (c as any).value ?? 0;
+      map[key].billed += (c as any).totalBilledAmount ?? 0;
+    }
+    return Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
+  }),
+
+  revenueByOwner: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const allContracts = await db.select().from(contracts);
+    const map: Record<string, { owner: string; count: number; totalValue: number; billed: number }> = {};
+    for (const c of allContracts) {
+      const key = (c as any).ownerName ?? "Unknown";
+      if (!map[key]) map[key] = { owner: key, count: 0, totalValue: 0, billed: 0 };
+      map[key].count++;
+      map[key].totalValue += (c as any).computedContractValue ?? (c as any).value ?? 0;
+      map[key].billed += (c as any).totalBilledAmount ?? 0;
+    }
+    return Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
+  }),
+
+  expiringContracts: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const now = new Date();
+    const sixMonths = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+    const rows = await db.select().from(contracts)
+      .where(and(
+        isNotNull(contracts.endDate),
+        gte(contracts.endDate, now),
+        lte(contracts.endDate, sixMonths),
+        inArray(contracts.status, ["active", "draft"])
+      ));
+    return rows.map(c => ({
+      id: c.id,
+      contractNumber: (c as any).contractNumber ?? "",
+      projectName: c.title,
+      client: (c as any).clientName ?? "—",
+      endDate: c.endDate ? c.endDate.toISOString().split("T")[0] : null,
+      daysRemaining: c.endDate ? Math.ceil((c.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null,
+      value: (c as any).computedContractValue ?? (c as any).value ?? 0,
+    })).sort((a, b) => (a.daysRemaining ?? 999) - (b.daysRemaining ?? 999));
+  }),
+
+  billedVsAuthorized: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select().from(contracts)
+      .where(and(eq(contracts.hasNteCeiling as any, true), inArray(contracts.status, ["active"])));
+    return rows.map(c => ({
+      id: c.id,
+      contractNumber: (c as any).contractNumber ?? "",
+      projectName: c.title,
+      authorized: (c as any).computedContractValue ?? (c as any).value ?? 0,
+      billed: (c as any).totalBilledAmount ?? 0,
+      ceiling: (c as any).nteCeilingAmount ?? 0,
+      billingPct: (c as any).billingPercentage ?? 0,
+      isOverCeiling: (c as any).isBillingOverCeiling ?? false,
+    }));
+  }),
+
+  retainageSummary: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select().from(contracts)
+      .where(and(inArray(contracts.status, ["active"]), sql`${contracts.retainageAmount} > 0`));
+    return rows.map(c => ({
+      id: c.id,
+      projectName: c.title,
+      client: (c as any).clientName ?? "—",
+      initialAmount: (c as any).value ?? 0,
+      retainage: (c as any).retainageAmount ?? 0,
+    })).sort((a, b) => b.retainage - a.retainage);
+  }),
+
+  // Query builder — run a filtered query on a table
+  queryBuilder: protectedProcedure
+    .input(z.object({
+      table: z.enum(["contracts", "amendments", "organizations", "people"]),
+      columns: z.array(z.string()),
+      filters: z.array(z.object({
+        field: z.string(),
+        operator: z.enum(["equals", "contains", "gt", "lt", "gte", "lte"]),
+        value: z.string(),
+      })).optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      let rows: any[] = [];
+      if (input.table === "contracts") {
+        rows = await db.select().from(contracts).limit(500);
+      } else if (input.table === "amendments") {
+        rows = await db.select().from(contractAmendments).limit(500);
+      } else if (input.table === "organizations") {
+        rows = await db.select().from(organizations).limit(500);
+      } else {
+        rows = [];
+      }
+
+      // Apply client-side filters
+      if (input.filters && input.filters.length > 0) {
+        rows = rows.filter(row => {
+          return (input.filters ?? []).every(f => {
+            const val = String(row[f.field] ?? "").toLowerCase();
+            const fv = f.value.toLowerCase();
+            switch (f.operator) {
+              case "equals": return val === fv;
+              case "contains": return val.includes(fv);
+              case "gt": return Number(row[f.field]) > Number(f.value);
+              case "lt": return Number(row[f.field]) < Number(f.value);
+              case "gte": return Number(row[f.field]) >= Number(f.value);
+              case "lte": return Number(row[f.field]) <= Number(f.value);
+              default: return true;
+            }
+          });
+        });
+      }
+
+      // Project only selected columns
+      if (input.columns.length > 0) {
+        rows = rows.map(r => {
+          const out: Record<string, any> = {};
+          for (const col of input.columns) out[col] = r[col];
+          return out;
+        });
+      }
+
+      return rows;
+    }),
 });

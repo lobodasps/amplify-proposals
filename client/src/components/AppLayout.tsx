@@ -53,6 +53,7 @@ import {
   Gavel,
   LineChart,
   HardDrive,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -276,6 +277,13 @@ const NAV_GROUPS: NavGroup[] = [
         icon: BarChart3,
         description: "Win rates, pipeline metrics & trends",
         roles: ["administrator", "executive", "business_development", "admin"],
+      },
+      {
+        label: "QB Sync",
+        href: "/qb-sync",
+        icon: RefreshCw,
+        description: "Bulk import billed amounts from QuickBooks",
+        roles: ["administrator", "admin", "project_manager"],
       },
       {
         label: "Help",
