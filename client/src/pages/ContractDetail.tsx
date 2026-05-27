@@ -378,6 +378,8 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
     hasNteCeiling: contract.hasNteCeiling ?? false,
     nteCeilingAmount: contract.nteCeilingAmount ? String(contract.nteCeilingAmount) : "",
     billingBasis: contract.billingBasis ?? "authorized",
+    contractVehicle: contract.contractVehicle ?? "standalone",
+    companyRole: contract.companyRole ?? "prime",
   });
 
   const update = trpc.contracts.update.useMutation({
@@ -572,6 +574,39 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             <div><Label>Primary Location</Label><Input value={form.primaryLocation} onChange={e => setForm(f => ({ ...f, primaryLocation: e.target.value }))} /></div>
           </div>
 
+          {/* Contract Vehicle & Company Role */}
+          <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Vehicle &amp; Role</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Contract Vehicle</Label>
+                <Select value={form.contractVehicle} onValueChange={v => setForm(f => ({ ...f, contractVehicle: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standalone">Standalone Contract</SelectItem>
+                    <SelectItem value="idiq">IDIQ</SelectItem>
+                    <SelectItem value="task_order">Task Order</SelectItem>
+                    <SelectItem value="blanket_purchase_agreement">Blanket Purchase Agreement</SelectItem>
+                    <SelectItem value="master_service_agreement">Master Service Agreement</SelectItem>
+                    <SelectItem value="on_call">On-Call Contract</SelectItem>
+                    <SelectItem value="goc">General Order of Conditions (GOC)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Company Role</Label>
+                <Select value={form.companyRole} onValueChange={v => setForm(f => ({ ...f, companyRole: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="prime">Prime Consultant</SelectItem>
+                    <SelectItem value="sub">Sub-Consultant</SelectItem>
+                    <SelectItem value="joint_venture">Joint Venture</SelectItem>
+                    <SelectItem value="teaming">Teaming Partner</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
           {/* NTE / Billing Basis */}
           <div className="border rounded-md p-3 space-y-3 bg-muted/20">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NTE &amp; Billing Basis</p>
@@ -634,6 +669,8 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             hasNteCeiling: form.hasNteCeiling,
             nteCeilingAmount: form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
             billingBasis: form.billingBasis,
+            contractVehicle: form.contractVehicle || undefined,
+            companyRole: form.companyRole || undefined,
           })} disabled={update.isPending}>
             {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
           </Button>
