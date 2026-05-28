@@ -212,6 +212,57 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
         </div>
       </SheetHeader>
       <div className="flex-1 overflow-y-auto py-4 space-y-4">
+        {/* ── Project details ── */}
+        {(project.description || project.contractValue || project.location || project.awardYear) && (
+          <div className="space-y-3 p-4 rounded-lg bg-muted/40 border">
+            {project.description && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Scope</p>
+                <p className="text-sm text-foreground leading-relaxed">{project.description}</p>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-4">
+              {project.contractValue && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contract Value</p>
+                  <p className="text-sm mt-0.5">{formatCurrency(project.contractValue)}</p>
+                </div>
+              )}
+              {project.awardYear && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Award Year</p>
+                  <p className="text-sm mt-0.5">{project.awardYear}</p>
+                </div>
+              )}
+              {project.location && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Location</p>
+                  <p className="text-sm mt-0.5">{project.location}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Tags / keywords ── */}
+        {(() => {
+          const tgs = parseTags(project.tags);
+          return tgs.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Keywords</p>
+              <div className="flex flex-wrap gap-1">
+                {tgs.map((tag: string) => (
+                  <span key={tag} className="text-xs bg-muted text-muted-foreground rounded px-2 py-0.5">{tag}</span>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
+
+        <div className="border-t pt-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Files &amp; Documents</p>
+        </div>
+
         <div>
           <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.dwg,.zip" onChange={handleFileUpload} />
           <Button variant="outline" size="sm" className="w-full border-dashed" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
@@ -302,7 +353,7 @@ function ProjectCard({ project, onOpenAttachments }: { project: any; onOpenAttac
   const statusLabel = (project.status ?? "").replace(/_/g, " ");
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => onOpenAttachments(project)}>
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex-1 min-w-0">
@@ -339,12 +390,12 @@ function ProjectCard({ project, onOpenAttachments }: { project: any; onOpenAttac
           </div>
         )}
         <div className="flex items-center justify-between pt-2 border-t">
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => toast.success(`${project.name} added to proposal`)}>
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={(e) => { e.stopPropagation(); toast.success(`${project.name} added to proposal`); }}>
             <Plus className="w-3 h-3" /> Use in Proposal
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={() => onOpenAttachments(project)}>
-            <Paperclip className="w-3 h-3" /> Files <ChevronRight className="w-3 h-3" />
-          </Button>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            View Details <ChevronRight className="w-3 h-3" />
+          </span>
         </div>
       </CardContent>
     </Card>

@@ -213,6 +213,94 @@ function AttachmentPanel({ staffMember, onClose }: { staffMember: any; onClose: 
       </SheetHeader>
 
       <div className="flex-1 overflow-y-auto py-4 space-y-4">
+        {/* ── Profile details ── */}
+        {(staffMember.summary || staffMember.yearsExperience || staffMember.education) && (
+          <div className="space-y-3 p-4 rounded-lg bg-muted/40 border">
+            {staffMember.summary && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Bio / Summary</p>
+                <p className="text-sm text-foreground leading-relaxed">{staffMember.summary}</p>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-4">
+              {staffMember.yearsExperience && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Experience</p>
+                  <p className="text-sm mt-0.5">{staffMember.yearsExperience} years</p>
+                </div>
+              )}
+              {staffMember.companyTag && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entity</p>
+                  <p className="text-sm mt-0.5">{staffMember.companyTag}</p>
+                </div>
+              )}
+            </div>
+            {staffMember.education && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Education</p>
+                <p className="text-sm text-foreground">{staffMember.education}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Disciplines ── */}
+        {(() => {
+          const sls = parseServiceLines(staffMember.serviceLines);
+          return sls.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Disciplines</p>
+              <div className="flex flex-wrap gap-1.5">
+                {sls.map((sl: string) => (
+                  <Badge key={sl} variant="outline" className={cn("text-xs border", SERVICE_LINE_COLORS[sl] ?? "bg-gray-100 text-gray-600")}>{sl}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
+
+        {/* ── Keywords / Tags ── */}
+        {(() => {
+          const rawTags = staffMember.tags;
+          let tgs: string[] = [];
+          if (Array.isArray(rawTags)) tgs = rawTags;
+          else if (typeof rawTags === 'string') { try { tgs = JSON.parse(rawTags); } catch { tgs = []; } }
+          return tgs.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Keywords</p>
+              <div className="flex flex-wrap gap-1">
+                {tgs.map((tag: string) => (
+                  <span key={tag} className="text-xs bg-muted text-muted-foreground rounded px-2 py-0.5">{tag}</span>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
+
+        {/* ── Contact ── */}
+        {(staffMember.email || staffMember.phone) && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Contact</p>
+            <div className="space-y-1 text-sm">
+              {staffMember.email && (
+                <a href={`mailto:${staffMember.email}`} className="flex items-center gap-2 text-primary hover:underline">
+                  <Mail className="w-3.5 h-3.5" /> {staffMember.email}
+                </a>
+              )}
+              {staffMember.phone && (
+                <a href={`tel:${staffMember.phone}`} className="flex items-center gap-2 hover:underline">
+                  <Phone className="w-3.5 h-3.5" /> {staffMember.phone}
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="border-t pt-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Files &amp; Documents</p>
+        </div>
+
         {/* Upload button */}
         <div>
           <input
@@ -350,7 +438,10 @@ function StaffCard({ member, onOpenAttachments }: { member: any; onOpenAttachmen
     : "??";
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card
+      className="hover:shadow-md transition-shadow cursor-pointer"
+      onClick={() => onOpenAttachments(member)}
+    >
       <CardContent className="p-5">
         <div className="flex items-start gap-4">
           <Avatar className="w-11 h-11 flex-shrink-0">
@@ -393,20 +484,14 @@ function StaffCard({ member, onOpenAttachments }: { member: any; onOpenAttachmen
             <div className="flex items-center justify-between mt-3 pt-3 border-t">
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 {member.email && (
-                  <a href={`mailto:${member.email}`} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                  <span className="flex items-center gap-1">
                     <Mail className="w-3 h-3" /> {member.email}
-                  </a>
+                  </span>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                onClick={() => onOpenAttachments(member)}
-              >
-                <Paperclip className="w-3 h-3" /> Files
-                <ChevronRight className="w-3 h-3" />
-              </Button>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                View Details <ChevronRight className="w-3 h-3" />
+              </span>
             </div>
           </div>
         </div>
@@ -462,7 +547,7 @@ export default function Staff() {
             {filtered.length} staff member{filtered.length !== 1 ? "s" : ""}
           </span>
           <span className="text-muted-foreground/40">·</span>
-          <span>Click <Paperclip className="w-3 h-3 inline" /> Files on any card to attach resumes, headshots, or certifications</span>
+          <span>Click any card to view profile details, disciplines, keywords, and linked documents</span>
         </div>
 
         {/* Grid */}
