@@ -411,3 +411,20 @@
 - [x] KnowledgeHub.tsx — stats bar with per-type counts
 - [x] KnowledgeHub.tsx — document preview dialog with extracted text and structured data
 - [x] Sidebar nav updated: "File Library (DAM)" → "Knowledge Hub" at /knowledge-hub
+
+## Knowledge Hub — Image Extraction (Future)
+
+- [ ] Stage 1: Server-side page rendering on upload — render each PDF page to PNG thumbnails using pdf2pic/Poppler, store in Supabase Storage under dam-images/ bucket, link back to parent dam_documents record, show "Pages" strip in preview dialog
+- [ ] Stage 2: "Extract Photos" button on preview — run vision LLM pass on rendered page PNGs, identify pages containing photographs, save those pages as standalone image assets tagged to parent document and project, make searchable with auto-generated captions
+
+## Knowledge Hub — Cross-Record Linking (v2.3)
+
+- [x] Add projectId FK column to dam_documents table and push migration
+- [x] DAM create procedure: auto-match or create Staff record when resume/certification uploaded
+- [x] DAM create procedure: auto-match or create Project record when project sheet/past proposal uploaded
+- [x] Add listByStaff tRPC procedure (dam router)
+- [x] Add listByProject tRPC procedure (dam router)
+- [x] Staff page: show linked Knowledge Hub documents in attachment panel with "Open Hub" link
+- [x] Projects page: show linked Knowledge Hub documents in attachment panel with "Open Hub" link
+- [ ] Image extraction Stage 1: server-side PDF page rendering to thumbnails on upload (pdf-lib / pdfjs-dist)
+- [ ] Image extraction Stage 2: vision model pass on rendered pages to identify and extract photographs as standalone assets

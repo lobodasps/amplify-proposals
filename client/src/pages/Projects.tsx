@@ -151,6 +151,11 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
   const [uploading, setUploading] = useState(false);
   const utils = trpc.useUtils();
 
+  const { data: hubDocs = [], isLoading: hubLoading } = trpc.dam.listByProject.useQuery(
+    { projectId: project.id },
+    { enabled: project.id > 0 }
+  );
+
   const { data: attachments = [], isLoading } = trpc.projects.listAttachments.useQuery(
     { projectId: project.id },
     { enabled: project.id > 0 }
@@ -215,6 +220,42 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
           </Button>
           <p className="text-xs text-muted-foreground mt-1.5 text-center">PDF, Word, PNG, JPG, DWG, ZIP up to 16 MB</p>
         </div>
+        {/* Knowledge Hub documents */}
+        {(hubLoading || hubDocs.length > 0) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Knowledge Hub</p>
+              <a href="/knowledge-hub" className="text-xs text-primary hover:underline">Open Hub</a>
+            </div>
+            {hubLoading ? (
+              <Skeleton className="h-14 w-full rounded-lg" />
+            ) : (
+              <div className="space-y-2">
+                {hubDocs.map((doc: any) => (
+                  <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                    <div className="w-9 h-9 rounded-md bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.title}</p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {doc.docType?.replace(/_/g, " ")}
+                        {doc.companyTag ? ` · ${doc.companyTag}` : ""}
+                        {doc.processingStatus === "indexed" ? " · Indexed" : ""}
+                      </p>
+                    </div>
+                    {doc.fileUrl && (
+                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-7 w-7"><Download className="w-3.5 h-3.5" /></Button>
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
         ) : attachments.length === 0 ? (

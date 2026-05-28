@@ -1168,6 +1168,7 @@ export const damDocuments = mysqlTable("dam_documents", {
   staffId: int("staffId"),
 
   // ── Project / pursuit link (project sheets & past proposals) ──────────────
+  projectId: int("projectId"),
   projectName: varchar("projectName", { length: 512 }),
   projectNumber: varchar("projectNumber", { length: 128 }),
   pursuitId: int("pursuitId"),

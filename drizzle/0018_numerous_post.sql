@@ -1,0 +1,1 @@
+ALTER TABLE `dam_documents` ADD `projectId` int;

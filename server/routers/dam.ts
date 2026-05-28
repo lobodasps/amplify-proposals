@@ -14,10 +14,10 @@
  */
 
 import { z } from "zod";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, like } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { damDocuments } from "../../drizzle/schema";
+import { damDocuments, personnel, projects } from "../../drizzle/schema";
 import { storageGet } from "../storage";
 import { invokeLLM, type Message } from "../_core/llm";
 import { TRPCError } from "@trpc/server";
@@ -177,11 +177,69 @@ export const damRouter = router({
   // ── Create (after /api/upload completes) ──────────────────────────────────
   create: protectedProcedure.input(createInput).mutation(async ({ input, ctx }) => {
     const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    // Auto-link: resolve staffId for resumes/certifications
+    let resolvedStaffId = input.staffId ?? null;
+    if (!resolvedStaffId && input.staffName && (input.docType === "resume" || input.docType === "certification")) {
+      const nameLower = input.staffName.trim();
+      const existing = await db.select({ id: personnel.id })
+        .from(personnel)
+        .where(like(personnel.name, `%${nameLower}%`))
+        .limit(1);
+      if (existing.length > 0) {
+        resolvedStaffId = existing[0].id;
+      } else {
+        const [newPerson] = await db.insert(personnel).values({
+          name: nameLower,
+          isActive: true,
+        }).$returningId();
+        resolvedStaffId = newPerson.id;
+      }
+    }
+
+    // Auto-link: resolve projectId for project sheets / past proposals
+    let resolvedProjectId = (input as any).projectId ?? null;
+    if (!resolvedProjectId && input.projectName && (input.docType === "project_sheet" || input.docType === "past_proposal")) {
+      let existingProject: { id: number } | null = null;
+      if (input.projectNumber) {
+        const rows = await db.select({ id: projects.id })
+          .from(projects)
+          .where(eq(projects.projectNumber, input.projectNumber))
+          .limit(1);
+        if (rows.length > 0) existingProject = rows[0];
+      }
+      if (!existingProject) {
+        const rows = await db.select({ id: projects.id })
+          .from(projects)
+          .where(like(projects.name, `%${input.projectName.trim()}%`))
+          .limit(1);
+        if (rows.length > 0) existingProject = rows[0];
+      }
+      if (existingProject) {
+        resolvedProjectId = existingProject.id;
+      } else {
+        const contractValue = input.contractValue
+          ? parseFloat(input.contractValue.replace(/[^0-9.]/g, "")) || undefined
+          : undefined;
+        const [newProject] = await db.insert(projects).values({
+          name: input.projectName.trim(),
+          projectNumber: input.projectNumber ?? undefined,
+          clientName: input.clientName ?? undefined,
+          contractValue,
+          status: "completed",
+          createdBy: ctx.user.id,
+        }).$returningId();
+        resolvedProjectId = newProject.id;
+      }
+    }
+
     const [inserted] = await db
       .insert(damDocuments)
       .values({
         ...input,
+        staffId: resolvedStaffId,
+        projectId: resolvedProjectId,
         uploadedBy: ctx.user.id,
         processingStatus: "uploaded",
       })
@@ -193,8 +251,30 @@ export const damRouter = router({
       .where(eq(damDocuments.id, inserted.id))
       .limit(1);
 
-    return doc;
+    return { ...doc, resolvedStaffId, resolvedProjectId };
   }),
+
+  // ── List by staff member (resumes & certifications) ────────────────────
+  listByStaff: protectedProcedure
+    .input(z.object({ staffId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(damDocuments)
+        .where(eq(damDocuments.staffId, input.staffId))
+        .orderBy(desc(damDocuments.createdAt));
+    }),
+
+  // ── List by project (project sheets & past proposals) ──────────────────
+  listByProject: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(damDocuments)
+        .where(eq(damDocuments.projectId, input.projectId))
+        .orderBy(desc(damDocuments.createdAt));
+    }),
 
   // ── Update metadata ────────────────────────────────────────────────────────
   updateMeta: protectedProcedure.input(updateMetaInput).mutation(async ({ input }) => {
