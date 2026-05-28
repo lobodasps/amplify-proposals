@@ -126,6 +126,9 @@ export default function KnowledgeHub() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Staged upload result — file is already in storage, waiting for user to confirm metadata
+  const [stagedUpload, setStagedUpload] = useState<{ url: string; key: string; fileName: string; size: number } | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -168,6 +171,8 @@ export default function KnowledgeHub() {
     onError: (err) => toast.error(`Delete failed: ${err.message}`),
   });
 
+  const autoExtractMutation = trpc.dam.autoExtract.useMutation();
+
   const extractMutation = trpc.dam.triggerExtract.useMutation({
     onSuccess: (doc) => {
       utils.dam.list.invalidate();
@@ -199,54 +204,80 @@ export default function KnowledgeHub() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  function prepareUpload(file: File) {
+  // New flow: upload to storage immediately, then call autoExtract to pre-fill form
+  async function prepareUpload(file: File) {
     if (file.size > 50 * 1024 * 1024) {
       toast.error("File exceeds 50 MB limit");
       return;
     }
     setUploadFile(file);
-    const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
-    setForm((prev) => ({ ...prev, title: baseName }));
+    setIsAnalyzing(true);
     setShowUploadForm(true);
+    // Pre-fill title from filename as fallback while LLM runs
+    const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    setForm({ ...DEFAULT_FORM, title: baseName });
+
+    try {
+      // Step 1: Upload file to storage
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "dam");
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json();
+        throw new Error(err.error ?? "Upload failed");
+      }
+      const { url, key, fileName, size } = await uploadRes.json();
+      setStagedUpload({ url, key, fileName, size });
+
+      // Step 2: Ask LLM to read the file and extract metadata
+      const meta = await autoExtractMutation.mutateAsync({
+        fileUrl: url,
+        fileKey: key,
+        mimeType: file.type || "application/pdf",
+        fileName: file.name,
+      });
+
+      // Step 3: Pre-fill the form with whatever the LLM found
+      setForm({
+        docType: (meta.docType as DocType) ?? "other",
+        companyTag: (meta.companyTag as CompanyTag) ?? "",
+        title: meta.title || baseName,
+        description: meta.description ?? "",
+        staffName: meta.staffName ?? "",
+        clientName: meta.clientName ?? "",
+        projectName: meta.projectName ?? "",
+        projectNumber: meta.projectNumber ?? "",
+        contractValue: meta.contractValue ?? "",
+        awardYear: meta.awardYear ? String(meta.awardYear) : "",
+        tags: meta.tags ?? "",
+      });
+    } catch (err: any) {
+      // LLM failed — form stays with filename-derived defaults, user fills in manually
+      toast.warning("Auto-fill could not read this file. Please fill in the details manually.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   }
 
-  // ── Upload handler ────────────────────────────────────────────────────────────
+  // ── Save handler — file is already in storage, just create the DB record ──────
   async function handleUpload() {
-    if (!uploadFile) return;
+    if (!stagedUpload) return;
     if (!form.title.trim()) {
       toast.error("Title is required");
       return;
     }
 
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(50);
 
     try {
-      const formData = new FormData();
-      formData.append("file", uploadFile);
-      formData.append("folder", "dam");
-
-      setUploadProgress(30);
-
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json();
-        throw new Error(err.error ?? "Upload failed");
-      }
-
-      const { url, key, fileName, size } = await uploadRes.json();
-      setUploadProgress(70);
-
       await createMutation.mutateAsync({
-        fileName,
-        fileKey: key,
-        fileUrl: url,
-        mimeType: uploadFile.type || "application/octet-stream",
-        fileSizeBytes: size,
+        fileName: stagedUpload.fileName,
+        fileKey: stagedUpload.key,
+        fileUrl: stagedUpload.url,
+        mimeType: uploadFile?.type || "application/octet-stream",
+        fileSizeBytes: stagedUpload.size,
         docType: form.docType,
         title: form.title.trim(),
         description: form.description.trim() || undefined,
@@ -261,14 +292,15 @@ export default function KnowledgeHub() {
       });
 
       setUploadProgress(100);
-      toast.success(`"${form.title}" uploaded successfully`);
+      toast.success(`"${form.title}" saved to Knowledge Hub`);
 
       setUploadFile(null);
+      setStagedUpload(null);
       setForm(DEFAULT_FORM);
       setShowUploadForm(false);
       setUploadProgress(0);
     } catch (err: any) {
-      toast.error(err.message ?? "Upload failed");
+      toast.error(err.message ?? "Save failed");
     } finally {
       setIsUploading(false);
     }
@@ -375,7 +407,21 @@ export default function KnowledgeHub() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Document Details</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-base">Document Details</CardTitle>
+                    {isAnalyzing && (
+                      <span className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Reading document…
+                      </span>
+                    )}
+                    {!isAnalyzing && stagedUpload && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Auto-filled
+                      </span>
+                    )}
+                  </div>
                   <CardDescription className="mt-0.5">
                     {uploadFile.name} — {formatBytes(uploadFile.size)}
                   </CardDescription>
@@ -383,7 +429,7 @@ export default function KnowledgeHub() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setForm(DEFAULT_FORM); }}
+                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setStagedUpload(null); setForm(DEFAULT_FORM); }}
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -501,11 +547,24 @@ export default function KnowledgeHub() {
                 />
               </div>
 
-              {/* Upload progress */}
+              {/* Analyzing overlay */}
+              {isAnalyzing && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-primary">Reading your document…</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      The AI is extracting client, project, value, and other details automatically.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Save progress */}
               {isUploading && (
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Uploading…</span>
+                    <span>Saving…</span>
                     <span>{uploadProgress}%</span>
                   </div>
                   <Progress value={uploadProgress} className="h-1.5" />
@@ -516,18 +575,20 @@ export default function KnowledgeHub() {
               <div className="flex gap-3 pt-1">
                 <Button
                   onClick={handleUpload}
-                  disabled={isUploading || !form.title.trim()}
+                  disabled={isUploading || isAnalyzing || !form.title.trim() || !stagedUpload}
                   className="gap-2"
                 >
                   {isUploading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Uploading…</>
+                    <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                  ) : isAnalyzing ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Reading…</>
                   ) : (
-                    <><Upload className="w-4 h-4" />Upload Document</>
+                    <><CheckCircle2 className="w-4 h-4" />Confirm &amp; Save</>
                   )}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setForm(DEFAULT_FORM); }}
+                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setStagedUpload(null); setForm(DEFAULT_FORM); }}
                   disabled={isUploading}
                 >
                   Cancel

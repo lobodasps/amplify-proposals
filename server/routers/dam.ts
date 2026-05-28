@@ -460,4 +460,104 @@ Return JSON with:
         });
       }
     }),
+
+  // ── Auto-extract metadata from a freshly uploaded file (pre-fill form) ──────
+  // Called immediately after /api/upload returns, before the DB record is created.
+  // Returns structured metadata so the upload form can be pre-filled.
+  autoExtract: protectedProcedure
+    .input(
+      z.object({
+        fileUrl: z.string(),
+        fileKey: z.string().min(1),
+        mimeType: z.string().default("application/pdf"),
+        fileName: z.string().default(""),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get a fresh signed URL so the LLM can access the file
+      let accessUrl = input.fileUrl;
+      try {
+        const { url } = await storageGet(input.fileKey);
+        accessUrl = url;
+      } catch {
+        // fall back to the original URL
+      }
+
+      const supportedMimes = ["application/pdf", "audio/mpeg", "audio/wav", "audio/mp4", "video/mp4"];
+      const llmMime = supportedMimes.includes(input.mimeType) ? input.mimeType : "application/pdf";
+
+      const systemPrompt = `You are an expert AEC (Architecture, Engineering, Construction) document analyst.
+Your job is to read any AEC firm document and extract ALL available metadata to help categorize it.
+
+Return a JSON object with these fields (use null for fields you cannot determine):
+{
+  "docType": one of: "past_proposal" | "project_sheet" | "resume" | "certification" | "rfp" | "contract" | "boilerplate" | "other",
+  "companyTag": one of: "JPCL" | "Strans" | "Both" | null  (look for company names, logos, letterhead),
+  "title": string (best descriptive title for this document),
+  "clientName": string | null (client or agency name),
+  "projectName": string | null,
+  "projectNumber": string | null,
+  "contractValue": string | null (formatted dollar amount e.g. "$1,250,000"),
+  "awardYear": number | null (4-digit year),
+  "staffName": string | null (for resumes/certifications: the person full name),
+  "tags": string | null (comma-separated keywords: disciplines, location, agency type etc.),
+  "description": string | null (2-3 sentence summary of the document)
+}
+
+Return ONLY valid JSON. Do not include markdown fences or explanation.`;
+
+      const userContent: any[] = [
+        {
+          type: "file_url",
+          file_url: { url: accessUrl, mime_type: llmMime },
+        },
+        {
+          type: "text",
+          text: `Analyze this document (filename: "${input.fileName}") and extract all available metadata. Return JSON only.`,
+        },
+      ];
+
+      const messages: Message[] = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ];
+
+      try {
+        const response = await invokeLLM({
+          messages,
+          response_format: { type: "json_object" } as any,
+        });
+        const raw = response?.choices?.[0]?.message?.content ?? "{}";
+        const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
+        const meta = JSON.parse(rawStr) as Record<string, unknown>;
+        return {
+          docType: (meta.docType as string) ?? "other",
+          companyTag: (meta.companyTag as string) ?? null,
+          title: (meta.title as string) ?? input.fileName.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+          clientName: (meta.clientName as string) ?? null,
+          projectName: (meta.projectName as string) ?? null,
+          projectNumber: (meta.projectNumber as string) ?? null,
+          contractValue: (meta.contractValue as string) ?? null,
+          awardYear: meta.awardYear ? Number(meta.awardYear) : null,
+          staffName: (meta.staffName as string) ?? null,
+          tags: (meta.tags as string) ?? null,
+          description: (meta.description as string) ?? null,
+        };
+      } catch {
+        // If LLM fails, return safe defaults so the user can fill in manually
+        return {
+          docType: "other" as const,
+          companyTag: null as string | null,
+          title: input.fileName.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+          clientName: null as string | null,
+          projectName: null as string | null,
+          projectNumber: null as string | null,
+          contractValue: null as string | null,
+          awardYear: null as number | null,
+          staffName: null as string | null,
+          tags: null as string | null,
+          description: null as string | null,
+        };
+      }
+    }),
 });
