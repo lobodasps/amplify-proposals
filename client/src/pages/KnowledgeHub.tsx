@@ -1,170 +1,915 @@
+/**
+ * client/src/pages/KnowledgeHub.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Knowledge Hub — DAM upload and document library.
+ *
+ * Three panels:
+ *  1. Stats bar   — counts by doc type and processing status
+ *  2. Upload zone — drag-and-drop with metadata form
+ *  3. Library     — filterable grid with inline preview and actions
+ */
+
 import AppLayout from "@/components/AppLayout";
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, BookOpen, Building2, Users, FileText, Sparkles, Tag, Filter } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
+} from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Upload, FileText, Users, Building2, Award, File, Search,
+  MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
+  AlertCircle, Loader2, CloudUpload, X, Filter,
+  BookOpen, FolderOpen,
+} from "lucide-react";
 
-const SERVICE_LINES = [
-  { key: "all", label: "All" },
-  { key: "special_inspections", label: "Special Inspections", color: "badge-special-inspections" },
-  { key: "construction_management", label: "Construction Mgmt", color: "badge-construction-management" },
-  { key: "traffic_engineering", label: "Traffic Engineering", color: "badge-traffic-engineering" },
-  { key: "landscape_streetscape", label: "Landscape / Streetscape", color: "badge-landscape-streetscape" },
-  { key: "environmental", label: "Environmental", color: "badge-environmental" },
-];
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const PROJECTS = [
-  { id: 1, name: "NJDOT Route 1&9 Bridge Inspection", client: "NJDOT", year: "2023", value: "$1.8M", service: "special_inspections", tags: ["bridge", "NJDOT", "inspection"] },
-  { id: 2, name: "NYC DDC Bronx Community Center CM", client: "NYC DDC", year: "2022", value: "$4.2M", service: "construction_management", tags: ["NYC", "community", "CM"] },
-  { id: 3, name: "NYCDOT Queens Blvd Signal Upgrade", client: "NYC DOT", year: "2024", value: "$750K", service: "traffic_engineering", tags: ["signals", "NYC", "traffic"] },
-  { id: 4, name: "NJ Transit Newark Streetscape", client: "NJ Transit", year: "2023", value: "$980K", service: "landscape_streetscape", tags: ["streetscape", "NJ", "transit"] },
-  { id: 5, name: "NJDEP Meadowlands Wetland Assessment", client: "NJDEP", year: "2022", value: "$420K", service: "environmental", tags: ["wetlands", "NJDEP", "assessment"] },
-  { id: 6, name: "PANYNJ Bayonne Bridge Inspection", client: "Port Authority NY/NJ", year: "2024", value: "$2.1M", service: "special_inspections", tags: ["bridge", "PANYNJ", "inspection"] },
-];
+type DocType =
+  | "past_proposal" | "project_sheet" | "resume"
+  | "certification" | "rfp" | "contract" | "boilerplate" | "other";
 
-const BOILERPLATE = [
-  { id: 1, title: "NJDOT Prequalification Statement", category: "qualifications", service: "special_inspections", approved: true },
-  { id: 2, title: "Firm Overview — AEC Services", category: "boilerplate", service: "all", approved: true },
-  { id: 3, title: "Bridge Inspection Methodology", category: "methodology", service: "special_inspections", approved: true },
-  { id: 4, title: "Construction Management Approach", category: "approach", service: "construction_management", approved: true },
-  { id: 5, title: "Environmental Assessment Framework", category: "methodology", service: "environmental", approved: false },
-  { id: 6, title: "DBE/MBE Participation Statement", category: "certifications", service: "all", approved: true },
-];
+type CompanyTag = "JPCL" | "Strans" | "Both";
 
-const SERVICE_COLOR: Record<string, string> = {
-  special_inspections: "badge-special-inspections",
-  construction_management: "badge-construction-management",
-  traffic_engineering: "badge-traffic-engineering",
-  landscape_streetscape: "badge-landscape-streetscape",
-  environmental: "badge-environmental",
+type ProcessingStatus = "uploaded" | "processing" | "indexed" | "error";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DOC_TYPE_CONFIG: Record<DocType, { label: string; icon: any; color: string; bg: string }> = {
+  past_proposal: { label: "Past Proposal",  icon: FileText,  color: "text-violet-600", bg: "bg-violet-50" },
+  project_sheet: { label: "Project Sheet",  icon: Building2, color: "text-blue-600",   bg: "bg-blue-50" },
+  resume:        { label: "Resume / CV",    icon: Users,     color: "text-emerald-600",bg: "bg-emerald-50" },
+  certification: { label: "Certification",  icon: Award,     color: "text-amber-600",  bg: "bg-amber-50" },
+  rfp:           { label: "RFP Package",    icon: FolderOpen,color: "text-rose-600",   bg: "bg-rose-50" },
+  contract:      { label: "Contract",       icon: FileText,  color: "text-slate-600",  bg: "bg-slate-50" },
+  boilerplate:   { label: "Boilerplate",    icon: BookOpen,  color: "text-teal-600",   bg: "bg-teal-50" },
+  other:         { label: "Other",          icon: File,      color: "text-gray-500",   bg: "bg-gray-50" },
 };
 
-export default function KnowledgeHub() {
-  const [search, setSearch] = useState("");
-  const [activeService, setActiveService] = useState("all");
+const STATUS_CONFIG: Record<ProcessingStatus, { label: string; icon: any; color: string }> = {
+  uploaded:   { label: "Uploaded",   icon: Clock,         color: "text-slate-500" },
+  processing: { label: "Processing", icon: Loader2,       color: "text-blue-500" },
+  indexed:    { label: "Indexed",    icon: CheckCircle2,  color: "text-emerald-500" },
+  error:      { label: "Error",      icon: AlertCircle,   color: "text-rose-500" },
+};
 
-  const filteredProjects = PROJECTS.filter(p =>
-    (activeService === "all" || p.service === activeService) &&
-    (search === "" || p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase()))
+function formatBytes(bytes: number) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(ts: Date | string | null | undefined) {
+  if (!ts) return "";
+  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ─── Upload Form State ────────────────────────────────────────────────────────
+
+interface UploadFormState {
+  docType: DocType;
+  title: string;
+  description: string;
+  companyTag: CompanyTag | "";
+  staffName: string;
+  projectName: string;
+  projectNumber: string;
+  clientName: string;
+  contractValue: string;
+  awardYear: string;
+  tags: string;
+}
+
+const DEFAULT_FORM: UploadFormState = {
+  docType: "other",
+  title: "",
+  description: "",
+  companyTag: "",
+  staffName: "",
+  projectName: "",
+  projectNumber: "",
+  clientName: "",
+  contractValue: "",
+  awardYear: "",
+  tags: "",
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function KnowledgeHub() {
+  // ── Filter state ────────────────────────────────────────────────────────────
+  const [filterDocType, setFilterDocType] = useState<DocType | "all">("all");
+  const [filterCompany, setFilterCompany] = useState<CompanyTag | "all">("all");
+  const [filterStatus, setFilterStatus] = useState<ProcessingStatus | "all">("all");
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+
+  // ── Upload state ────────────────────────────────────────────────────────────
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Preview state ───────────────────────────────────────────────────────────
+  const [previewDocId, setPreviewDocId] = useState<number | null>(null);
+
+  // ── tRPC ────────────────────────────────────────────────────────────────────
+  const utils = trpc.useUtils();
+
+  const { data: stats, isLoading: statsLoading } = trpc.dam.getStats.useQuery();
+
+  const { data: listData, isLoading: listLoading } = trpc.dam.list.useQuery({
+    docType: filterDocType !== "all" ? filterDocType : undefined,
+    companyTag: filterCompany !== "all" ? filterCompany : undefined,
+    processingStatus: filterStatus !== "all" ? filterStatus : undefined,
+    search: search || undefined,
+    limit: 100,
+    offset: 0,
+  });
+
+  const { data: previewDoc } = trpc.dam.getById.useQuery(
+    { id: previewDocId! },
+    { enabled: previewDocId !== null }
   );
 
+  const createMutation = trpc.dam.create.useMutation({
+    onSuccess: () => {
+      utils.dam.list.invalidate();
+      utils.dam.getStats.invalidate();
+    },
+  });
+
+  const deleteMutation = trpc.dam.delete.useMutation({
+    onSuccess: () => {
+      utils.dam.list.invalidate();
+      utils.dam.getStats.invalidate();
+      toast.success("Document deleted");
+    },
+    onError: (err) => toast.error(`Delete failed: ${err.message}`),
+  });
+
+  const extractMutation = trpc.dam.triggerExtract.useMutation({
+    onSuccess: (doc) => {
+      utils.dam.list.invalidate();
+      utils.dam.getStats.invalidate();
+      if (previewDocId) utils.dam.getById.invalidate({ id: previewDocId });
+      toast.success(`"${doc?.title}" indexed successfully`);
+    },
+    onError: (err) => toast.error(`Extraction failed: ${err.message}`),
+  });
+
+  // ── Drag-and-drop ────────────────────────────────────────────────────────────
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => setIsDragging(false), []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) prepareUpload(file);
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) prepareUpload(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  function prepareUpload(file: File) {
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("File exceeds 50 MB limit");
+      return;
+    }
+    setUploadFile(file);
+    const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    setForm((prev) => ({ ...prev, title: baseName }));
+    setShowUploadForm(true);
+  }
+
+  // ── Upload handler ────────────────────────────────────────────────────────────
+  async function handleUpload() {
+    if (!uploadFile) return;
+    if (!form.title.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(10);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("folder", "dam");
+
+      setUploadProgress(30);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json();
+        throw new Error(err.error ?? "Upload failed");
+      }
+
+      const { url, key, fileName, size } = await uploadRes.json();
+      setUploadProgress(70);
+
+      await createMutation.mutateAsync({
+        fileName,
+        fileKey: key,
+        fileUrl: url,
+        mimeType: uploadFile.type || "application/octet-stream",
+        fileSizeBytes: size,
+        docType: form.docType,
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        companyTag: (form.companyTag as CompanyTag) || undefined,
+        staffName: form.staffName.trim() || undefined,
+        projectName: form.projectName.trim() || undefined,
+        projectNumber: form.projectNumber.trim() || undefined,
+        clientName: form.clientName.trim() || undefined,
+        contractValue: form.contractValue.trim() || undefined,
+        awardYear: form.awardYear ? parseInt(form.awardYear) : undefined,
+        tags: form.tags.trim() || undefined,
+      });
+
+      setUploadProgress(100);
+      toast.success(`"${form.title}" uploaded successfully`);
+
+      setUploadFile(null);
+      setForm(DEFAULT_FORM);
+      setShowUploadForm(false);
+      setUploadProgress(0);
+    } catch (err: any) {
+      toast.error(err.message ?? "Upload failed");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  function updateForm(key: keyof UploadFormState, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const docs = listData?.docs ?? [];
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <AppLayout title="Knowledge Hub">
-      <div className="p-6 space-y-5">
-        {/* Search Bar */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-xl">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search projects, resumes, boilerplate, certifications..." className="pl-9 h-11 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              <Badge className="text-[10px] bg-violet-100 text-violet-700 border-violet-200 px-1.5 py-0.5"><Sparkles className="w-2.5 h-2.5 mr-0.5" />AI Search</Badge>
+      <div className="flex flex-col gap-6 p-6 max-w-[1400px] mx-auto">
+
+        {/* ── Header ─────────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Knowledge Hub</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Upload and manage past proposals, project sheets, resumes, and certifications
+            </p>
+          </div>
+          <Button onClick={() => fileInputRef.current?.click()} className="gap-2">
+            <Upload className="w-4 h-4" />
+            Upload Document
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+            onChange={handleFileSelect}
+          />
+        </div>
+
+        {/* ── Stats bar ──────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {statsLoading
+            ? Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-20 rounded-xl" />
+              ))
+            : (Object.entries(DOC_TYPE_CONFIG) as [DocType, typeof DOC_TYPE_CONFIG[DocType]][]).map(
+                ([type, cfg]) => {
+                  const count = (stats?.byType as Record<string, number>)?.[type] ?? 0;
+                  const Icon = cfg.icon;
+                  const isActive = filterDocType === type;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setFilterDocType(isActive ? "all" : type)}
+                      className={`
+                        flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border
+                        transition-all text-center cursor-pointer
+                        ${isActive
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-border bg-card hover:border-primary/40 hover:bg-accent/50"
+                        }
+                      `}
+                    >
+                      <div className={`p-1.5 rounded-lg ${cfg.bg}`}>
+                        <Icon className={`w-4 h-4 ${cfg.color}`} />
+                      </div>
+                      <span className="text-lg font-bold leading-none">{count}</span>
+                      <span className="text-[10px] text-muted-foreground leading-tight">{cfg.label}</span>
+                    </button>
+                  );
+                }
+              )}
+        </div>
+
+        {/* ── Drop zone ──────────────────────────────────────────────────────── */}
+        {!showUploadForm && (
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`
+              flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed
+              cursor-pointer transition-all
+              ${isDragging
+                ? "border-primary bg-primary/5 scale-[1.01]"
+                : "border-border bg-card/50 hover:border-primary/50 hover:bg-accent/30"
+              }
+            `}
+          >
+            <div className="p-3 rounded-full bg-primary/10">
+              <CloudUpload className="w-6 h-6 text-primary" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium">Drop a file here or click to browse</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                PDF, Word, Excel, PowerPoint, TXT — up to 50 MB
+              </p>
             </div>
           </div>
-          <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Filter</Button>
+        )}
+
+        {/* ── Upload form ────────────────────────────────────────────────────── */}
+        {showUploadForm && uploadFile && (
+          <Card className="border-primary/30 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Document Details</CardTitle>
+                  <CardDescription className="mt-0.5">
+                    {uploadFile.name} — {formatBytes(uploadFile.size)}
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setForm(DEFAULT_FORM); }}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Row 1: type + company */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Document Type <span className="text-rose-500">*</span></Label>
+                  <Select value={form.docType} onValueChange={(v) => updateForm("docType", v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.entries(DOC_TYPE_CONFIG) as [DocType, any][]).map(([type, cfg]) => (
+                        <SelectItem key={type} value={type}>{cfg.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Company / Entity</Label>
+                  <Select value={form.companyTag} onValueChange={(v) => updateForm("companyTag", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select entity…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="JPCL">JPCL</SelectItem>
+                      <SelectItem value="Strans">Strans</SelectItem>
+                      <SelectItem value="Both">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Title */}
+              <div className="space-y-1.5">
+                <Label>Title <span className="text-rose-500">*</span></Label>
+                <Input
+                  value={form.title}
+                  onChange={(e) => updateForm("title", e.target.value)}
+                  placeholder="Descriptive title for this document"
+                />
+              </div>
+
+              {/* Conditional fields */}
+              {(form.docType === "resume" || form.docType === "certification") && (
+                <div className="space-y-1.5">
+                  <Label>Staff Name</Label>
+                  <Input
+                    value={form.staffName}
+                    onChange={(e) => updateForm("staffName", e.target.value)}
+                    placeholder="e.g. John Smith"
+                  />
+                </div>
+              )}
+
+              {(form.docType === "past_proposal" || form.docType === "project_sheet") && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Client / Agency</Label>
+                    <Input
+                      value={form.clientName}
+                      onChange={(e) => updateForm("clientName", e.target.value)}
+                      placeholder="e.g. NJDOT, PANYNJ"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Contract Value</Label>
+                    <Input
+                      value={form.contractValue}
+                      onChange={(e) => updateForm("contractValue", e.target.value)}
+                      placeholder="e.g. $1,250,000"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Project Name</Label>
+                    <Input
+                      value={form.projectName}
+                      onChange={(e) => updateForm("projectName", e.target.value)}
+                      placeholder="Project name"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Award Year</Label>
+                    <Input
+                      value={form.awardYear}
+                      onChange={(e) => updateForm("awardYear", e.target.value)}
+                      placeholder="e.g. 2023"
+                      type="number"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Tags */}
+              <div className="space-y-1.5">
+                <Label>Tags</Label>
+                <Input
+                  value={form.tags}
+                  onChange={(e) => updateForm("tags", e.target.value)}
+                  placeholder="Comma-separated keywords, e.g. bridge, NJDOT, geotechnical"
+                />
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1.5">
+                <Label>Notes / Description</Label>
+                <Textarea
+                  value={form.description}
+                  onChange={(e) => updateForm("description", e.target.value)}
+                  placeholder="Optional notes about this document"
+                  rows={2}
+                />
+              </div>
+
+              {/* Upload progress */}
+              {isUploading && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Uploading…</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <Progress value={uploadProgress} className="h-1.5" />
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <Button
+                  onClick={handleUpload}
+                  disabled={isUploading || !form.title.trim()}
+                  className="gap-2"
+                >
+                  {isUploading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Uploading…</>
+                  ) : (
+                    <><Upload className="w-4 h-4" />Upload Document</>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setForm(DEFAULT_FORM); }}
+                  disabled={isUploading}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Library ────────────────────────────────────────────────────────── */}
+        <div className="space-y-3">
+          {/* Filters row */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-[360px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search title, client, project, staff…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") setSearch(searchInput); }}
+              />
+            </div>
+
+            <Select
+              value={filterCompany}
+              onValueChange={(v) => setFilterCompany(v as CompanyTag | "all")}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="All entities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All entities</SelectItem>
+                <SelectItem value="JPCL">JPCL</SelectItem>
+                <SelectItem value="Strans">Strans</SelectItem>
+                <SelectItem value="Both">Both</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={filterStatus}
+              onValueChange={(v) => setFilterStatus(v as ProcessingStatus | "all")}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="uploaded">Uploaded</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="indexed">Indexed</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {(filterDocType !== "all" || filterCompany !== "all" || filterStatus !== "all" || search) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterDocType("all");
+                  setFilterCompany("all");
+                  setFilterStatus("all");
+                  setSearch("");
+                  setSearchInput("");
+                }}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear
+              </Button>
+            )}
+
+            <span className="ml-auto text-sm text-muted-foreground">
+              {listData?.total ?? 0} document{(listData?.total ?? 0) !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {/* Document grid */}
+          {listLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-48 rounded-xl" />
+              ))}
+            </div>
+          ) : docs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="p-4 rounded-full bg-muted mb-4">
+                <FolderOpen className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <p className="font-medium text-muted-foreground">No documents yet</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Upload your first past proposal, project sheet, or resume above
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {docs.map((doc) => {
+                const cfg = DOC_TYPE_CONFIG[doc.docType as DocType] ?? DOC_TYPE_CONFIG.other;
+                const statusCfg = STATUS_CONFIG[doc.processingStatus as ProcessingStatus] ?? STATUS_CONFIG.uploaded;
+                const Icon = cfg.icon;
+                const StatusIcon = statusCfg.icon;
+                const isExtracting = extractMutation.isPending && extractMutation.variables?.id === doc.id;
+
+                return (
+                  <Card
+                    key={doc.id}
+                    className="group relative flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => setPreviewDocId(doc.id)}
+                  >
+                    <CardContent className="flex flex-col gap-3 p-4 flex-1">
+                      {/* Header */}
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg ${cfg.bg} shrink-0`}>
+                          <Icon className={`w-4 h-4 ${cfg.color}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm leading-tight line-clamp-2">{doc.title}</p>
+                          {doc.companyTag && (
+                            <Badge variant="outline" className="mt-1 text-[10px] h-4 px-1.5">
+                              {doc.companyTag}
+                            </Badge>
+                          )}
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem onClick={() => setPreviewDocId(doc.id)}>
+                              <Eye className="w-4 h-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            {doc.processingStatus !== "indexed" && (
+                              <DropdownMenuItem
+                                onClick={() => extractMutation.mutate({ id: doc.id })}
+                                disabled={isExtracting || doc.processingStatus === "processing"}
+                              >
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                {isExtracting ? "Extracting…" : "Extract Content"}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              className="text-rose-600 focus:text-rose-600"
+                              onClick={() => {
+                                if (confirm(`Delete "${doc.title}"?`)) {
+                                  deleteMutation.mutate({ id: doc.id });
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      {/* Meta */}
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {doc.clientName && (
+                          <p className="truncate">
+                            <span className="font-medium text-foreground/70">Client:</span> {doc.clientName}
+                          </p>
+                        )}
+                        {doc.staffName && (
+                          <p className="truncate">
+                            <span className="font-medium text-foreground/70">Staff:</span> {doc.staffName}
+                          </p>
+                        )}
+                        {doc.projectName && (
+                          <p className="truncate">
+                            <span className="font-medium text-foreground/70">Project:</span> {doc.projectName}
+                          </p>
+                        )}
+                        {doc.contractValue && (
+                          <p>
+                            <span className="font-medium text-foreground/70">Value:</span> {doc.contractValue}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Tags */}
+                      {doc.tags && (
+                        <div className="flex flex-wrap gap-1">
+                          {doc.tags.split(",").slice(0, 3).map((tag) => (
+                            <Badge key={tag.trim()} variant="secondary" className="text-[10px] h-4 px-1.5">
+                              {tag.trim()}
+                            </Badge>
+                          ))}
+                          {doc.tags.split(",").length > 3 && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              +{doc.tags.split(",").length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Footer */}
+                      <div className="flex items-center justify-between mt-auto pt-2 border-t border-border/50">
+                        <div className={`flex items-center gap-1 text-[11px] ${statusCfg.color}`}>
+                          <StatusIcon className={`w-3 h-3 ${doc.processingStatus === "processing" ? "animate-spin" : ""}`} />
+                          {statusCfg.label}
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          {formatDate(doc.createdAt)}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
-
-        {/* Service Line Filter */}
-        <div className="flex flex-wrap gap-2">
-          {SERVICE_LINES.map(sl => (
-            <button key={sl.key} onClick={() => setActiveService(sl.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${activeService === sl.key ? "ring-2 ring-primary ring-offset-1 " : ""}${sl.color || "bg-muted text-foreground"}`}>
-              {sl.label}
-            </button>
-          ))}
-        </div>
-
-        <Tabs defaultValue="projects">
-          <TabsList className="bg-muted/60">
-            <TabsTrigger value="projects" className="gap-2"><Building2 className="w-4 h-4" /> Projects ({filteredProjects.length})</TabsTrigger>
-            <TabsTrigger value="boilerplate" className="gap-2"><BookOpen className="w-4 h-4" /> Content Library</TabsTrigger>
-            <TabsTrigger value="personnel" className="gap-2"><Users className="w-4 h-4" /> Personnel</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="projects" className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredProjects.map(p => (
-                <Card key={p.id} className="card-hover border-border/60 cursor-pointer">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="font-semibold text-foreground text-sm leading-snug">{p.name}</h3>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                      <span>{p.client}</span><span>·</span><span>{p.year}</span><span>·</span><span className="font-semibold text-foreground">{p.value}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${SERVICE_COLOR[p.service] || "bg-muted text-foreground"}`}>
-                        {SERVICE_LINES.find(s => s.key === p.service)?.label}
-                      </span>
-                      {p.tags.map(t => <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground flex items-center gap-0.5"><Tag className="w-2.5 h-2.5" />{t}</span>)}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="boilerplate" className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {BOILERPLATE.map(b => (
-                <Card key={b.id} className="card-hover border-border/60 cursor-pointer">
-                  <CardContent className="p-4 flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-                      <BookOpen className="w-4.5 h-4.5 text-teal-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-semibold text-foreground">{b.title}</span>
-                        {b.approved && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200 px-1.5 py-0">Approved</Badge>}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="capitalize">{b.category}</span>
-                        {b.service !== "all" && <span className={`px-1.5 py-0.5 rounded-full font-semibold ${SERVICE_COLOR[b.service] || ""}`}>{SERVICE_LINES.find(s => s.key === b.service)?.label}</span>}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="personnel" className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {[
-                { name: "A. Patel, PE", title: "Bridge Inspection Engineer", services: ["special_inspections"], exp: 18, certs: ["PE-NJ", "NICET III"] },
-                { name: "J. Rivera", title: "Proposal Manager", services: ["construction_management", "special_inspections"], exp: 12, certs: ["PMP"] },
-                { name: "M. Torres, PE", title: "Sr. Project Manager", services: ["construction_management", "traffic_engineering"], exp: 22, certs: ["PE-NJ", "PE-NY", "PMP"] },
-                { name: "S. Chen, ASLA", title: "Landscape Architect", services: ["landscape_streetscape"], exp: 15, certs: ["ASLA", "LEED AP"] },
-                { name: "R. Kim, PE", title: "Environmental Engineer", services: ["environmental"], exp: 14, certs: ["PE-NJ", "LEED AP"] },
-                { name: "D. Johnson", title: "Field Inspector", services: ["special_inspections"], exp: 8, certs: ["NICET II"] },
-              ].map(p => (
-                <Card key={p.name} className="card-hover border-border/60 cursor-pointer">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
-                        {p.name.split(" ").map(n => n[0]).join("").slice(0,2)}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-foreground text-sm">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">{p.title}</div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {p.services.map(s => <span key={s} className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${SERVICE_COLOR[s]}`}>{SERVICE_LINES.find(sl => sl.key === s)?.label}</span>)}
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{p.exp} yrs experience</span>
-                      <div className="flex gap-1">{p.certs.map(c => <span key={c} className="px-1.5 py-0.5 rounded bg-muted font-medium">{c}</span>)}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
       </div>
+
+      {/* ── Preview Dialog ─────────────────────────────────────────────────── */}
+      <Dialog open={previewDocId !== null} onOpenChange={(open) => { if (!open) setPreviewDocId(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {previewDoc ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const cfg = DOC_TYPE_CONFIG[previewDoc.docType as DocType] ?? DOC_TYPE_CONFIG.other;
+                    const Icon = cfg.icon;
+                    return (
+                      <div className={`p-2 rounded-lg ${cfg.bg}`}>
+                        <Icon className={`w-5 h-5 ${cfg.color}`} />
+                      </div>
+                    );
+                  })()}
+                  <div>
+                    <DialogTitle className="text-lg">{previewDoc.title}</DialogTitle>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {DOC_TYPE_CONFIG[previewDoc.docType as DocType]?.label ?? previewDoc.docType}
+                      {previewDoc.companyTag && ` · ${previewDoc.companyTag}`}
+                    </p>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">File</p>
+                    <p className="mt-0.5 truncate">{previewDoc.fileName}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Size</p>
+                    <p className="mt-0.5">{formatBytes(previewDoc.fileSizeBytes ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Uploaded</p>
+                    <p className="mt-0.5">{formatDate(previewDoc.createdAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Status</p>
+                    <p className={`mt-0.5 ${STATUS_CONFIG[previewDoc.processingStatus as ProcessingStatus]?.color}`}>
+                      {STATUS_CONFIG[previewDoc.processingStatus as ProcessingStatus]?.label ?? previewDoc.processingStatus}
+                    </p>
+                  </div>
+                </div>
+
+                {(previewDoc.clientName || previewDoc.staffName || previewDoc.projectName || previewDoc.contractValue) && (
+                  <div className="grid grid-cols-2 gap-3 text-sm border-t pt-4">
+                    {previewDoc.clientName && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Client</p>
+                        <p className="mt-0.5">{previewDoc.clientName}</p>
+                      </div>
+                    )}
+                    {previewDoc.staffName && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Staff</p>
+                        <p className="mt-0.5">{previewDoc.staffName}</p>
+                      </div>
+                    )}
+                    {previewDoc.projectName && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Project</p>
+                        <p className="mt-0.5">{previewDoc.projectName}</p>
+                      </div>
+                    )}
+                    {previewDoc.contractValue && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Contract Value</p>
+                        <p className="mt-0.5">{previewDoc.contractValue}</p>
+                      </div>
+                    )}
+                    {previewDoc.awardYear && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Award Year</p>
+                        <p className="mt-0.5">{previewDoc.awardYear}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {previewDoc.tags && (
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Tags</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {previewDoc.tags.split(",").map((tag) => (
+                        <Badge key={tag.trim()} variant="secondary">{tag.trim()}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {previewDoc.extractedText && (
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      Extracted Summary
+                    </p>
+                    <div className="bg-muted/50 rounded-lg p-3 text-sm leading-relaxed max-h-48 overflow-y-auto">
+                      {previewDoc.extractedText}
+                    </div>
+                  </div>
+                )}
+
+                {previewDoc.extractedMeta != null && Object.keys(previewDoc.extractedMeta as Record<string, unknown>).length > 0 && (
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      Structured Data
+                    </p>
+                    <pre className="bg-muted/50 rounded-lg p-3 text-xs overflow-x-auto max-h-48 overflow-y-auto">
+                      {JSON.stringify(previewDoc.extractedMeta as Record<string, unknown>, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="flex gap-2 pt-2">
+                {previewDoc.processingStatus !== "indexed" && (
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => extractMutation.mutate({ id: previewDoc.id })}
+                    disabled={extractMutation.isPending || previewDoc.processingStatus === "processing"}
+                  >
+                    {extractMutation.isPending ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Extracting…</>
+                    ) : (
+                      <><Sparkles className="w-4 h-4" />Extract Content</>
+                    )}
+                  </Button>
+                )}
+                <Button asChild variant="outline" className="gap-2">
+                  <a href={previewDoc.fileUrl} target="_blank" rel="noopener noreferrer">
+                    <Eye className="w-4 h-4" />
+                    Open File
+                  </a>
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="gap-2"
+                  onClick={() => {
+                    if (confirm(`Delete "${previewDoc.title}"?`)) {
+                      deleteMutation.mutate({ id: previewDoc.id });
+                      setPreviewDocId(null);
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

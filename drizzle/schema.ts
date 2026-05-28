@@ -1118,3 +1118,94 @@ export const rfpSessions = mysqlTable("rfp_sessions", {
 
 export type RfpSession = typeof rfpSessions.$inferSelect;
 export type InsertRfpSession = typeof rfpSessions.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAM — Knowledge Hub Documents
+//
+// One row per uploaded document. Supports past proposals, project sheets,
+// resumes, certifications, and any other firm knowledge asset.
+//
+// docType values:
+//   past_proposal  — a previously submitted proposal (PDF/DOCX)
+//   project_sheet  — project data sheet / experience form
+//   resume         — staff resume / CV
+//   certification  — cert card, license scan, etc.
+//   rfp            — raw RFP package for analysis
+//   contract       — executed contract document
+//   boilerplate    — reusable text block / template
+//   other          — anything else
+//
+// processingStatus values:
+//   uploaded   — file stored, no extraction yet
+//   processing — LLM extraction in progress
+//   indexed    — text extracted and ready for search
+//   error      — extraction failed
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const damDocuments = mysqlTable("dam_documents", {
+  id: int("id").autoincrement().primaryKey(),
+
+  // ── Document type & identity ───────────────────────────────────────────────
+  docType: mysqlEnum("dam_doc_type", [
+    "past_proposal",
+    "project_sheet",
+    "resume",
+    "certification",
+    "rfp",
+    "contract",
+    "boilerplate",
+    "other",
+  ]).notNull().default("other"),
+
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description"),
+
+  // ── Company / entity tag ───────────────────────────────────────────────────
+  companyTag: mysqlEnum("dam_company_tag", ["JPCL", "Strans", "Both"]),
+
+  // ── Staff link (resumes & certifications) ─────────────────────────────────
+  staffName: varchar("staffName", { length: 255 }),
+  staffId: int("staffId"),
+
+  // ── Project / pursuit link (project sheets & past proposals) ──────────────
+  projectName: varchar("projectName", { length: 512 }),
+  projectNumber: varchar("projectNumber", { length: 128 }),
+  pursuitId: int("pursuitId"),
+  proposalId: int("proposalId"),
+
+  // ── Client / agency ────────────────────────────────────────────────────────
+  clientName: varchar("clientName", { length: 512 }),
+  contractValue: varchar("contractValue", { length: 64 }),
+  awardYear: int("awardYear"),
+
+  // ── File storage ───────────────────────────────────────────────────────────
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  fileKey: text("fileKey").notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileSizeBytes: int("fileSizeBytes"),
+
+  // ── Extracted content ──────────────────────────────────────────────────────
+  extractedText: text("extractedText"),
+  extractedMeta: json("extractedMeta"),
+
+  // ── Processing state ───────────────────────────────────────────────────────
+  processingStatus: mysqlEnum("dam_processing_status", [
+    "uploaded",
+    "processing",
+    "indexed",
+    "error",
+  ]).notNull().default("uploaded"),
+  processingError: text("processingError"),
+
+  // ── Tags (comma-separated keywords) ───────────────────────────────────────
+  tags: text("tags"),
+
+  // ── Audit ──────────────────────────────────────────────────────────────────
+  uploadedBy: int("uploadedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DamDocument = typeof damDocuments.$inferSelect;
+export type InsertDamDocument = typeof damDocuments.$inferInsert;

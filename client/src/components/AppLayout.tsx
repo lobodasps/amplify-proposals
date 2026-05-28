@@ -216,10 +216,10 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Past project experience with attachments",
       },
       {
-        label: "File Library (DAM)",
-        href: "/file-library",
+        label: "Knowledge Hub",
+        href: "/knowledge-hub",
         icon: HardDrive,
-        description: "Browse & manage all uploaded files",
+        description: "Upload & manage proposals, project sheets, resumes, certifications",
       },
       {
         label: "Resource Library",

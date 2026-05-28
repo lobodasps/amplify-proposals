@@ -400,3 +400,14 @@
 - [ ] DAM past performance integration: past_performance skill reads real project briefs
 - [ ] Billing rates integration: fee_estimator skill reads real rates from Timekeeping
 - [ ] Proposal export to PDF / InDesign handoff
+
+## Knowledge Hub / DAM — Document Ingestion
+- [x] dam_documents table added to schema and migrated
+- [x] DAM tRPC router (dam.create, dam.list, dam.getById, dam.delete, dam.triggerExtract, dam.getStats)
+- [x] damRouter registered in appRouter
+- [x] 'dam' folder added to upload allowlist
+- [x] KnowledgeHub.tsx — drag-and-drop upload with metadata form (type, company, client, staff, tags)
+- [x] KnowledgeHub.tsx — filterable document grid (by type, company, status, search)
+- [x] KnowledgeHub.tsx — stats bar with per-type counts
+- [x] KnowledgeHub.tsx — document preview dialog with extracted text and structured data
+- [x] Sidebar nav updated: "File Library (DAM)" → "Knowledge Hub" at /knowledge-hub

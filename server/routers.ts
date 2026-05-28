@@ -22,6 +22,7 @@ import { agentGuidelinesRouter } from "./routers/agentGuidelines";
 import { rfpConflictsRouter } from "./routers/rfpConflicts";
 import { bulkImportRouter } from "./routers/bulkImport";
 import { rfpSessionsRouter } from "./routers/rfpSessions";
+import { damRouter } from "./routers/dam";
 
 export const appRouter = router({
   system: systemRouter,
@@ -62,6 +63,7 @@ export const appRouter = router({
   rfpConflicts: rfpConflictsRouter,
   bulkImport: bulkImportRouter,
   rfpSessions: rfpSessionsRouter,
+  dam: damRouter,
 });
 
 export type AppRouter = typeof appRouter;

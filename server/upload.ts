@@ -14,6 +14,7 @@ const ALLOWED_FOLDERS = [
   "assets",
   "rfp",
   "proposals",
+  "dam",
 ] as const;
 
 export function registerUploadRoute(app: Express) {
