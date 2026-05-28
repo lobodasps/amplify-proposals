@@ -21,6 +21,7 @@ import { rfpWikiRouter } from "./routers/rfpWiki";
 import { agentGuidelinesRouter } from "./routers/agentGuidelines";
 import { rfpConflictsRouter } from "./routers/rfpConflicts";
 import { bulkImportRouter } from "./routers/bulkImport";
+import { rfpSessionsRouter } from "./routers/rfpSessions";
 
 export const appRouter = router({
   system: systemRouter,
@@ -60,6 +61,7 @@ export const appRouter = router({
   agentGuidelines: agentGuidelinesRouter,
   rfpConflicts: rfpConflictsRouter,
   bulkImport: bulkImportRouter,
+  rfpSessions: rfpSessionsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,0 +1,21 @@
+CREATE TABLE `rfp_sessions` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`pursuitId` int,
+	`proposalId` int,
+	`opportunityId` int,
+	`rfpFileName` varchar(512),
+	`rfpFileKey` text,
+	`rfpFileUrl` text,
+	`rfpMimeType` varchar(128),
+	`rfpFileSizeBytes` int,
+	`extractedData` json,
+	`skillOutputs` json,
+	`workflowState` json,
+	`rfp_session_status` enum('not_started','in_progress','complete','error') NOT NULL DEFAULT 'not_started',
+	`liveScore` int,
+	`liveScoreDetails` json,
+	`createdBy` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `rfp_sessions_id` PRIMARY KEY(`id`)
+);

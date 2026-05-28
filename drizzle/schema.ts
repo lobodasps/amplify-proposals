@@ -1064,3 +1064,57 @@ export const rfpConflicts = mysqlTable("rfp_conflicts", {
 });
 export type RfpConflict = typeof rfpConflicts.$inferSelect;
 export type InsertRfpConflict = typeof rfpConflicts.$inferInsert;
+
+// ─── RFP Sessions (Proposal Workspace Sequential Skill Workflow) ──────────────
+// One rfpSession per pursuit/proposal attempt. Stores the full workflow state
+// so the frontend can resume from any completed skill without restarting.
+//
+// skillOutputs: JSONB map of skillName → generated text/JSON (saved after each skill)
+// workflowState: JSONB map of skillName → SkillStatus (pending|running|complete|error)
+//
+// This table is the single source of truth for the sequential skill workflow.
+// The frontend orchestrator reads workflowState on load to determine resume point.
+
+export const rfpSessionStatusEnum = mysqlEnum("rfp_session_status", [
+  "not_started",
+  "in_progress",
+  "complete",
+  "error",
+]);
+
+export const rfpSessions = mysqlTable("rfp_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  // Links
+  pursuitId: int("pursuitId"),
+  proposalId: int("proposalId"),
+  opportunityId: int("opportunityId"),
+  // Uploaded RFP file
+  rfpFileName: varchar("rfpFileName", { length: 512 }),
+  rfpFileKey: text("rfpFileKey"),   // Supabase Storage key (future) or Manus storage key
+  rfpFileUrl: text("rfpFileUrl"),   // Accessible URL for LLM file_url content
+  rfpMimeType: varchar("rfpMimeType", { length: 128 }),
+  rfpFileSizeBytes: int("rfpFileSizeBytes"),
+  // Extracted RFP context (from Skill 1 — RFP Parser)
+  extractedData: json("extractedData"), // ParsedRfpData shape
+  // Sequential skill outputs — keyed by WorkflowSkillName
+  skillOutputs: json("skillOutputs"),   // Record<WorkflowSkillName, string>
+  // Workflow state — keyed by WorkflowSkillName
+  workflowState: json("workflowState"), // Record<WorkflowSkillName, SkillStatus>
+  // Overall session status
+  sessionStatus: mysqlEnum("rfp_session_status", [
+    "not_started",
+    "in_progress",
+    "complete",
+    "error",
+  ]).default("not_started").notNull(),
+  // Live proposal score (updated by Skill 8 — Proposal Scorer)
+  liveScore: int("liveScore"),
+  liveScoreDetails: json("liveScoreDetails"), // ScorerOutput shape
+  // Metadata
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RfpSession = typeof rfpSessions.$inferSelect;
+export type InsertRfpSession = typeof rfpSessions.$inferInsert;

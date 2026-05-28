@@ -388,3 +388,15 @@
 - [x] Import: Opportunities CSV with download template
 - [x] Server: bulk import tRPC procedures (8 data types, client-side CSV parse)
 - [x] Show per-row errors + imported count after each import
+
+## Proposal Workspace — Sequential Skill Workflow (v2.5)
+- [x] rfpSessions table: proposalId, pursuitId, opportunityId, skillOutputs JSONB, workflowState JSON, liveScore, rfpFile metadata columns
+- [x] shared/workflowTypes.ts: WorkflowSkillName, WorkflowState, SkillOutputs, SkillStateEntry, ParsedRfpData, ORDERED_SKILLS, SKILL_META, computeResumeState()
+- [x] server/routers/rfpSessions.ts: executeSkill (one skill per request, DB write before return), create, getById, listByPursuit, listByProposal, saveRfpFile, updateSkillOutput, resetSkill
+- [x] rfpSessionsRouter registered in server/routers.ts
+- [x] ProposalWorkspace.tsx: full sequential orchestrator (strict sequential, no Promise.all), progress sidebar, resume from last completed skill, per-skill output editor, re-run individual skills, pause/resume, error recovery with retry
+- [ ] RFP file upload UI: drag-and-drop PDF → Supabase Storage → saveRfpFile mutation
+- [ ] Timekeeping skills matrix integration: key_personnel skill reads real staff data
+- [ ] DAM past performance integration: past_performance skill reads real project briefs
+- [ ] Billing rates integration: fee_estimator skill reads real rates from Timekeeping
+- [ ] Proposal export to PDF / InDesign handoff
