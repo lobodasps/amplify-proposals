@@ -135,6 +135,8 @@ export default function KnowledgeHub() {
 
   // ── Preview state ───────────────────────────────────────────────────────────
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<UploadFormState>(DEFAULT_FORM);
 
   // ── tRPC ────────────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
@@ -172,6 +174,17 @@ export default function KnowledgeHub() {
   });
 
   const autoExtractMutation = trpc.dam.autoExtract.useMutation();
+
+  const updateMetaMutation = trpc.dam.updateMeta.useMutation({
+    onSuccess: () => {
+      utils.dam.list.invalidate();
+      utils.dam.getStats.invalidate();
+      if (previewDocId) utils.dam.getById.invalidate({ id: previewDocId });
+      setIsEditing(false);
+      toast.success("Document updated");
+    },
+    onError: (err) => toast.error(`Save failed: ${err.message}`),
+  });
 
   const extractMutation = trpc.dam.triggerExtract.useMutation({
     onSuccess: (doc) => {
@@ -811,32 +824,151 @@ export default function KnowledgeHub() {
         </div>
       </div>
 
-      {/* ── Preview Dialog ─────────────────────────────────────────────────── */}
-      <Dialog open={previewDocId !== null} onOpenChange={(open) => { if (!open) setPreviewDocId(null); }}>
+      {/* ── Preview / Edit Dialog ─────────────────────────────────────────── */}
+      <Dialog open={previewDocId !== null} onOpenChange={(open) => { if (!open) { setPreviewDocId(null); setIsEditing(false); } }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           {previewDoc ? (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-3">
-                  {(() => {
-                    const cfg = DOC_TYPE_CONFIG[previewDoc.docType as DocType] ?? DOC_TYPE_CONFIG.other;
-                    const Icon = cfg.icon;
-                    return (
-                      <div className={`p-2 rounded-lg ${cfg.bg}`}>
-                        <Icon className={`w-5 h-5 ${cfg.color}`} />
-                      </div>
-                    );
-                  })()}
-                  <div>
-                    <DialogTitle className="text-lg">{previewDoc.title}</DialogTitle>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      {DOC_TYPE_CONFIG[previewDoc.docType as DocType]?.label ?? previewDoc.docType}
-                      {previewDoc.companyTag && ` · ${previewDoc.companyTag}`}
-                    </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {(() => {
+                      const cfg = DOC_TYPE_CONFIG[previewDoc.docType as DocType] ?? DOC_TYPE_CONFIG.other;
+                      const Icon = cfg.icon;
+                      return (
+                        <div className={`p-2 rounded-lg ${cfg.bg} shrink-0`}>
+                          <Icon className={`w-5 h-5 ${cfg.color}`} />
+                        </div>
+                      );
+                    })()}
+                    <div className="min-w-0">
+                      <DialogTitle className="text-lg truncate">{previewDoc.title}</DialogTitle>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {DOC_TYPE_CONFIG[previewDoc.docType as DocType]?.label ?? previewDoc.docType}
+                        {previewDoc.companyTag && ` · ${previewDoc.companyTag}`}
+                      </p>
+                    </div>
                   </div>
+                  {!isEditing && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 shrink-0"
+                      onClick={() => {
+                        setEditForm({
+                          docType: (previewDoc.docType as DocType) ?? "other",
+                          companyTag: (previewDoc.companyTag as CompanyTag) ?? "",
+                          title: previewDoc.title ?? "",
+                          description: previewDoc.description ?? "",
+                          staffName: previewDoc.staffName ?? "",
+                          clientName: previewDoc.clientName ?? "",
+                          projectName: previewDoc.projectName ?? "",
+                          projectNumber: previewDoc.projectNumber ?? "",
+                          contractValue: previewDoc.contractValue ?? "",
+                          awardYear: previewDoc.awardYear ? String(previewDoc.awardYear) : "",
+                          tags: previewDoc.tags ?? "",
+                        });
+                        setIsEditing(true);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      Edit
+                    </Button>
+                  )}
                 </div>
               </DialogHeader>
 
+              {/* ── EDIT MODE ─────────────────────────────────────────────────── */}
+              {isEditing ? (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2 space-y-1.5">
+                      <Label>Title</Label>
+                      <Input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Document Type</Label>
+                      <Select value={editForm.docType} onValueChange={(v) => setEditForm((f) => ({ ...f, docType: v as DocType }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(DOC_TYPE_CONFIG) as DocType[]).map((t) => (
+                            <SelectItem key={t} value={t}>{DOC_TYPE_CONFIG[t].label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Company / Entity</Label>
+                      <Select value={editForm.companyTag || ""} onValueChange={(v) => setEditForm((f) => ({ ...f, companyTag: v as CompanyTag | "" }))}>
+                        <SelectTrigger><SelectValue placeholder="Select entity" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="JPCL">JPCL</SelectItem>
+                          <SelectItem value="Strans">Strans</SelectItem>
+                          <SelectItem value="Both">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Client / Agency</Label>
+                      <Input value={editForm.clientName} onChange={(e) => setEditForm((f) => ({ ...f, clientName: e.target.value }))} placeholder="e.g. NYCDOT" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Project Name</Label>
+                      <Input value={editForm.projectName} onChange={(e) => setEditForm((f) => ({ ...f, projectName: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Project Number</Label>
+                      <Input value={editForm.projectNumber} onChange={(e) => setEditForm((f) => ({ ...f, projectNumber: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Contract Value</Label>
+                      <Input value={editForm.contractValue} onChange={(e) => setEditForm((f) => ({ ...f, contractValue: e.target.value }))} placeholder="e.g. $2,400,000" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Award Year</Label>
+                      <Input value={editForm.awardYear} onChange={(e) => setEditForm((f) => ({ ...f, awardYear: e.target.value }))} placeholder="e.g. 2023" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Staff Name</Label>
+                      <Input value={editForm.staffName} onChange={(e) => setEditForm((f) => ({ ...f, staffName: e.target.value }))} placeholder="For resumes / certifications" />
+                    </div>
+                    <div className="col-span-2 space-y-1.5">
+                      <Label>Tags <span className="text-muted-foreground font-normal">(comma-separated)</span></Label>
+                      <Input value={editForm.tags} onChange={(e) => setEditForm((f) => ({ ...f, tags: e.target.value }))} placeholder="e.g. bridges, NYCDOT, inspection" />
+                    </div>
+                    <div className="col-span-2 space-y-1.5">
+                      <Label>Description / Notes</Label>
+                      <Textarea rows={3} value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      className="gap-2"
+                      disabled={updateMetaMutation.isPending || !editForm.title.trim()}
+                      onClick={() => updateMetaMutation.mutate({
+                        id: previewDoc.id,
+                        title: editForm.title.trim(),
+                        description: editForm.description.trim() || undefined,
+                        docType: editForm.docType,
+                        companyTag: (editForm.companyTag as CompanyTag) || undefined,
+                        staffName: editForm.staffName.trim() || undefined,
+                        clientName: editForm.clientName.trim() || undefined,
+                        projectName: editForm.projectName.trim() || undefined,
+                        projectNumber: editForm.projectNumber.trim() || undefined,
+                        contractValue: editForm.contractValue.trim() || undefined,
+                        awardYear: editForm.awardYear ? parseInt(editForm.awardYear) : undefined,
+                        tags: editForm.tags.trim() || undefined,
+                      })}
+                    >
+                      {updateMetaMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : "Save Changes"}
+                    </Button>
+                    <Button variant="outline" onClick={() => setIsEditing(false)} disabled={updateMetaMutation.isPending}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+              <>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -963,11 +1095,18 @@ export default function KnowledgeHub() {
                   Delete
                 </Button>
               </DialogFooter>
+              </>
+              )}
             </>
           ) : (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
+            <>
+              <DialogHeader>
+                <DialogTitle className="sr-only">Loading document…</DialogTitle>
+              </DialogHeader>
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
