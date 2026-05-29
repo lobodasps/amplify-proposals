@@ -56,13 +56,13 @@ const createInput = z.object({
 
   // Staff link (for resumes & certifications)
   staffName: z.string().optional(),
-  staffId: z.number().optional(),
+  staffId: z.string().uuid().optional(),
 
   // Project / pursuit link
   projectName: z.string().optional(),
   projectNumber: z.string().optional(),
-  pursuitId: z.number().optional(),
-  proposalId: z.number().optional(),
+  pursuitId: z.string().uuid().optional(),
+  proposalId: z.string().uuid().optional(),
 
   // Client / contract
   clientName: z.string().optional(),
@@ -74,17 +74,17 @@ const createInput = z.object({
 });
 
 const updateMetaInput = z.object({
-  id: z.number(),
+  id: z.string().uuid(),
   title: z.string().min(1).max(512).optional(),
   description: z.string().optional(),
   docType: docTypeEnum.optional(),
   companyTag: companyTagEnum.optional(),
   staffName: z.string().optional(),
-  staffId: z.number().optional(),
+  staffId: z.string().uuid().optional(),
   projectName: z.string().optional(),
   projectNumber: z.string().optional(),
-  pursuitId: z.number().optional(),
-  proposalId: z.number().optional(),
+  pursuitId: z.string().uuid().optional(),
+  proposalId: z.string().uuid().optional(),
   clientName: z.string().optional(),
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
@@ -159,7 +159,7 @@ export const damRouter = router({
 
   // ── Get by ID (with fresh signed URL) ─────────────────────────────────────
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -180,7 +180,7 @@ export const damRouter = router({
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
     // Auto-link: resolve staffId for resumes/certifications
-    let resolvedStaffId = input.staffId ?? null;
+    let resolvedStaffId: string | null = input.staffId ?? null;
     if (!resolvedStaffId && input.staffName && (input.docType === "resume" || input.docType === "certification")) {
       const nameLower = input.staffName.trim();
       const existing = await db.select({ id: personnel.id })
@@ -193,15 +193,15 @@ export const damRouter = router({
         const [newPerson] = await db.insert(personnel).values({
           name: nameLower,
           isActive: true,
-        }).$returningId();
+        }).returning({ id: personnel.id });
         resolvedStaffId = newPerson.id;
       }
     }
 
     // Auto-link: resolve projectId for project sheets / past proposals
-    let resolvedProjectId = (input as any).projectId ?? null;
+    let resolvedProjectId: string | null = (input as any).projectId ?? null;
     if (!resolvedProjectId && input.projectName && (input.docType === "project_sheet" || input.docType === "past_proposal")) {
-      let existingProject: { id: number } | null = null;
+      let existingProject: { id: string } | null = null;
       if (input.projectNumber) {
         const rows = await db.select({ id: projects.id })
           .from(projects)
@@ -226,10 +226,10 @@ export const damRouter = router({
           name: input.projectName.trim(),
           projectNumber: input.projectNumber ?? undefined,
           clientName: input.clientName ?? undefined,
-          contractValue,
+          contractValue: contractValue?.toString(),
           status: "completed",
           createdBy: ctx.user.id,
-        }).$returningId();
+        }).returning({ id: projects.id });
         resolvedProjectId = newProject.id;
       }
     }
@@ -243,7 +243,7 @@ export const damRouter = router({
         uploadedBy: ctx.user.id,
         processingStatus: "uploaded",
       })
-      .$returningId();
+      .returning({ id: damDocuments.id });
 
     const [doc] = await db
       .select()
@@ -256,7 +256,7 @@ export const damRouter = router({
 
   // ── List by staff member (resumes & certifications) ────────────────────
   listByStaff: protectedProcedure
-    .input(z.object({ staffId: z.number() }))
+    .input(z.object({ staffId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -267,7 +267,7 @@ export const damRouter = router({
 
   // ── List by project (project sheets & past proposals) ──────────────────
   listByProject: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -307,7 +307,7 @@ export const damRouter = router({
 
   // ── Delete ────────────────────────────────────────────────────────────────
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -370,7 +370,7 @@ export const damRouter = router({
   // Reads the document URL, sends to LLM with file_url content type,
   // saves extractedText + extractedMeta, sets processingStatus = 'indexed'.
   triggerExtract: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });

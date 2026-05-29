@@ -21,9 +21,9 @@
  *   nte_ceiling — on-call/direct-bill; no children; invoices billed directly
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "./db";
-import { contracts, contractAmendments, billingEntries } from "../drizzle/schema";
+import { contracts, contractAmendments } from "../drizzle/schema";
 
 export interface ContractFinancialsResult {
   // Core values
@@ -63,13 +63,13 @@ export interface ContractFinancialsResult {
 
 // ─── Helper: load all descendants of a contract ───────────────────────────────
 
-async function loadAllDescendants(rootId: number): Promise<typeof contracts.$inferSelect[]> {
+async function loadAllDescendants(rootId: string): Promise<typeof contracts.$inferSelect[]> {
   const db = await getDb();
   if (!db) return [];
 
   // Load ALL contracts once, then build tree in memory (avoids N+1 queries)
   const allContracts = await db.select().from(contracts);
-  const byParent = new Map<number, typeof contracts.$inferSelect[]>();
+  const byParent = new Map<string, typeof contracts.$inferSelect[]>();
   for (const c of allContracts) {
     if (c.parentContractId != null) {
       const list = byParent.get(c.parentContractId) ?? [];
@@ -101,11 +101,13 @@ function computeAmendmentTotals(amendments: typeof contractAmendments.$inferSele
     const status = (a as any).approvalStatus ?? "active";
     if (status === "inactive") continue;
     const behavior = a.amountBehavior ?? "adds_to_value";
-    const magnitude = a.amountChange != null ? Math.abs(a.amountChange) : Math.abs(a.amount ?? 0);
+    const amountChange = a.amountChange != null ? Number(a.amountChange) : 0;
+    const amount = a.amount != null ? Number(a.amount) : 0;
+    const magnitude = amountChange !== 0 ? Math.abs(amountChange) : Math.abs(amount);
     if (behavior === "adds_to_value") addsTotal += magnitude;
     else if (behavior === "subtracts_from_value") subtractsTotal += magnitude;
-    else if ((a.amount ?? 0) < 0) subtractsTotal += Math.abs(a.amount ?? 0);
-    else addsTotal += Math.abs(a.amount ?? 0);
+    else if (amount < 0) subtractsTotal += Math.abs(amount);
+    else addsTotal += Math.abs(amount);
   }
   return { addsTotal, subtractsTotal };
 }
@@ -113,7 +115,7 @@ function computeAmendmentTotals(amendments: typeof contractAmendments.$inferSele
 // ─── Main financial calculation ───────────────────────────────────────────────
 
 export async function getContractFinancials(
-  contractId: number
+  contractId: string
 ): Promise<ContractFinancialsResult | null> {
   const db = await getDb();
   if (!db) return null;
@@ -128,8 +130,8 @@ export async function getContractFinancials(
 
   const billingBasis = contract.billingBasis ?? "authorized";
   const hasNTE = contract.hasNteCeiling ?? false;
-  const nteCeilingAmount = contract.nteCeilingAmount ?? 0;
-  const initialAmount = contract.value ?? 0;
+  const nteCeilingAmount = Number(contract.nteCeilingAmount ?? 0);
+  const initialAmount = Number(contract.value ?? 0);
 
   // Load amendments for this contract
   const ownAmendments = await db
@@ -158,8 +160,8 @@ export async function getContractFinancials(
 
   for (const desc of descendants) {
     const behavior = (desc as any).amountBehavior ?? "independent";
-    const descValue = desc.computedContractValue ?? desc.value ?? 0;
-    const descBilled = desc.totalBilledAmount ?? 0;
+    const descValue = Number(desc.computedContractValue ?? desc.value ?? 0);
+    const descBilled = Number(desc.totalBilledAmount ?? 0);
 
     // Only roll up value for non-independent children
     if (behavior !== "independent") {
@@ -179,7 +181,7 @@ export async function getContractFinancials(
 
   // Ceiling committed by direct children (AUTHORIZED mode)
   const ceilingCommittedByChildren = directChildren.reduce(
-    (sum, c) => sum + (c.computedContractValue ?? c.value ?? 0),
+    (sum, c) => sum + Number(c.computedContractValue ?? c.value ?? 0),
     0
   );
 
@@ -194,18 +196,18 @@ export async function getContractFinancials(
   if (hasNTE && billingBasis === "authorized") {
     // Roll up from direct children (they in turn roll up from their children)
     billedToDate = directChildren.reduce(
-      (sum, c) => sum + (c.totalBilledAmount ?? 0),
+      (sum, c) => sum + Number(c.totalBilledAmount ?? 0),
       0
     );
   } else if (descendants.length > 0) {
     // Non-NTE with children: own billed + all descendant billed
-    billedToDate = (contract.totalBilledAmount ?? 0) + totalDescendantBilled;
+    billedToDate = Number(contract.totalBilledAmount ?? 0) + totalDescendantBilled;
   } else {
-    billedToDate = contract.totalBilledAmount ?? 0;
+    billedToDate = Number(contract.totalBilledAmount ?? 0);
   }
 
   // Retainage (own only — descendants track their own)
-  const retainageAmount = contract.retainageAmount ?? 0;
+  const retainageAmount = Number(contract.retainageAmount ?? 0);
 
   // Remaining
   const ceiling = effectiveCeiling ?? computedContractValue;
@@ -288,7 +290,7 @@ export async function getContractFinancials(
  * and other queries always see up-to-date KPIs without re-computing.
  * Also cascades up to the parent chain so L1 always reflects L2+L3 changes.
  */
-export async function persistContractFinancials(contractId: number): Promise<void> {
+export async function persistContractFinancials(contractId: string): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
@@ -298,9 +300,9 @@ export async function persistContractFinancials(contractId: number): Promise<voi
   await db
     .update(contracts)
     .set({
-      computedContractValue: fin.computedContractValue,
-      totalBilledAmount: fin.billedToDate,
-      billingPercentage: fin.billingPercentage,
+      computedContractValue: fin.computedContractValue.toString(),
+      totalBilledAmount: fin.billedToDate.toString(),
+      billingPercentage: fin.billingPercentage.toString(),
       isBillingOverCeiling: fin.isBillingOverCeiling,
     } as any)
     .where(eq(contracts.id, contractId));

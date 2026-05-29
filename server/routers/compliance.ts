@@ -12,7 +12,7 @@ export const complianceRouter = router({
   // List all open compliance exceptions, optionally filtered by contract
   listExceptions: protectedProcedure
     .input(z.object({
-      contractId: z.number().optional(),
+      contractId: z.string().uuid().optional(),
       status: z.string().optional(), // OPEN | RESOLVED
       severity: z.string().optional(), // INFO | WARN | BLOCKER
     }).optional())
@@ -32,16 +32,16 @@ export const complianceRouter = router({
   // Create a compliance exception
   createException: protectedProcedure
     .input(z.object({
-      contractId: z.number(),
+      contractId: z.string().uuid(),
       severity: z.string().default("WARN"),
       exceptionType: z.string(),
       description: z.string().optional(),
-      assignedToId: z.number().optional(),
+      assignedToId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(complianceExceptions).values(input).$returningId();
+      const [created] = await db.insert(complianceExceptions).values(input).returning({ id: complianceExceptions.id });
       const rows = await db.select().from(complianceExceptions).where(eq(complianceExceptions.id, created.id));
       return rows[0];
     }),
@@ -49,7 +49,7 @@ export const complianceRouter = router({
   // Resolve a compliance exception
   resolveException: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       resolutionNote: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -67,10 +67,10 @@ export const complianceRouter = router({
   // Update exception
   updateException: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       severity: z.string().optional(),
       description: z.string().optional(),
-      assignedToId: z.number().optional(),
+      assignedToId: z.string().uuid().optional(),
       status: z.string().optional(),
       resolutionNote: z.string().optional(),
     }))
@@ -229,7 +229,7 @@ export const activityLogRouter = router({
   list: protectedProcedure
     .input(z.object({
       entityType: z.string().optional(),
-      entityId: z.number().optional(),
+      entityId: z.string().uuid().optional(),
       limit: z.number().default(50),
     }).optional())
     .query(async ({ input }) => {
@@ -246,7 +246,7 @@ export const activityLogRouter = router({
   log: protectedProcedure
     .input(z.object({
       entityType: z.string(),
-      entityId: z.number(),
+      entityId: z.string().uuid(),
       action: z.string(),
       description: z.string().optional(),
       changedFields: z.record(z.string(), z.unknown()).optional(),
@@ -271,7 +271,7 @@ export const activityLogRouter = router({
 
 export const billingEntriesRouter = router({
   listByContract: protectedProcedure
-    .input(z.object({ contractId: z.number() }))
+    .input(z.object({ contractId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -282,7 +282,7 @@ export const billingEntriesRouter = router({
 
   create: protectedProcedure
     .input(z.object({
-      contractId: z.number(),
+      contractId: z.string().uuid(),
       invoiceNumber: z.string().optional(),
       invoiceDate: z.string().optional(),
       amount: z.number(),
@@ -299,28 +299,28 @@ export const billingEntriesRouter = router({
         ...rest,
         invoiceDate: invoiceDate ? new Date(invoiceDate) : undefined,
       };
-      const [created] = await db.insert(billingEntries).values(data).$returningId();
+      const [created] = await db.insert(billingEntries).values(data as any).returning({ id: billingEntries.id });
       // Update contract totals
       const allEntries = await db.select().from(billingEntries).where(eq(billingEntries.contractId, input.contractId));
-      const totalBilled = allEntries.reduce((sum, e) => sum + (e.billedAmount ?? e.amount), 0);
+      const totalBilled = allEntries.reduce((sum, e) => sum + parseFloat(String(e.billedAmount ?? e.amount)), 0);
       const contractRows = await db.select().from(contracts).where(eq(contracts.id, input.contractId));
       const contract = contractRows[0];
       if (contract) {
-        const authorized = contract.computedContractValue ?? contract.value ?? 0;
+        const authorized = parseFloat(String(contract.computedContractValue ?? contract.value ?? 0));
         const billingPct = authorized > 0 ? Math.round((totalBilled / authorized) * 100) : 0;
         await db.update(contracts).set({
-          totalBilledAmount: totalBilled,
+          totalBilledAmount: String(totalBilled),
           billingPercentage: billingPct,
           isBillingOverCeiling: totalBilled > authorized,
           lastInvoicedDate: data.invoiceDate ?? new Date(),
-        }).where(eq(contracts.id, input.contractId));
+        } as any).where(eq(contracts.id, input.contractId));
       }
       const rows = await db.select().from(billingEntries).where(eq(billingEntries.id, created.id));
       return rows[0];
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -329,17 +329,17 @@ export const billingEntriesRouter = router({
       await db.delete(billingEntries).where(eq(billingEntries.id, input.id));
       if (entry) {
         const allEntries = await db.select().from(billingEntries).where(eq(billingEntries.contractId, entry.contractId));
-        const totalBilled = allEntries.reduce((sum, e) => sum + (e.billedAmount ?? e.amount), 0);
+        const totalBilled = allEntries.reduce((sum, e) => sum + parseFloat(String(e.billedAmount ?? e.amount)), 0);
         const contractRows = await db.select().from(contracts).where(eq(contracts.id, entry.contractId));
         const contract = contractRows[0];
         if (contract) {
-          const authorized = contract.computedContractValue ?? contract.value ?? 0;
+          const authorized = parseFloat(String(contract.computedContractValue ?? contract.value ?? 0));
           const billingPct = authorized > 0 ? Math.round((totalBilled / authorized) * 100) : 0;
           await db.update(contracts).set({
-            totalBilledAmount: totalBilled,
+            totalBilledAmount: String(totalBilled),
             billingPercentage: billingPct,
             isBillingOverCeiling: totalBilled > authorized,
-          }).where(eq(contracts.id, entry.contractId));
+          } as any).where(eq(contracts.id, entry.contractId));
         }
       }
       return { success: true };

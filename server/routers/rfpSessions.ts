@@ -369,9 +369,9 @@ export const rfpSessionsRouter = router({
   create: protectedProcedure
     .input(
       z.object({
-        pursuitId: z.number().optional(),
-        proposalId: z.number().optional(),
-        opportunityId: z.number().optional(),
+        pursuitId: z.string().uuid().optional(),
+        proposalId: z.string().uuid().optional(),
+        opportunityId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -400,14 +400,14 @@ export const rfpSessionsRouter = router({
           skillOutputs: {},
           createdBy: ctx.user.id,
         })
-        .$returningId();
+        .returning({ id: rfpSessions.id });
 
       return { sessionId: result.id };
     }),
 
   // ── Get a session by ID (used on page load for resume) ────────────────────
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -421,7 +421,7 @@ export const rfpSessionsRouter = router({
 
   // ── List sessions for a pursuit ───────────────────────────────────────────
   listByPursuit: protectedProcedure
-    .input(z.object({ pursuitId: z.number() }))
+    .input(z.object({ pursuitId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -435,7 +435,7 @@ export const rfpSessionsRouter = router({
 
   // ── List sessions for a proposal (by proposalId) ─────────────────────
   listByProposal: protectedProcedure
-    .input(z.object({ proposalId: z.number() }))
+    .input(z.object({ proposalId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -449,7 +449,7 @@ export const rfpSessionsRouter = router({
   saveRfpFile: protectedProcedure
     .input(
       z.object({
-        sessionId: z.number(),
+        sessionId: z.string().uuid(),
         rfpFileName: z.string(),
         rfpFileKey: z.string(),
         rfpFileUrl: z.string(),
@@ -478,7 +478,7 @@ export const rfpSessionsRouter = router({
   updateSkillOutput: protectedProcedure
     .input(
       z.object({
-        sessionId: z.number(),
+        sessionId: z.string().uuid(),
         skillName: workflowSkillNameSchema,
         output: z.string(),
       })
@@ -511,7 +511,7 @@ export const rfpSessionsRouter = router({
   resetSkill: protectedProcedure
     .input(
       z.object({
-        sessionId: z.number(),
+        sessionId: z.string().uuid(),
         skillName: workflowSkillNameSchema,
       })
     )
@@ -565,7 +565,7 @@ export const rfpSessionsRouter = router({
   executeSkill: protectedProcedure
     .input(
       z.object({
-        sessionId: z.number(),
+        sessionId: z.string().uuid(),
         skillName: workflowSkillNameSchema,
         /** Optional: force re-run even if already complete */
         force: z.boolean().optional().default(false),

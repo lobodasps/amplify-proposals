@@ -38,7 +38,7 @@ export const agentGuidelinesRouter = router({
   get: protectedProcedure
     .input(z.object({
       skillType: z.string(),
-      proposalId: z.number().optional(),
+      proposalId: z.string().uuid().optional(),
       sectionName: z.string().optional(),
     }))
     .query(async ({ input }) => {
@@ -60,8 +60,8 @@ export const agentGuidelinesRouter = router({
   upsert: protectedProcedure
     .input(z.object({
       skillType: z.string(),
-      proposalId: z.number().optional(),
-      pursuitId: z.number().optional(),
+      proposalId: z.string().uuid().optional(),
+      pursuitId: z.string().uuid().optional(),
       sectionName: z.string().optional(),
       successCriteria: z.array(z.string()),
       chosenApproachIndex: z.number().optional(),
@@ -207,7 +207,7 @@ export const agentGuidelinesRouter = router({
    */
   saveApproachChoice: protectedProcedure
     .input(z.object({
-      guidelineId: z.number(),
+      guidelineId: z.string().uuid(),
       chosenApproachIndex: z.number(),
       choiceRationale: z.string().optional(),
       approaches: z.string(), // JSON stringified approaches array

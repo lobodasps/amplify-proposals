@@ -7,17 +7,17 @@ import { invokeLLMWithSkill } from "../_core/llmSkill";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function parseTagIds(raw: unknown): number[] {
+function parseTagIds(raw: unknown): string[] {
   if (!raw) return [];
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
   } catch {
     return [];
   }
 }
 
-function assetHasTags(asset: { tags: unknown }, filterIds: number[]): boolean {
+function assetHasTags(asset: { tags: unknown }, filterIds: string[]): boolean {
   if (filterIds.length === 0) return true;
   const ids = parseTagIds(asset.tags);
   return filterIds.every((id) => ids.includes(id));
@@ -34,7 +34,7 @@ export const assetsRouter = router({
     // Return tags with usage count
     const tags = await db.select().from(assetTags).orderBy(assetTags.name);
     const allAssets = await db.select({ tags: assets.tags }).from(assets);
-    const usageMap: Record<number, number> = {};
+    const usageMap: Record<string, number> = {};
     for (const a of allAssets) {
       for (const id of parseTagIds(a.tags)) {
         usageMap[id] = (usageMap[id] ?? 0) + 1;
@@ -61,7 +61,7 @@ export const assetsRouter = router({
 
   updateTag: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       name: z.string().min(1).max(64).optional(),
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     }))
@@ -78,7 +78,7 @@ export const assetsRouter = router({
     }),
 
   deleteTag: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -99,8 +99,8 @@ export const assetsRouter = router({
 
   updateAssetTags: protectedProcedure
     .input(z.object({
-      assetId: z.number(),
-      tagIds: z.array(z.number()),
+      assetId: z.string().uuid(),
+      tagIds: z.array(z.string().uuid()),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -118,7 +118,7 @@ export const assetsRouter = router({
       search: z.string().optional(),
       assetType: z.string().optional(),
       folder: z.string().optional(),
-      tagIds: z.array(z.number()).optional(),
+      tagIds: z.array(z.string().uuid()).optional(),
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
@@ -163,7 +163,7 @@ export const assetsRouter = router({
       fileUrl: z.string(),
       mimeType: z.string().optional(),
       fileSize: z.number().optional(),
-      tagIds: z.array(z.number()).optional(),
+      tagIds: z.array(z.string().uuid()).optional(),
       serviceLines: z.array(z.string()).optional(),
       folder: z.string().optional(),
     }))
@@ -188,11 +188,11 @@ export const assetsRouter = router({
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       name: z.string().min(1).optional(),
       description: z.string().optional(),
       assetType: z.string().optional(),
-      tagIds: z.array(z.number()).optional(),
+      tagIds: z.array(z.string().uuid()).optional(),
       folder: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -242,7 +242,7 @@ export const assetsRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");

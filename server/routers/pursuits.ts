@@ -14,7 +14,7 @@ export const pursuitsRouter = router({
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -25,13 +25,13 @@ export const pursuitsRouter = router({
   create: protectedProcedure
     .input(z.object({
       title: z.string().min(1),
-      clientId: z.number().optional(),
+      clientId: z.string().uuid().optional(),
       clientName: z.string().optional(),
       rfpNumber: z.string().optional(),
       dueDate: z.date().optional(),
       estimatedValue: z.number().optional(),
       serviceLines: z.array(z.string()).optional(),
-      leadId: z.number().optional(),
+      leadId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -42,7 +42,7 @@ export const pursuitsRouter = router({
         clientName: input.clientName,
         rfpNumber: input.rfpNumber,
         dueDate: input.dueDate,
-        estimatedValue: input.estimatedValue,
+        estimatedValue: input.estimatedValue?.toString(),
         serviceLines: input.serviceLines ? JSON.stringify(input.serviceLines) : null,
         leadId: input.leadId,
         status: "identify",
@@ -51,7 +51,7 @@ export const pursuitsRouter = router({
     }),
 
   updateStatus: protectedProcedure
-    .input(z.object({ id: z.number(), status: z.string() }))
+    .input(z.object({ id: z.string().uuid(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -60,7 +60,7 @@ export const pursuitsRouter = router({
     }),
 
   getTasks: protectedProcedure
-    .input(z.object({ pursuitId: z.number() }))
+    .input(z.object({ pursuitId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -69,9 +69,9 @@ export const pursuitsRouter = router({
 
   createTask: protectedProcedure
     .input(z.object({
-      pursuitId: z.number(),
+      pursuitId: z.string().uuid(),
       title: z.string(),
-      assignedTo: z.number().optional(),
+      assignedTo: z.string().uuid().optional(),
       dueDate: z.date().optional(),
       priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     }))

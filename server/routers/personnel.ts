@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { personnel, projects, contracts, pursuits, contractAmendments, assets, billingEntries, people, orderTypes } from "../../drizzle/schema";
 import { eq, desc, sql, getTableColumns } from "drizzle-orm";
-import { alias } from "drizzle-orm/mysql-core";
+import { alias } from "drizzle-orm/pg-core";
 import { supabase } from "../supabase";
 import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
 import { getContractFinancials, persistContractFinancials } from "../contractFinancials";
@@ -16,7 +16,7 @@ export const personnelRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -52,7 +52,7 @@ export const personnelRouter = router({
 
   // ── Attachments (stored in assets table with staffId) ──────────────────────
   listAttachments: protectedProcedure
-    .input(z.object({ staffId: z.number() }))
+    .input(z.object({ staffId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -63,7 +63,7 @@ export const personnelRouter = router({
 
   addAttachment: protectedProcedure
     .input(z.object({
-      staffId: z.number(),
+      staffId: z.string().uuid(),
       name: z.string(),
       fileKey: z.string(),
       fileUrl: z.string(),
@@ -91,7 +91,7 @@ export const personnelRouter = router({
     }),
 
   deleteAttachment: protectedProcedure
-    .input(z.object({ assetId: z.number() }))
+    .input(z.object({ assetId: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -108,7 +108,7 @@ export const projectsRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -133,7 +133,7 @@ export const projectsRouter = router({
         clientName: input.clientName,
         description: input.description,
         serviceLine: (input.serviceLine as any) ?? "other",
-        contractValue: input.contractValue,
+        contractValue: input.contractValue?.toString(),
         state: (input.state as any) ?? "NY",
         status: "active",
         createdBy: ctx.user.id,
@@ -143,7 +143,7 @@ export const projectsRouter = router({
 
   // ── Attachments (stored in assets table with projectId) ───────────────────
   listAttachments: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -154,7 +154,7 @@ export const projectsRouter = router({
 
   addAttachment: protectedProcedure
     .input(z.object({
-      projectId: z.number(),
+      projectId: z.string().uuid(),
       name: z.string(),
       fileKey: z.string(),
       fileUrl: z.string(),
@@ -182,7 +182,7 @@ export const projectsRouter = router({
     }),
 
   deleteAttachment: protectedProcedure
-    .input(z.object({ assetId: z.number() }))
+    .input(z.object({ assetId: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -212,7 +212,7 @@ export const contractsRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -224,7 +224,7 @@ export const contractsRouter = router({
     .input(z.object({
       contractNumber: z.string().optional(),
       title: z.string(),
-      clientId: z.number().optional(),
+      clientId: z.string().uuid().optional(),
       clientName: z.string().optional(),
       ownerName: z.string().optional(),
       contractValue: z.number().optional(),
@@ -240,33 +240,33 @@ export const contractsRouter = router({
       clientProjectRef: z.string().optional(),
       contractManagerName: z.string().optional(),
       isPublic: z.boolean().optional(),
-      departmentId: z.number().optional(),
-      serviceTypeIds: z.array(z.number()).optional(),
-      form254CodeId: z.number().optional(),
-      projectManagerId: z.number().optional(),
-      projectAccountantId: z.number().optional(),
-      clientOrgId: z.number().optional(),
-      ownerOrgId: z.number().optional(),
+      departmentId: z.string().uuid().optional(),
+      serviceTypeIds: z.array(z.string()).optional(),
+      form254CodeId: z.string().uuid().optional(),
+      projectManagerId: z.string().uuid().optional(),
+      projectAccountantId: z.string().uuid().optional(),
+      clientOrgId: z.string().uuid().optional(),
+      ownerOrgId: z.string().uuid().optional(),
       hasNteCeiling: z.boolean().optional(),
       nteCeilingAmount: z.number().optional(),
       billingBasis: z.string().optional(),
-      tierLabelId: z.number().nullable().optional(),
+      tierLabelId: z.string().uuid().nullable().optional(),
       structureType: z.string().optional(),
-      contractOwnerId: z.number().nullable().optional(),
-      primeOrgId: z.number().nullable().optional(),
+      contractOwnerId: z.string().uuid().nullable().optional(),
+      primeOrgId: z.string().uuid().nullable().optional(),
       billingMethods: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const result = await db.insert(contracts).values({
+      const [result] = await db.insert(contracts).values({
         contractNumber: input.contractNumber,
         title: input.title,
         clientId: input.clientId,
         clientName: input.clientName,
         ownerName: input.ownerName,
-        value: input.contractValue ?? 0,
-        computedContractValue: input.contractValue ?? 0,
+        value: (input.contractValue ?? 0).toString(),
+        computedContractValue: (input.contractValue ?? 0).toString(),
         startDate: input.startDate,
         endDate: input.endDate,
         serviceLines: input.serviceLines ? JSON.stringify(input.serviceLines) : null,
@@ -287,7 +287,7 @@ export const contractsRouter = router({
         clientOrgId: input.clientOrgId,
         ownerOrgId: input.ownerOrgId,
         hasNteCeiling: input.hasNteCeiling ?? false,
-        nteCeilingAmount: input.nteCeilingAmount,
+        nteCeilingAmount: (input.nteCeilingAmount ?? 0).toString(),
         billingBasis: input.billingBasis ?? "authorized",
         tierLabelId: input.tierLabelId,
         structureType: input.structureType,
@@ -296,14 +296,14 @@ export const contractsRouter = router({
         billingMethods: input.billingMethods ? JSON.stringify(input.billingMethods) : null,
         status: "draft",
         contractManagerId: ctx.user.id,
-      });
-      return { success: true, id: (result as any).insertId };
+      }).returning({ id: contracts.id });
+      return { success: true, id: result.id };
     }),
 
   // Convert an awarded pursuit into a Draft contract
   convertFromPursuit: protectedProcedure
     .input(z.object({
-      pursuitId: z.number(),
+      pursuitId: z.string().uuid(),
       // Optional overrides from the confirmation dialog
       contractVehicle: z.string().optional(),
       companyRole: z.string().optional(),
@@ -321,7 +321,7 @@ export const contractsRouter = router({
       const existing = await db.select({ id: contracts.id }).from(contracts).where(eq(contracts.pursuitId, input.pursuitId)).limit(1);
       if (existing.length > 0) throw new Error("A contract already exists for this pursuit");
       // Create the draft contract pre-populated from the pursuit
-      const result = await db.insert(contracts).values({
+      const [result] = await db.insert(contracts).values({
         pursuitId: pursuit.id,
         clientId: pursuit.clientId ?? undefined,
         clientName: pursuit.clientName ?? undefined,
@@ -330,8 +330,8 @@ export const contractsRouter = router({
         status: "draft",
         contractVehicle: input.contractVehicle ?? "standalone",
         companyRole: input.companyRole ?? "prime",
-        value: pursuit.awardedValue ?? pursuit.estimatedValue ?? 0,
-        computedContractValue: pursuit.awardedValue ?? pursuit.estimatedValue ?? 0,
+        value: (pursuit.awardedValue ?? pursuit.estimatedValue ?? 0).toString(),
+        computedContractValue: (pursuit.awardedValue ?? pursuit.estimatedValue ?? 0).toString(),
         serviceLines: pursuit.serviceLines,
         notes: input.notes ?? pursuit.notes ?? undefined,
         contractManagerId: ctx.user.id,
@@ -339,15 +339,14 @@ export const contractsRouter = router({
         nodeType: "contract",
         budgetBehavior: "independent",
         isPublic: true,
-      });
-      const newContractId = (result as any).insertId;
-      return { success: true, contractId: newContractId };
+      }).returning({ id: contracts.id });
+      return { success: true, contractId: result.id };
     }),
 
   // Activate a contract and create a matching project in Supabase
   activateContract: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       // Supabase-side fields
       supabaseCompanyId: z.string().optional(), // UUID of JPCL or Strans in Supabase
       supabaseOwnerId: z.string().optional(),   // UUID of the agency/owner in Supabase
@@ -420,7 +419,7 @@ export const contractsRouter = router({
           status: "active",
           start_date: contract.startDate ? new Date(contract.startDate).toISOString().split("T")[0] : null,
           end_date: contract.endDate ? new Date(contract.endDate).toISOString().split("T")[0] : null,
-          budget: contract.computedContractValue ?? null,
+          budget: Number(contract.computedContractValue ?? 0),
           default_billing_method: input.defaultBillingMethod ?? "hourly",
         };
 
@@ -454,7 +453,7 @@ export const contractsRouter = router({
   // Update a contract
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       status: z.string().optional(),
       title: z.string().optional(),
       contractNumber: z.string().optional(),
@@ -486,19 +485,19 @@ export const contractsRouter = router({
       billingBasis: z.string().optional(),
       clientProjectRef: z.string().optional(),
       isPublic: z.boolean().optional(),
-      departmentId: z.number().optional(),
-      serviceTypeIds: z.array(z.number()).optional(),
-      form254CodeId: z.number().optional(),
-      projectManagerId: z.number().optional(),
-      projectAccountantId: z.number().optional(),
-      clientOrgId: z.number().optional(),
-      ownerOrgId: z.number().optional(),
+      departmentId: z.string().uuid().optional(),
+      serviceTypeIds: z.array(z.string()).optional(),
+      form254CodeId: z.string().uuid().optional(),
+      projectManagerId: z.string().uuid().optional(),
+      projectAccountantId: z.string().uuid().optional(),
+      clientOrgId: z.string().uuid().optional(),
+      ownerOrgId: z.string().uuid().optional(),
       // New schema fields
-      tierLabelId: z.number().nullable().optional(),
+      tierLabelId: z.string().uuid().nullable().optional(),
       amountBehavior: z.enum(["independent", "adds_to_parent", "subtracts_from_parent", "utilizes_parent"]).optional(),
       structureType: z.string().optional(),
-      contractOwnerId: z.number().nullable().optional(),
-      primeOrgId: z.number().nullable().optional(),
+      contractOwnerId: z.string().uuid().nullable().optional(),
+      primeOrgId: z.string().uuid().nullable().optional(),
       coiReceivedDate: z.date().nullable().optional(),
       fullyExecutedContractDate: z.date().nullable().optional(),
       primeAgreementDate: z.date().nullable().optional(),
@@ -516,7 +515,7 @@ export const contractsRouter = router({
 
   // Get a contract with all its children (task orders + sub-projects) and amendments
   getWithChildren: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -549,17 +548,17 @@ export const contractsRouter = router({
   // Create a child contract (task order, phase, sub-project, etc.)
   createChild: protectedProcedure
     .input(z.object({
-      parentId: z.number(),
+      parentId: z.string().uuid(),
       title: z.string(),
       contractValue: z.number().optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
       notes: z.string().optional(),
-      tierLabelId: z.number().optional(),           // FK to order_types — user-defined label (Task Order, Phase, PO, etc.)
+      tierLabelId: z.string().uuid().optional(),
       amountBehavior: z.enum(["independent", "adds_to_parent", "subtracts_from_parent", "utilizes_parent"]).default("adds_to_parent"),
-      projectManagerId: z.number().optional(),
-      projectAccountantId: z.number().optional(),
-      departmentId: z.number().optional(),
+      projectManagerId: z.string().uuid().optional(),
+      projectAccountantId: z.string().uuid().optional(),
+      departmentId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -582,7 +581,7 @@ export const contractsRouter = router({
       const childSeq = siblings.length + 1;
       const childNumber = parentNumber ? generateChildNumber(parentNumber, childSeq) : undefined;
 
-      const result = await db.insert(contracts).values({
+      const [result] = await db.insert(contracts).values({
         parentContractId: input.parentId,
         title: input.title,
         contractNumber: childNumber,
@@ -594,8 +593,8 @@ export const contractsRouter = router({
         status: parent.status === "active" ? "active" : "draft",
         contractVehicle: parent.contractVehicle ?? "standalone",
         companyRole: parent.companyRole ?? "prime",
-        value: input.contractValue ?? 0,
-        computedContractValue: input.contractValue ?? 0,
+        value: (input.contractValue ?? 0).toString(),
+        computedContractValue: (input.contractValue ?? 0).toString(),
         startDate: input.startDate,
         endDate: input.endDate,
         notes: input.notes,
@@ -608,18 +607,18 @@ export const contractsRouter = router({
         projectAccountantId: input.projectAccountantId ?? parent.projectAccountantId ?? undefined,
         departmentId: input.departmentId ?? parent.departmentId ?? undefined,
         contractManagerId: ctx.user.id,
-      } as any);
+      } as any).returning({ id: contracts.id });
 
       // Cascade financials up to parent
       await persistContractFinancials(input.parentId);
 
-      return { success: true, id: (result as any).insertId, contractNumber: childNumber };
+      return { success: true, id: result.id, contractNumber: childNumber };
     }),
 
   // Add an amendment or change order to a contract
   addAmendment: protectedProcedure
     .input(z.object({
-      contractId: z.number(),
+      contractId: z.string().uuid(),
       type: z.enum(["amendment", "change_order"]),
       amountBehavior: z.enum(["adds_to_value", "subtracts_from_value"]).default("adds_to_value"),
       amountChange: z.number().min(0), // always positive magnitude
@@ -640,7 +639,7 @@ export const contractsRouter = router({
       const sameType = existing.filter(a => a.amendmentNumber?.includes(typePrefix));
       const seq = sameType.length + 1;
 
-      const baseNumber = contract.contractNumber ?? String(input.contractId);
+      const baseNumber = contract.contractNumber ?? input.contractId;
       const amendmentNumber = input.type === "amendment"
         ? generateAmendmentNumber(baseNumber, seq)
         : generateChangeOrderNumber(baseNumber, seq);
@@ -654,9 +653,9 @@ export const contractsRouter = router({
         contractId: input.contractId,
         amendmentType: input.type === "amendment" ? "amendment" : "change_order",
         amendmentNumber,
-        amount: signedAmount,
+        amount: signedAmount.toString(),
         amountBehavior: input.amountBehavior,
-        amountChange: input.amountChange,
+        amountChange: input.amountChange.toString(),
         description: input.description,
         amendmentDate: input.date ?? new Date(),
         approvalStatus: "pending",
@@ -670,7 +669,7 @@ export const contractsRouter = router({
 
   // List amendments for a contract
   listAmendments: protectedProcedure
-    .input(z.object({ contractId: z.number() }))
+    .input(z.object({ contractId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -681,14 +680,14 @@ export const contractsRouter = router({
 
   // Get computed financials for a contract (used by ContractDetail page)
   getFinancials: protectedProcedure
-    .input(z.object({ contractId: z.number() }))
+    .input(z.object({ contractId: z.string().uuid() }))
     .query(async ({ input }) => {
       return getContractFinancials(input.contractId);
     }),
 
   // Recalculate all financial KPIs for a contract (manual trigger)
   recalculateFinancials: protectedProcedure
-    .input(z.object({ contractId: z.number() }))
+    .input(z.object({ contractId: z.string().uuid() }))
     .mutation(async ({ input }) => {
       await persistContractFinancials(input.contractId);
       return getContractFinancials(input.contractId);
@@ -697,7 +696,7 @@ export const contractsRouter = router({
   // Import QB CSV: parse rows, upsert billing entries, recalculate
   importQbCsv: protectedProcedure
     .input(z.object({
-      contractId: z.number(),
+      contractId: z.string().uuid(),
       // Each row from the CSV
       rows: z.array(z.object({
         invoiceNumber: z.string().optional(),
@@ -719,7 +718,7 @@ export const contractsRouter = router({
         if (row.qbInvoiceId) {
           const existing = await db.select({ id: billingEntries.id })
             .from(billingEntries)
-            .where(eq(billingEntries.qbInvoiceId, row.qbInvoiceId))
+            .where(eq(billingEntries.qbInvoiceId as any, row.qbInvoiceId))
             .limit(1);
           if (existing.length > 0) { skipped++; continue; }
         }
@@ -728,31 +727,31 @@ export const contractsRouter = router({
           contractId: input.contractId,
           invoiceNumber: row.invoiceNumber,
           invoiceDate: row.invoiceDate ? new Date(row.invoiceDate) : undefined,
-          amount: row.amount,
-          billedAmount: row.amount,
+          amount: row.amount.toString(),
+          billedAmount: row.amount.toString(),
           description: row.description,
           source: "import",
           qbInvoiceId: row.qbInvoiceId,
-        });
+        } as any);
         imported++;
       }
 
       // Recalculate totals from all billing entries
       const allEntries = await db.select().from(billingEntries)
         .where(eq(billingEntries.contractId, input.contractId));
-      const totalBilled = allEntries.reduce((s, e) => s + (e.billedAmount ?? e.amount ?? 0), 0);
+      const totalBilled = allEntries.reduce((s, e) => s + Number(e.billedAmount ?? e.amount ?? 0), 0);
       const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.contractId)).limit(1);
       if (contract) {
         const ceiling = contract.hasNteCeiling
-          ? (contract.nteCeilingAmount ?? 0)
-          : (contract.computedContractValue ?? contract.value ?? 0);
+          ? Number(contract.nteCeilingAmount ?? 0)
+          : Number(contract.computedContractValue ?? contract.value ?? 0);
         const billingPct = ceiling > 0 ? Math.round((totalBilled / ceiling) * 100) : 0;
         await db.update(contracts).set({
-          totalBilledAmount: totalBilled,
-          billingPercentage: billingPct,
+          totalBilledAmount: totalBilled.toString(),
+          billingPercentage: billingPct.toString(),
           isBillingOverCeiling: totalBilled > ceiling,
           lastInvoicedDate: new Date(),
-        }).where(eq(contracts.id, input.contractId));
+        } as any).where(eq(contracts.id, input.contractId));
       }
 
       await persistContractFinancials(input.contractId);
@@ -762,7 +761,7 @@ export const contractsRouter = router({
   // Update billed amount on a billing entry (inline edit)
   updateBillingEntry: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       billedAmount: z.number(),
       invoiceNumber: z.string().optional(),
       invoiceDate: z.string().optional(),
@@ -775,8 +774,8 @@ export const contractsRouter = router({
       if (!entry) throw new Error("Entry not found");
 
       await db.update(billingEntries).set({
-        billedAmount: input.billedAmount,
-        amount: input.billedAmount,
+        billedAmount: input.billedAmount.toString(),
+        amount: input.billedAmount.toString(),
         invoiceNumber: input.invoiceNumber ?? entry.invoiceNumber ?? undefined,
         invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : entry.invoiceDate ?? undefined,
         description: input.description ?? entry.description ?? undefined,
@@ -785,18 +784,18 @@ export const contractsRouter = router({
       // Recalculate contract totals
       const allEntries = await db.select().from(billingEntries)
         .where(eq(billingEntries.contractId, entry.contractId));
-      const totalBilled = allEntries.reduce((s, e) => s + (e.billedAmount ?? e.amount ?? 0), 0);
+      const totalBilled = allEntries.reduce((s, e) => s + Number(e.billedAmount ?? e.amount ?? 0), 0);
       const [contract] = await db.select().from(contracts).where(eq(contracts.id, entry.contractId)).limit(1);
       if (contract) {
         const ceiling = contract.hasNteCeiling
-          ? (contract.nteCeilingAmount ?? 0)
-          : (contract.computedContractValue ?? contract.value ?? 0);
+          ? Number(contract.nteCeilingAmount ?? 0)
+          : Number(contract.computedContractValue ?? contract.value ?? 0);
         const billingPct = ceiling > 0 ? Math.round((totalBilled / ceiling) * 100) : 0;
         await db.update(contracts).set({
-          totalBilledAmount: totalBilled,
-          billingPercentage: billingPct,
+          totalBilledAmount: totalBilled.toString(),
+          billingPercentage: billingPct.toString(),
           isBillingOverCeiling: totalBilled > ceiling,
-        }).where(eq(contracts.id, entry.contractId));
+        } as any).where(eq(contracts.id, entry.contractId));
       }
       await persistContractFinancials(entry.contractId);
       return { success: true };
@@ -825,7 +824,7 @@ export const contractsRouter = router({
         computedContractValue: contracts.computedContractValue,
         value: contracts.value,
       }).from(contracts);
-      const results: { identifier: string; matched: boolean; contractId?: number; contractNumber?: string }[] = [];
+      const results: { identifier: string; matched: boolean; contractId?: string; contractNumber?: string }[] = [];
       let matched = 0;
       let unmatched = 0;
       for (const row of input.rows) {
@@ -836,13 +835,13 @@ export const contractsRouter = router({
         );
         if (!contract) { results.push({ identifier: row.contractIdentifier, matched: false }); unmatched++; continue; }
         const ceiling = contract.hasNteCeiling
-          ? (contract.nteCeilingAmount ?? 0)
-          : (contract.computedContractValue ?? contract.value ?? 0);
+          ? Number(contract.nteCeilingAmount ?? 0)
+          : Number(contract.computedContractValue ?? contract.value ?? 0);
         const billingPct = ceiling > 0 ? Math.round((row.billedToDate / ceiling) * 100) : 0;
         await db.update(contracts).set({
-          totalBilledAmount: row.billedToDate,
-          retainageAmount: row.retainageAmount ?? undefined,
-          billingPercentage: billingPct,
+          totalBilledAmount: row.billedToDate.toString(),
+          retainageAmount: row.retainageAmount?.toString() ?? undefined,
+          billingPercentage: billingPct.toString(),
           isBillingOverCeiling: row.billedToDate > ceiling,
           lastInvoicedDate: row.lastInvoiceDate ? new Date(row.lastInvoiceDate) : new Date(input.asOfDate),
         } as any).where(eq(contracts.id, contract.id));
@@ -856,7 +855,7 @@ export const contractsRouter = router({
   // Toggle an amendment between active and inactive
   setAmendmentStatus: protectedProcedure
     .input(z.object({
-      amendmentId: z.number(),
+      amendmentId: z.string().uuid(),
       status: z.enum(["active", "inactive"]),
     }))
     .mutation(async ({ input }) => {
@@ -876,7 +875,7 @@ export const contractsRouter = router({
   // Edit an amendment (amount, description, date, effect direction)
   updateAmendment: protectedProcedure
     .input(z.object({
-      amendmentId: z.number(),
+      amendmentId: z.string().uuid(),
       amountBehavior: z.enum(["adds_to_value", "subtracts_from_value"]).optional(),
       amountChange: z.number().min(0).optional(),
       description: z.string().optional(),
@@ -889,12 +888,12 @@ export const contractsRouter = router({
         .where(eq(contractAmendments.id, input.amendmentId)).limit(1);
       if (!amendment) throw new Error("Amendment not found");
       const behavior = input.amountBehavior ?? amendment.amountBehavior ?? "adds_to_value";
-      const magnitude = input.amountChange ?? amendment.amountChange ?? Math.abs(amendment.amount ?? 0);
+      const magnitude = input.amountChange ?? Number(amendment.amountChange ?? Math.abs(Number(amendment.amount ?? 0)));
       const signedAmount = behavior === "subtracts_from_value" ? -magnitude : magnitude;
       await db.update(contractAmendments).set({
         amountBehavior: behavior,
-        amountChange: magnitude,
-        amount: signedAmount,
+        amountChange: magnitude.toString(),
+        amount: signedAmount.toString(),
         description: input.description !== undefined ? input.description : (amendment.description ?? undefined),
         amendmentDate: input.date ?? amendment.amendmentDate ?? new Date(),
       } as any).where(eq(contractAmendments.id, input.amendmentId));
@@ -904,7 +903,7 @@ export const contractsRouter = router({
 
   // Delete an amendment
   deleteAmendment: protectedProcedure
-    .input(z.object({ amendmentId: z.number() }))
+    .input(z.object({ amendmentId: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");

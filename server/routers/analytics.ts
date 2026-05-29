@@ -146,7 +146,7 @@ export const analyticsRouter = router({
     const clientAnalytics = Object.values(clientMap).sort((a, b) => b.finalAmount - a.finalAmount);
 
     // Owner analytics
-    const ownerMap: Record<string, { owner: string; contractCount: number; totalAmount: number; contracts: { id: number; projectName: string; client: string; initialAmount: number }[] }> = {};
+    const ownerMap: Record<string, { owner: string; contractCount: number; totalAmount: number; contracts: { id: string; projectName: string; client: string; initialAmount: number }[] }> = {};
     for (const c of allContracts) {
       const ownerKey = (c as any).ownerName ?? "Unknown";
       if (!ownerMap[ownerKey]) ownerMap[ownerKey] = { owner: ownerKey, contractCount: 0, totalAmount: 0, contracts: [] };

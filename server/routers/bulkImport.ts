@@ -190,7 +190,7 @@ export const bulkImportRouter = router({
         }
         const data = parsed.data;
         // Check by email if provided, otherwise by first+last name
-        let existing: { id: number }[] = [];
+        let existing: { id: string }[] = [];
         if (data.email) {
           existing = await db.select({ id: people.id }).from(people)
             .where(eq(people.email, data.email)).limit(1);
@@ -234,7 +234,7 @@ export const bulkImportRouter = router({
       const result: ImportResult = { inserted: 0, updated: 0, skipped: 0, errors: [] };
       // Build a map of contractNumber → id for parent resolution
       const allContracts = await db.select({ id: contracts.id, contractNumber: contracts.contractNumber }).from(contracts);
-      const contractNumMap = new Map<string, number>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
+      const contractNumMap = new Map<string, string>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
 
       for (let i = 0; i < input.rows.length; i++) {
         const raw = input.rows[i];
@@ -246,7 +246,7 @@ export const bulkImportRouter = router({
         }
         const data = parsed.data;
         // Resolve parent
-        let parentContractId: number | undefined;
+        let parentContractId: string | undefined;
         if (data.parentContractNumber) {
           parentContractId = contractNumMap.get(data.parentContractNumber);
           if (!parentContractId) {
@@ -263,7 +263,7 @@ export const bulkImportRouter = router({
             clientName: data.clientName ?? undefined,
             ownerName: data.ownerName ?? undefined,
             status: (data.status as any) ?? undefined,
-            value: data.value ?? undefined,
+            value: data.value as any ?? undefined,
             startDate: parseDate(data.startDate),
             endDate: parseDate(data.endDate),
             notes: data.notes ?? undefined,
@@ -273,7 +273,7 @@ export const bulkImportRouter = router({
           }).where(eq(contracts.id, existingId));
           result.updated++;
         } else {
-          const created = await db.insert(contracts).values({
+          await db.insert(contracts).values({
             title: data.title,
             contractNumber: data.contractNumber ?? undefined,
             projectNumber: data.projectNumber ?? undefined,
@@ -288,7 +288,7 @@ export const bulkImportRouter = router({
             performingCompanyName: data.performingCompanyName ?? undefined,
             parentContractId: parentContractId ?? undefined,
             level: data.level ?? 1,
-          });
+          } as any);
           // Re-query to get the inserted id
           if (data.contractNumber) {
             const newRow = await db.select({ id: contracts.id }).from(contracts)
@@ -309,7 +309,7 @@ export const bulkImportRouter = router({
       if (!db) throw new Error("Database unavailable");
       const result: ImportResult = { inserted: 0, updated: 0, skipped: 0, errors: [] };
       const allContracts = await db.select({ id: contracts.id, contractNumber: contracts.contractNumber }).from(contracts);
-      const contractNumMap = new Map<string, number>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
+      const contractNumMap = new Map<string, string>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
 
       for (let i = 0; i < input.rows.length; i++) {
         const raw = input.rows[i];
@@ -330,7 +330,7 @@ export const bulkImportRouter = router({
           contractId,
           amendmentNumber: data.amendmentNumber ?? undefined,
           amendmentType: (data.amendmentType as any) ?? "amendment",
-          amount: data.amount ?? 0,
+          amount: data.amount as any ?? 0,
           amountBehavior: (data.amountBehavior as any) ?? "adds_to_value",
           description: data.description ?? undefined,
           amendmentDate: parseDate(data.amendmentDate),
@@ -349,7 +349,7 @@ export const bulkImportRouter = router({
       if (!db) throw new Error("Database unavailable");
       const result: ImportResult = { inserted: 0, updated: 0, skipped: 0, errors: [] };
       const allContracts = await db.select({ id: contracts.id, contractNumber: contracts.contractNumber }).from(contracts);
-      const contractNumMap = new Map<string, number>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
+      const contractNumMap = new Map<string, string>(allContracts.filter(c => c.contractNumber).map(c => [c.contractNumber!, c.id]));
 
       for (let i = 0; i < input.rows.length; i++) {
         const raw = input.rows[i];
@@ -379,9 +379,9 @@ export const bulkImportRouter = router({
           contractId,
           invoiceNumber: data.invoiceNumber ?? undefined,
           invoiceDate: parseDate(data.invoiceDate),
-          amount: data.amount ?? 0,
-          billedAmount: data.billedAmount ?? data.amount ?? 0,
-          retainageAmount: data.retainageAmount ?? 0,
+          amount: data.amount as any ?? 0,
+          billedAmount: (data.billedAmount ?? data.amount ?? 0) as any,
+          retainageAmount: data.retainageAmount as any ?? 0,
           description: data.description ?? undefined,
           source: "import",
         });
@@ -467,7 +467,7 @@ export const bulkImportRouter = router({
         }
         const data = parsed.data;
         // Check by rfpNumber if provided
-        let existing: { id: number }[] = [];
+        let existing: { id: string }[] = [];
         if (data.rfpNumber) {
           existing = await db.select({ id: opportunities.id }).from(opportunities)
             .where(eq(opportunities.rfpNumber, data.rfpNumber)).limit(1);
@@ -477,7 +477,7 @@ export const bulkImportRouter = router({
             title: data.title,
             clientName: data.clientName ?? undefined,
             description: data.description ?? undefined,
-            estimatedValue: data.estimatedValue ?? undefined,
+            estimatedValue: data.estimatedValue as any ?? undefined,
             dueDate: parseDate(data.dueDate),
             status: (data.status as any) ?? undefined,
           }).where(eq(opportunities.id, existing[0].id));
@@ -488,7 +488,7 @@ export const bulkImportRouter = router({
             rfpNumber: data.rfpNumber ?? undefined,
             clientName: data.clientName ?? undefined,
             description: data.description ?? undefined,
-            estimatedValue: data.estimatedValue ?? undefined,
+            estimatedValue: data.estimatedValue as any ?? undefined,
             dueDate: parseDate(data.dueDate),
             status: (data.status as any) ?? "new",
           });

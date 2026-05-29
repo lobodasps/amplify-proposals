@@ -13,7 +13,7 @@ export const opportunitiesRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -22,7 +22,7 @@ export const opportunitiesRouter = router({
     }),
 
   updateStatus: protectedProcedure
-    .input(z.object({ id: z.number(), status: z.string() }))
+    .input(z.object({ id: z.string().uuid(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -97,11 +97,11 @@ export const opportunitiesRouter = router({
         title: input.title,
         clientName: input.clientName ?? input.agencyName,
         description: input.description,
-        estimatedValue: input.estimatedValue,
+        estimatedValue: input.estimatedValue?.toString(),
         dueDate: input.dueDate,
         source: (input.source as any) ?? "manual",
         sourceUrl: input.sourceUrl,
-        aiScore: input.aiScore,
+        aiScore: input.aiScore?.toString(),
         aiScoreReason: input.aiScoreReason,
         status: "new",
       });
@@ -110,7 +110,7 @@ export const opportunitiesRouter = router({
 
   // ─── Competitors ────────────────────────────────────────────────────────────
   listCompetitors: protectedProcedure
-    .input(z.object({ opportunityId: z.number() }))
+    .input(z.object({ opportunityId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -121,7 +121,7 @@ export const opportunitiesRouter = router({
 
   addCompetitor: protectedProcedure
     .input(z.object({
-      opportunityId: z.number(),
+      opportunityId: z.string().uuid(),
       firmName: z.string().min(1),
       role: z.string().optional(),
       isWinner: z.boolean().optional(),
@@ -136,14 +136,14 @@ export const opportunitiesRouter = router({
         firmName: input.firmName,
         role: input.role,
         isWinner: input.isWinner ?? false,
-        winningFee: input.winningFee,
+        winningFee: input.winningFee?.toString(),
         notes: input.notes,
       });
       return { success: true };
     }),
 
   removeCompetitor: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -153,7 +153,7 @@ export const opportunitiesRouter = router({
 
   // ─── Debrief ────────────────────────────────────────────────────────────────
   getDebrief: protectedProcedure
-    .input(z.object({ opportunityId: z.number() }))
+    .input(z.object({ opportunityId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -164,7 +164,7 @@ export const opportunitiesRouter = router({
 
   upsertDebrief: protectedProcedure
     .input(z.object({
-      opportunityId: z.number(),
+      opportunityId: z.string().uuid(),
       outcome: z.string().optional(),
       winningFirm: z.string().optional(),
       winningFee: z.number().optional(),

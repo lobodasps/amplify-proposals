@@ -13,7 +13,7 @@ export const proposalsRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -22,7 +22,7 @@ export const proposalsRouter = router({
     }),
 
   getSections: protectedProcedure
-    .input(z.object({ proposalId: z.number() }))
+    .input(z.object({ proposalId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -31,7 +31,7 @@ export const proposalsRouter = router({
 
   create: protectedProcedure
     .input(z.object({
-      pursuitId: z.number().optional(),
+      pursuitId: z.string().uuid().optional(),
       title: z.string().min(1),
       clientName: z.string().optional(),
       rfpNumber: z.string().optional(),
@@ -139,12 +139,12 @@ export const proposalsRouter = router({
   /** Tailor a resume — uses the resume_tailor skill */
   tailorResume: protectedProcedure
     .input(z.object({
-      personnelId: z.number(),
+      personnelId: z.string().uuid(),
       personnelName: z.string(),
       currentResume: z.string(),
       rfpRequirements: z.string(),
       targetRole: z.string(),
-      proposalId: z.number(),
+      proposalId: z.string().uuid(),
     }))
     .mutation(async ({ input }) => {
       const result = await invokeLLMWithSkill({

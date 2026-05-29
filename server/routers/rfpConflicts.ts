@@ -47,8 +47,8 @@ export const rfpConflictsRouter = router({
   /** List all conflicts for a shred */
   list: protectedProcedure
     .input(z.object({
-      shredId: z.number().optional(),
-      pursuitId: z.number().optional(),
+      shredId: z.string().uuid().optional(),
+      pursuitId: z.string().uuid().optional(),
       status: z.enum(["open", "resolved", "acknowledged", "all"]).default("all"),
     }))
     .query(async ({ input }) => {
@@ -74,7 +74,7 @@ export const rfpConflictsRouter = router({
 
   /** Get conflict summary counts for a shred */
   summary: protectedProcedure
-    .input(z.object({ shredId: z.number() }))
+    .input(z.object({ shredId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { critical: 0, warning: 0, info: 0, total: 0 };
@@ -102,8 +102,8 @@ export const rfpConflictsRouter = router({
    */
   detect: protectedProcedure
     .input(z.object({
-      shredId: z.number(),
-      pursuitId: z.number().optional(),
+      shredId: z.string().uuid(),
+      pursuitId: z.string().uuid().optional(),
       /** Replace existing conflicts for this shred */
       replace: z.boolean().default(true),
     }))
@@ -309,7 +309,7 @@ Return ONLY a JSON array with this structure:
   /** Resolve or acknowledge a conflict */
   updateStatus: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       status: z.enum(["open", "resolved", "acknowledged"]),
       resolvedNote: z.string().optional(),
     }))
@@ -327,7 +327,7 @@ Return ONLY a JSON array with this structure:
 
   /** Delete a conflict */
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");

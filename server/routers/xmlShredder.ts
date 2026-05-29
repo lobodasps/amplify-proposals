@@ -37,8 +37,8 @@ export const xmlShredderRouter = router({
     .input(
       z
         .object({
-          proposalId: z.number().optional(),
-          pursuitId: z.number().optional(),
+          proposalId: z.string().uuid().optional(),
+          pursuitId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -57,7 +57,7 @@ export const xmlShredderRouter = router({
 
   /** Get a single shred by ID */
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -81,8 +81,8 @@ export const xmlShredderRouter = router({
         fileKey: z.string(),
         mimeType: z.string().optional(),
         fileSize: z.number().optional(),
-        proposalId: z.number().optional(),
-        pursuitId: z.number().optional(),
+        proposalId: z.string().uuid().optional(),
+        pursuitId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -153,8 +153,8 @@ export const xmlShredderRouter = router({
     .input(
       z.object({
         packageName: z.string(),
-        pursuitId: z.number().optional(),
-        proposalId: z.number().optional(),
+        pursuitId: z.string().uuid().optional(),
+        proposalId: z.string().uuid().optional(),
         files: z.array(
           z.object({
             fileName: z.string(),
@@ -259,7 +259,7 @@ export const xmlShredderRouter = router({
 
   /** Delete a shred record */
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");

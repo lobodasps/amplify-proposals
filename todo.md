@@ -437,3 +437,10 @@
 - [x] Step 6: Insert 3 real personnel records (Gregg, Renuka, Karen) and link to profiles
 - [x] Step 7: Replace Manus custom auth with Supabase Auth (server-side only)
 - [x] Step 8: Verify vitest suite passes (16/16) and app loads
+
+## Router Type Fix Pass (UUID Migration)
+- [x] Fix dam.ts: z.number() → z.string().uuid(), eq() calls to string
+- [x] Fix contracts.ts: z.number() → z.string().uuid(), eq() calls to string
+- [x] Fix remaining routers: assets, pursuits, proposals, personnel, projects, opportunities, analytics, rfpSessions, etc.
+- [x] Zero server-side TypeScript errors (140 client-side remain — client files not touched per instructions)
+- [x] All 16 vitest tests pass

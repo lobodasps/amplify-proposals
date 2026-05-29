@@ -52,7 +52,7 @@ export const rfpWikiRouter = router({
 
   /** Get the structured index for a shred */
   getIndex: protectedProcedure
-    .input(z.object({ shredId: z.number() }))
+    .input(z.object({ shredId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -83,7 +83,7 @@ export const rfpWikiRouter = router({
 
   /** List all structured indexes */
   listIndexes: protectedProcedure
-    .input(z.object({ pursuitId: z.number().optional() }))
+    .input(z.object({ pursuitId: z.string().uuid().optional() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -93,7 +93,7 @@ export const rfpWikiRouter = router({
 
   /** Get the legacy wiki content (kept for backward compat) */
   getByShredId: protectedProcedure
-    .input(z.object({ shredId: z.number() }))
+    .input(z.object({ shredId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -124,8 +124,8 @@ export const rfpWikiRouter = router({
    */
   extractIndex: protectedProcedure
     .input(z.object({
-      shredId: z.number(),
-      pursuitId: z.number().optional(),
+      shredId: z.string().uuid(),
+      pursuitId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -250,7 +250,7 @@ Return a JSON object with these keys:
    */
   query: protectedProcedure
     .input(z.object({
-      shredId: z.number(),
+      shredId: z.string().uuid(),
       question: z.string().min(3).max(1000),
       /** Optional: focus the answer on specific fact types */
       focusAreas: z.array(z.enum([
@@ -336,8 +336,8 @@ Question: ${input.question}`,
    */
   compile: protectedProcedure
     .input(z.object({
-      shredId: z.number(),
-      proposalId: z.number().optional(),
+      shredId: z.string().uuid(),
+      proposalId: z.string().uuid().optional(),
       firmContext: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -370,14 +370,14 @@ Mark any detected contradictions with ⚠️ CONFLICT: prefix.`,
 
       const existing = await db.select().from(rfpWikis).where(eq(rfpWikis.shredId, input.shredId)).limit(1);
 
-      let wikiId: number;
+      let wikiId: string;
       if (existing.length > 0) {
         await db.update(rfpWikis).set({ wikiContent, tokenEstimate, compiledAt: new Date(), proposalId: input.proposalId }).where(eq(rfpWikis.shredId, input.shredId));
         wikiId = existing[0].id;
       } else {
         await db.insert(rfpWikis).values({ shredId: input.shredId, proposalId: input.proposalId, wikiContent, tokenEstimate, createdBy: ctx.user.id });
         const newRows = await db.select().from(rfpWikis).where(eq(rfpWikis.shredId, input.shredId)).orderBy(desc(rfpWikis.compiledAt)).limit(1);
-        wikiId = newRows[0]?.id ?? 0;
+        wikiId = newRows[0]?.id ?? "";
       }
 
       return { id: wikiId, wikiContent, tokenEstimate, _provider: result._provider, _model: result._model };
@@ -385,7 +385,7 @@ Mark any detected contradictions with ⚠️ CONFLICT: prefix.`,
 
   /** Delete a wiki */
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");

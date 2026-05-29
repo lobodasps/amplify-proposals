@@ -32,7 +32,7 @@ export const contractAnalyzerRouter = router({
 
   // Get a specific analysis
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -46,7 +46,7 @@ export const contractAnalyzerRouter = router({
       fileUrl: z.string().url(),
       fileName: z.string(),
       fileKey: z.string().optional(),
-      contractId: z.number().optional(),
+      contractId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -60,7 +60,7 @@ export const contractAnalyzerRouter = router({
         fileKey: input.fileKey,
         status: "processing",
         createdBy: ctx.user?.id,
-      }).$returningId();
+      }).returning({ id: contractAnalyses.id });
 
       try {
         // Dispatch to the contract_analyzer skill (provider/model/prompts from Settings → AI Skills)
@@ -109,7 +109,7 @@ export const contractAnalyzerRouter = router({
 
   // Delete an analysis
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -119,7 +119,7 @@ export const contractAnalyzerRouter = router({
 
   // Link analysis to a contract record
   linkToContract: protectedProcedure
-    .input(z.object({ analysisId: z.number(), contractId: z.number() }))
+    .input(z.object({ analysisId: z.string().uuid(), contractId: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");

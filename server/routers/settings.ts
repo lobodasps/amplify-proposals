@@ -27,14 +27,14 @@ export const entitiesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(entities).values(input).$returningId();
+      const [created] = await db.insert(entities).values(input).returning({ id: entities.id });
       const rows = await db.select().from(entities).where(eq(entities.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       name: z.string().min(1).optional(),
       shortName: z.string().optional(),
       badgeColor: z.string().optional(),
@@ -52,7 +52,7 @@ export const entitiesRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -75,13 +75,13 @@ export const orderTypesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(orderTypes).values(input).$returningId();
+      const [created] = await db.insert(orderTypes).values(input).returning({ id: orderTypes.id });
       const rows = await db.select().from(orderTypes).where(eq(orderTypes.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), name: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
+    .input(z.object({ id: z.string().uuid(), name: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -92,7 +92,7 @@ export const orderTypesRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -115,13 +115,13 @@ export const departmentsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(departments).values(input).$returningId();
+      const [created] = await db.insert(departments).values(input).returning({ id: departments.id });
       const rows = await db.select().from(departments).where(eq(departments.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), name: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
+    .input(z.object({ id: z.string().uuid(), name: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -132,7 +132,7 @@ export const departmentsRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -155,13 +155,13 @@ export const serviceTypesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(serviceTypes).values(input).$returningId();
+      const [created] = await db.insert(serviceTypes).values(input).returning({ id: serviceTypes.id });
       const rows = await db.select().from(serviceTypes).where(eq(serviceTypes.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), name: z.string().optional(), code: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
+    .input(z.object({ id: z.string().uuid(), name: z.string().optional(), code: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -172,7 +172,7 @@ export const serviceTypesRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -195,13 +195,13 @@ export const form254CodesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(form254Codes).values(input).$returningId();
+      const [created] = await db.insert(form254Codes).values(input).returning({ id: form254Codes.id });
       const rows = await db.select().from(form254Codes).where(eq(form254Codes.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), code: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
+    .input(z.object({ id: z.string().uuid(), code: z.string().optional(), description: z.string().optional(), active: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -212,7 +212,7 @@ export const form254CodesRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -236,7 +236,7 @@ export const organizationsRouter = router({
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -260,14 +260,14 @@ export const organizationsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(organizations).values(input).$returningId();
+      const [created] = await db.insert(organizations).values(input).returning({ id: organizations.id });
       const rows = await db.select().from(organizations).where(eq(organizations.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       name: z.string().optional(),
       orgType: z.string().optional(),
       address: z.string().optional(),
@@ -290,7 +290,7 @@ export const organizationsRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -303,7 +303,7 @@ export const organizationsRouter = router({
 
 export const peopleRouter = router({
   list: protectedProcedure
-    .input(z.object({ role: z.string().optional(), organizationId: z.number().optional() }).optional())
+    .input(z.object({ role: z.string().optional(), organizationId: z.string().uuid().optional() }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -314,7 +314,7 @@ export const peopleRouter = router({
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -327,7 +327,7 @@ export const peopleRouter = router({
       firstName: z.string().min(1),
       lastName: z.string().min(1),
       role: z.string().default("PM"),
-      organizationId: z.number().optional(),
+      organizationId: z.string().uuid().optional(),
       organizationName: z.string().optional(),
       email: z.string().optional(),
       phone: z.string().optional(),
@@ -336,18 +336,18 @@ export const peopleRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(people).values(input).$returningId();
+      const [created] = await db.insert(people).values(input).returning({ id: people.id });
       const rows = await db.select().from(people).where(eq(people.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       firstName: z.string().optional(),
       lastName: z.string().optional(),
       role: z.string().optional(),
-      organizationId: z.number().optional(),
+      organizationId: z.string().uuid().optional(),
       organizationName: z.string().optional(),
       email: z.string().optional(),
       phone: z.string().optional(),
@@ -358,13 +358,13 @@ export const peopleRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       const { id, ...data } = input;
-      await db.update(people).set(data).where(eq(people.id, id));
+      await db.update(people).set(data as any).where(eq(people.id, id));
       const rows = await db.select().from(people).where(eq(people.id, id));
       return rows[0];
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -420,14 +420,14 @@ export const glossaryRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const [created] = await db.insert(glossaryTerms).values(input).$returningId();
+      const [created] = await db.insert(glossaryTerms).values(input).returning({ id: glossaryTerms.id });
       const rows = await db.select().from(glossaryTerms).where(eq(glossaryTerms.id, created.id));
       return rows[0];
     }),
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.string().uuid(),
       term: z.string().optional(),
       definition: z.string().optional(),
       characteristics: z.array(z.string()).optional(),
@@ -447,7 +447,7 @@ export const glossaryRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
