@@ -35,7 +35,7 @@ interface ConflictingFact {
 }
 
 interface Conflict {
-  id: number;
+  id: string;
   conflictType: string;
   severity: string;
   title: string;
@@ -112,8 +112,8 @@ function ConflictCard({
   onAcknowledge,
 }: {
   conflict: Conflict;
-  onResolve: (id: number) => void;
-  onAcknowledge: (id: number) => void;
+  onResolve: (id: string) => void;
+  onAcknowledge: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const sev = SEVERITY_CONFIG[conflict.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.info;
@@ -229,10 +229,10 @@ function ConflictCard({
 
 export default function ConflictDetector() {
   const { pursuitId } = useRfpContext();
-  const [selectedShredId, setSelectedShredId] = useState<number | null>(null);
+  const [selectedShredId, setSelectedShredId] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("open");
-  const [resolveDialogId, setResolveDialogId] = useState<number | null>(null);
+  const [resolveDialogId, setResolveDialogId] = useState<string | null>(null);
   const [resolveNote, setResolveNote] = useState("");
 
   const utils = trpc.useUtils();
@@ -285,11 +285,11 @@ export default function ConflictDetector() {
     });
   };
 
-  const handleResolve = (id: number) => {
+  const handleResolve = (id: string) => {
     setResolveDialogId(id);
   };
 
-  const handleAcknowledge = (id: number) => {
+  const handleAcknowledge = (id: string) => {
     updateStatusMutation.mutate({ id, status: "acknowledged" });
   };
 
@@ -370,7 +370,7 @@ export default function ConflictDetector() {
           <CardContent className="space-y-4">
             <Select
               value={selectedShredId?.toString() ?? ""}
-              onValueChange={(v) => setSelectedShredId(Number(v))}
+              onValueChange={(v) => setSelectedShredId(v)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a completed shred…" />

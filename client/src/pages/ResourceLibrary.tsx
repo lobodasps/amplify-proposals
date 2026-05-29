@@ -60,11 +60,11 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function parseTagIds(raw: unknown): number[] {
+function parseTagIds(raw: unknown): string[] {
   if (!raw) return [];
   try {
     const p = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return Array.isArray(p) ? p.map(Number).filter(Boolean) : [];
+    return Array.isArray(p) ? p.map(String).filter(Boolean) : [];
   } catch { return []; }
 }
 
@@ -76,16 +76,16 @@ function AssetCard({
   asset: any;
   allTags: TagDef[];
   onDelete: () => void;
-  onTagsChange: (tagIds: number[]) => void;
+  onTagsChange: (tagIds: string[]) => void;
 }) {
   const Icon = ASSET_TYPE_ICONS[asset.assetType ?? "other"] ?? File;
   const colorClass = ASSET_TYPE_COLORS[asset.assetType ?? "other"] ?? "text-slate-500 bg-slate-100";
   const tagIds = parseTagIds(asset.tags);
   const assetTagDefs = allTags.filter((t) => tagIds.includes(t.id));
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
-  const [localTagIds, setLocalTagIds] = useState<number[]>(tagIds);
+  const [localTagIds, setLocalTagIds] = useState<string[]>(tagIds);
 
-  const handleTagToggle = (id: number) => {
+  const handleTagToggle = (id: string) => {
     setLocalTagIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
@@ -183,12 +183,12 @@ export default function ResourceLibrary() {
   const [activeTab, setActiveTab] = useState("all");
   const [search, setSearch] = useState("");
   const [assetType, setAssetType] = useState("all");
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({
-    name: "", description: "", assetType: "document", folder: "root", tagIds: [] as number[],
+    name: "", description: "", assetType: "document", folder: "root", tagIds: [] as string[],
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -223,7 +223,7 @@ export default function ResourceLibrary() {
     onError: (e) => toast.error(e.message),
   });
 
-  const handleTagToggle = useCallback((id: number) => {
+  const handleTagToggle = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );

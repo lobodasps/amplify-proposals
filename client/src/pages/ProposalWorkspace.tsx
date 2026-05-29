@@ -182,7 +182,7 @@ function SkillOutputEditor({
 }: {
   skillName: WorkflowSkillName;
   output: string;
-  sessionId: number;
+  sessionId: string;
   isComplete: boolean;
   onSaved: (newOutput: string) => void;
 }) {
@@ -398,7 +398,7 @@ export default function ProposalWorkspace() {
   // Route param is the proposalId (from /proposals/:id)
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
-  const proposalId = parseInt(id ?? "0", 10);
+  const proposalId = id ?? "";
 
   // ── tRPC utils ─────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
@@ -478,7 +478,7 @@ export default function ProposalWorkspace() {
   // • On browser close mid-run: DB already has all completed outputs saved.
   // ─────────────────────────────────────────────────────────────────────────
   const runSequentialWorkflow = useCallback(
-    async (startFrom: WorkflowSkillName, sessionId: number) => {
+    async (startFrom: WorkflowSkillName, sessionId: string) => {
       abortRef.current = false;
       setIsRunning(true);
 

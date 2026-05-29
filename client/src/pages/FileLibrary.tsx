@@ -57,11 +57,11 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function parseTagIds(raw: unknown): number[] {
+function parseTagIds(raw: unknown): string[] {
   if (!raw) return [];
   try {
     const p = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return Array.isArray(p) ? p.map(Number).filter(Boolean) : [];
+    return Array.isArray(p) ? p.map(String).filter(Boolean) : [];
   } catch { return []; }
 }
 
@@ -136,7 +136,7 @@ function AssetRow({
 export default function FileLibrary() {
   const [search, setSearch] = useState("");
   const [assetType, setAssetType] = useState("all");
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [showTagManager, setShowTagManager] = useState(false);
 
   const utils = trpc.useUtils();
@@ -156,7 +156,7 @@ export default function FileLibrary() {
     onError: (e) => toast.error(e.message),
   });
 
-  const handleTagToggle = useCallback((id: number) => {
+  const handleTagToggle = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );

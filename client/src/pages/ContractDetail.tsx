@@ -23,9 +23,9 @@ import {
   Trash2, ToggleLeft, ToggleRight
 } from "lucide-react";
 
-function formatCurrency(v?: number | null) {
+function formatCurrency(v?: number | string | null) {
   if (v == null) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v));
 }
 
 function formatDate(v?: Date | string | null) {
@@ -65,7 +65,7 @@ function getEndDateWarning(endDate: Date | string | null | undefined) {
 }
 
 function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, onSuccess }: {
-  parentId: number; parentNumber: string; parentLevel: number;
+  parentId: string; parentNumber: string; parentLevel: number;
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
   const [title, setTitle] = useState("");
@@ -117,7 +117,7 @@ function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, on
               title: title.trim(),
               contractValue: value ? parseFloat(value) : undefined,
               notes: notes || undefined,
-              tierLabelId: (tierLabelId && tierLabelId !== "__none__") ? parseInt(tierLabelId) : undefined,
+              tierLabelId: (tierLabelId && tierLabelId !== "__none__") ? tierLabelId : undefined,
             })}>
             {createChild.isPending ? "Creating…" : `Add ${childLabel}`}
           </Button>
@@ -128,7 +128,7 @@ function AddChildDialog({ parentId, parentNumber, parentLevel, open, onClose, on
 }
 
 function AddAmendmentDialog({ contractId, contractNumber, type, open, onClose, onSuccess }: {
-  contractId: number; contractNumber: string; type: "amendment" | "change_order";
+  contractId: string; contractNumber: string; type: "amendment" | "change_order";
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
   const [amountBehavior, setAmountBehavior] = useState<"adds_to_value" | "subtracts_from_value">("adds_to_value");
@@ -242,7 +242,7 @@ function EditAmendmentDialog({ amendment, open, onClose, onSuccess }: {
   );
 }
 
-function QbImportDialog({ contractId, open, onClose, onSuccess }: { contractId: number; open: boolean; onClose: () => void; onSuccess: () => void }) {
+function QbImportDialog({ contractId, open, onClose, onSuccess }: { contractId: string; open: boolean; onClose: () => void; onSuccess: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<any[]>([]);
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload");
@@ -347,10 +347,10 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
   const { data: serviceTypes = [] } = trpc.serviceTypes.list.useQuery();
   const { data: form254Codes = [] } = trpc.form254Codes.list.useQuery();
 
-  const parseServiceTypeIds = (v: any): number[] => {
+  const parseServiceTypeIds = (v: any): string[] => {
     if (!v) return [];
-    if (Array.isArray(v)) return v.map(Number);
-    try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(Number) : []; } catch { return []; }
+    if (Array.isArray(v)) return v.map(String);
+    try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(String) : []; } catch { return []; }
   };
 
   const [form, setForm] = useState({
@@ -387,7 +387,7 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
     onError: (e) => toast.error(e.message),
   });
 
-  const toggleServiceType = (id: number) => {
+  const toggleServiceType = (id: string) => {
     setForm(f => ({
       ...f,
       serviceTypeIds: f.serviceTypeIds.includes(id)
@@ -648,8 +648,8 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             title: form.title,
             clientName: form.clientName,
             ownerName: form.ownerName,
-            clientOrgId: (form.clientOrgId && form.clientOrgId !== "__none__") ? parseInt(form.clientOrgId) : undefined,
-            ownerOrgId: (form.ownerOrgId && form.ownerOrgId !== "__none__") ? parseInt(form.ownerOrgId) : undefined,
+            clientOrgId: (form.clientOrgId && form.clientOrgId !== "__none__") ? form.clientOrgId : undefined,
+            ownerOrgId: (form.ownerOrgId && form.ownerOrgId !== "__none__") ? form.ownerOrgId : undefined,
             clientProjectRef: form.clientProjectRef || undefined,
             contractManagerName: form.contractManagerName || undefined,
             primaryLocation: form.primaryLocation || undefined,
@@ -660,11 +660,11 @@ function EditContractDialog({ contract, open, onClose, onSuccess }: { contract: 
             qbName: form.qbName || undefined,
             timeCode: form.timeCode || undefined,
             isPublic: form.isPublic,
-            departmentId: (form.departmentId && form.departmentId !== "__none__") ? parseInt(form.departmentId) : undefined,
+            departmentId: (form.departmentId && form.departmentId !== "__none__") ? form.departmentId : undefined,
             serviceTypeIds: form.serviceTypeIds.length > 0 ? form.serviceTypeIds : undefined,
-            form254CodeId: (form.form254CodeId && form.form254CodeId !== "__none__") ? parseInt(form.form254CodeId) : undefined,
-            projectManagerId: (form.projectManagerId && form.projectManagerId !== "__none__") ? parseInt(form.projectManagerId) : undefined,
-            projectAccountantId: (form.projectAccountantId && form.projectAccountantId !== "__none__") ? parseInt(form.projectAccountantId) : undefined,
+            form254CodeId: (form.form254CodeId && form.form254CodeId !== "__none__") ? form.form254CodeId : undefined,
+            projectManagerId: (form.projectManagerId && form.projectManagerId !== "__none__") ? form.projectManagerId : undefined,
+            projectAccountantId: (form.projectAccountantId && form.projectAccountantId !== "__none__") ? form.projectAccountantId : undefined,
             notes: form.notes || undefined,
             hasNteCeiling: form.hasNteCeiling,
             nteCeilingAmount: form.nteCeilingAmount ? parseFloat(form.nteCeilingAmount) : undefined,
@@ -725,8 +725,8 @@ function CompliancePanel({ contract, onRefresh }: { contract: any; onRefresh: ()
 
 function HierarchyNode({ node, depth = 0, onAddChild, onAddAmendment }: {
   node: any; depth?: number;
-  onAddChild: (id: number, num: string, level: number) => void;
-  onAddAmendment: (id: number, num: string, type: "amendment" | "change_order") => void;
+  onAddChild: (id: string, num: string, level: number) => void;
+  onAddAmendment: (id: string, num: string, type: "amendment" | "change_order") => void;
 }) {
   const [, navigate] = useLocation();
   const nodeLabel = node.tierLabelName ?? NODE_LABELS[node.nodeType ?? "contract"] ?? "Contract";
@@ -765,7 +765,7 @@ function HierarchyNode({ node, depth = 0, onAddChild, onAddAmendment }: {
 export default function ContractDetail() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
-  const contractId = parseInt(params.id ?? "0");
+  const contractId = params.id ?? "";
 
   const { data, isLoading, refetch } = trpc.contracts.getWithChildren.useQuery({ id: contractId }, { enabled: !!contractId });
   const { data: financialsData, refetch: refetchFinancials } = trpc.contracts.getFinancials.useQuery(
@@ -782,8 +782,8 @@ export default function ContractDetail() {
   });
 
   const [editOpen, setEditOpen] = useState(false);
-  const [addChildTarget, setAddChildTarget] = useState<{ id: number; num: string; level: number } | null>(null);
-  const [addAmendTarget, setAddAmendTarget] = useState<{ id: number; num: string; type: "amendment" | "change_order" } | null>(null);
+  const [addChildTarget, setAddChildTarget] = useState<{ id: string; num: string; level: number } | null>(null);
+  const [addAmendTarget, setAddAmendTarget] = useState<{ id: string; num: string; type: "amendment" | "change_order" } | null>(null);
   const [editAmendment, setEditAmendment] = useState<any | null>(null);
   const [qbImportOpen, setQbImportOpen] = useState(false);
 
@@ -822,11 +822,11 @@ export default function ContractDetail() {
   const allocatedToChildren = children.reduce((sum: number, c: any) => sum + (c.value ?? 0), 0);
   // Use server-computed financials when available; fall back to inline for non-NTE
   const financials = financialsData ?? {
-    selfContractValue: contract.value ?? 0,
-    authorizedValue: contract.computedContractValue ?? contract.value ?? 0,
+    selfContractValue: Number(contract.value) || 0,
+    authorizedValue: Number(contract.computedContractValue ?? contract.value) || 0,
     allocatedToChildren,
-    billedToDate: contract.totalBilledAmount ?? 0,
-    remaining: (contract.computedContractValue ?? contract.value ?? 0) - (contract.totalBilledAmount ?? 0),
+    billedToDate: Number(contract.totalBilledAmount) || 0,
+    remaining: (Number(contract.computedContractValue ?? contract.value) || 0) - (Number(contract.totalBilledAmount) || 0),
     descendantCount: children.length,
   };
   // Attach contract dates to financials for burn-rate display
@@ -949,11 +949,11 @@ export default function ContractDetail() {
               </tbody>
               {/* Footer: committed vs ceiling totals */}
               {(() => {
-                const totalCommitted = children.reduce((sum: number, c: any) => sum + (c.computedContractValue ?? c.value ?? 0), 0);
-                const totalBilledAll = children.reduce((sum: number, c: any) => sum + (c.totalBilledAmount ?? 0), 0);
+                const totalCommitted = children.reduce((sum: number, c: any) => sum + (Number(c.computedContractValue ?? c.value) || 0), 0);
+                const totalBilledAll = children.reduce((sum: number, c: any) => sum + (Number(c.totalBilledAmount) || 0), 0);
                 // Use effectiveCeiling from financials (includes approved amendments) rather than raw nteCeilingAmount
-                const originalCeiling = contract.nteCeilingAmount ?? 0;
-                const nteCeiling = (financialsData?.effectiveCeiling ?? originalCeiling) ?? 0;
+                const originalCeiling = Number(contract.nteCeilingAmount) || 0;
+                const nteCeiling = Number(financialsData?.effectiveCeiling ?? originalCeiling) || 0;
                 const ceilingWasAmended = nteCeiling !== originalCeiling && originalCeiling > 0;
                 const overCommittedAmt = totalCommitted - nteCeiling;
                 const isOverCommitted = nteCeiling > 0 && totalCommitted > nteCeiling;

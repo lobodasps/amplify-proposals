@@ -102,7 +102,7 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
     projectAccountantId: "__none__",
     departmentId: "__none__",
     form254CodeId: "__none__",
-    serviceTypeIds: [] as number[],
+    serviceTypeIds: [] as string[],
     qbName: "",
     timeCode: "",
     hasNteCeiling: false,
@@ -113,9 +113,9 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
 
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
-  const toggleServiceType = (id: number) =>
+  const toggleServiceType = (id: string) =>
     set("serviceTypeIds", form.serviceTypeIds.includes(id)
-      ? form.serviceTypeIds.filter((x: number) => x !== id)
+      ? form.serviceTypeIds.filter((x: string) => x !== id)
       : [...form.serviceTypeIds, id]);
 
   const createMutation = trpc.contracts.create.useMutation({
@@ -129,7 +129,7 @@ function CreateContractDialog({ onClose }: { onClose: () => void }) {
 
   function handleSubmit() {
     if (!form.title.trim()) { toast.error("Contract title is required"); return; }
-    const parseId = (v: string) => v && v !== "__none__" && v !== "__manual__" ? parseInt(v) : undefined;
+    const parseId = (v: string) => v && v !== "__none__" && v !== "__manual__" ? v : undefined;
     const parseDate = (v: string) => {
       if (!v) return undefined;
       const d = new Date(v + "T00:00:00");
@@ -540,7 +540,7 @@ export default function Contracts() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Hierarchy expansion
-  const [expandedParents, setExpandedParents] = useState<Set<number>>(new Set());
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
   // Activate dialog
   const [activatingContract, setActivatingContract] = useState<any | null>(null);
@@ -552,7 +552,7 @@ export default function Contracts() {
     else { setSortColumn(col); setSortDir("asc"); }
   }
 
-  function toggleExpand(id: number, e: React.MouseEvent) {
+  function toggleExpand(id: string, e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     setExpandedParents(prev => {
       const next = new Set(prev);
@@ -575,7 +575,7 @@ export default function Contracts() {
 
   // Parent → children map
   const childrenByParent = useMemo(() => {
-    const map = new Map<number, any[]>();
+    const map = new Map<string, any[]>();
     allContracts.forEach(c => {
       if (c.parentContractId) {
         const arr = map.get(c.parentContractId) ?? [];
@@ -587,14 +587,14 @@ export default function Contracts() {
   }, [allContracts]);
 
   // Rolled-up financials for parent contracts
-  function getRolledUp(contractId: number): { value: number; authorized: number; billed: number } {
+  function getRolledUp(contractId: string): { value: number; authorized: number; billed: number } {
     const children = childrenByParent.get(contractId) ?? [];
     if (!children.length) {
-      const c = allContracts.find(x => x.id === contractId);
+      const c = allContracts.find((x: any) => x.id === contractId);
       return {
-        value: c?.value ?? 0,
-        authorized: c?.computedContractValue ?? c?.value ?? 0,
-        billed: c?.totalBilledAmount ?? 0,
+        value: Number(c?.value) || 0,
+        authorized: Number(c?.computedContractValue ?? c?.value) || 0,
+        billed: Number(c?.totalBilledAmount) || 0,
       };
     }
     return children.reduce((acc, child) => {
@@ -663,8 +663,8 @@ export default function Contracts() {
   const stats = useMemo(() => {
     const active = allContracts.filter(c => c.status === "active");
     const draft = allContracts.filter(c => c.status === "draft");
-    const totalAuthorized = active.reduce((s, c) => s + (c.computedContractValue ?? c.value ?? 0), 0);
-    const totalBilled = active.reduce((s, c) => s + (c.totalBilledAmount ?? 0), 0);
+    const totalAuthorized = active.reduce((s, c) => s + (Number(c.computedContractValue ?? c.value) || 0), 0);
+    const totalBilled = active.reduce((s, c) => s + (Number(c.totalBilledAmount) || 0), 0);
     const now = new Date();
     const in90 = addDays(now, 90);
     const expiring = allContracts.filter(c =>
@@ -674,7 +674,7 @@ export default function Contracts() {
     const in60 = expiring.filter(c => new Date(c.endDate!) > addDays(now, 30) && new Date(c.endDate!) <= addDays(now, 60));
     const in90d = expiring.filter(c => new Date(c.endDate!) > addDays(now, 60));
     const atRisk = allContracts.filter(c => {
-      const remaining = (c.computedContractValue ?? c.value ?? 0) - (c.totalBilledAmount ?? 0);
+      const remaining = (Number(c.computedContractValue ?? c.value) || 0) - (Number(c.totalBilledAmount) || 0);
       return remaining < 0 && c.status === "active";
     });
     return { active: active.length, draft: draft.length, totalAuthorized, totalBilled, expiring, in30, in60, in90: in90d, atRisk: atRisk.length };

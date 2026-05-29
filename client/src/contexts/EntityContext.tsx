@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 
 interface Entity {
-  id: number;
+  id: string;
   name: string;
   shortName?: string | null;
   badgeColor?: string | null;
@@ -12,8 +12,8 @@ interface Entity {
 
 interface EntityContextValue {
   activeEntity: Entity | null;
-  activeEntityId: number | null;
-  setActiveEntityId: (id: number) => void;
+  activeEntityId: string | null;
+  setActiveEntityId: (id: string) => void;
   allowedEntities: Entity[];
   hasMultipleEntities: boolean;
 }
@@ -28,7 +28,7 @@ const EntityContext = createContext<EntityContextValue>({
 
 export function EntityProvider({ children }: { children: React.ReactNode }) {
   const { data: entities = [] } = trpc.entities.list.useQuery();
-  const [activeEntityId, setActiveEntityId] = useState<number | null>(null);
+  const [activeEntityId, setActiveEntityId] = useState<string | null>(null);
 
   // Auto-select default entity or first entity
   useEffect(() => {

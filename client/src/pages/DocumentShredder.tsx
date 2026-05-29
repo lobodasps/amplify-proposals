@@ -47,13 +47,13 @@ interface QueuedFile {
 }
 
 interface ShredResult {
-  id: number;
+  id: string;
   xmlContent: string;
   sectionCount?: number;
   requirementCount?: number;
   criteriaCount?: number;
   fileCount?: number;
-  files?: Array<{ fileName: string; fileType: string; wordCount: number }>;
+  files?: Array<{ fileName: string; fileType: string; wordCount: number; extractionMethod?: string }>;
 }
 
 const FILE_ROLE_LABELS: Record<FileRole, string> = {
@@ -131,7 +131,7 @@ export default function DocumentShredder() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
-  const [selectedShredId, setSelectedShredId] = useState<number | null>(null);
+  const [selectedShredId, setSelectedShredId] = useState<string | null>(null);
   const [shredResult, setShredResult] = useState<ShredResult | null>(null);
   const [activeTab, setActiveTab] = useState("upload");
 
@@ -274,7 +274,7 @@ export default function DocumentShredder() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     await deleteMutation.mutateAsync({ id });
     utils.xmlShredder.list.invalidate();
     if (selectedShredId === id) { setSelectedShredId(null); setShredResult(null); }

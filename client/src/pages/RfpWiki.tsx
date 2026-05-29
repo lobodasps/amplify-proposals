@@ -128,7 +128,7 @@ function PersonnelTable({ personnel }: { personnel: KeyPersonnelEntry[] }) {
 
 export default function RfpWiki() {
   const { pursuitId } = useRfpContext();
-  const [selectedShredId, setSelectedShredId] = useState<number | null>(null);
+  const [selectedShredId, setSelectedShredId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [queryAnswer, setQueryAnswer] = useState<{ answer: string; question: string; _provider?: string; _model?: string } | null>(null);
   const [activeTab, setActiveTab] = useState("index");
@@ -246,7 +246,7 @@ export default function RfpWiki() {
             <Select
               value={selectedShredId?.toString() ?? ""}
               onValueChange={(v) => {
-                setSelectedShredId(Number(v));
+                setSelectedShredId(v);
                 setQueryAnswer(null);
               }}
             >
@@ -597,7 +597,7 @@ export default function RfpWiki() {
 
 // ─── Legacy Wiki Tab ──────────────────────────────────────────────────────────
 
-function LegacyWikiTab({ shredId, pursuitId }: { shredId: number; pursuitId: number | null }) {
+function LegacyWikiTab({ shredId, pursuitId }: { shredId: string; pursuitId: string | null }) {
   const [firmContext, setFirmContext] = useState(
     "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, and Environmental services in NJ/NY."
   );

@@ -2,9 +2,9 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface TagDef {
-  id: number;
+  id: string;
   name: string;
-  color: string;
+  color: string | null;
   usageCount?: number;
 }
 

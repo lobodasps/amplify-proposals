@@ -19,7 +19,7 @@ interface Column { key: string; label: string; render?: (row: any) => React.Reac
 
 function CrudTable({ title, icon, columns, rows, isLoading, onAdd, onEdit, onDelete, csvExport }: {
   title: string; icon?: React.ReactNode; columns: Column[]; rows: any[]; isLoading: boolean;
-  onAdd: () => void; onEdit: (row: any) => void; onDelete: (id: number) => void; csvExport?: () => void;
+  onAdd: () => void; onEdit: (row: any) => void; onDelete: (id: string) => void; csvExport?: () => void;
 }) {
   return (
     <Card>

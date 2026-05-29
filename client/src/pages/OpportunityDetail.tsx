@@ -31,15 +31,15 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   archived: { label: "Archived", color: "bg-slate-100 text-slate-600" },
 };
 
-function fmtCurrency(v: number | null | undefined) {
+function fmtCurrency(v: number | string | null | undefined) {
   if (!v) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v));
 }
 
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
-  const oppId = parseInt(id ?? "0", 10);
+  const oppId = id ?? "";
   const utils = trpc.useUtils();
 
   const { data: opp, isLoading } = trpc.opportunities.getById.useQuery({ id: oppId }, { enabled: !!oppId });
@@ -105,7 +105,7 @@ export default function OpportunityDetail() {
               <Badge className={cn("text-xs", statusCfg.color)}>{statusCfg.label}</Badge>
               {opp.aiScore && (
                 <Badge variant="outline" className="text-xs">
-                  <Zap className="h-3 w-3 mr-1 text-amber-500" />AI Score: {Math.round(opp.aiScore)}
+                  <Zap className="h-3 w-3 mr-1 text-amber-500" />AI Score: {Math.round(Number(opp.aiScore))}
                 </Badge>
               )}
             </div>

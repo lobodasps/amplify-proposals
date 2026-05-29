@@ -28,10 +28,10 @@ import { Link } from "wouter";
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 interface RfpContextValue {
-  pursuitId: number | null;
-  setPursuitId: (id: number | null) => void;
+  pursuitId: string | null;
+  setPursuitId: (id: string | null) => void;
   pursuit: {
-    id: number;
+    id: string;
     title: string;
     clientName: string | null;
     dueDate: Date | string | null;
@@ -49,9 +49,9 @@ const RfpContext = createContext<RfpContextValue>({
 const STORAGE_KEY = "amplify_active_rfp_id";
 
 export function RfpContextProvider({ children }: { children: React.ReactNode }) {
-  const [pursuitId, setPursuitIdState] = useState<number | null>(() => {
+  const [pursuitId, setPursuitIdState] = useState<string | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? parseInt(stored, 10) : null;
+    return stored || null;
   });
 
   const { data: pursuits } = trpc.pursuits.list.useQuery(undefined, {
@@ -60,7 +60,7 @@ export function RfpContextProvider({ children }: { children: React.ReactNode }) 
 
   const pursuit = pursuits?.find((p) => p.id === pursuitId) ?? null;
 
-  const setPursuitId = (id: number | null) => {
+  const setPursuitId = (id: string | null) => {
     setPursuitIdState(id);
     if (id === null) {
       localStorage.removeItem(STORAGE_KEY);
@@ -127,7 +127,7 @@ export function RfpContextSelector({ compact = false, label }: RfpContextSelecto
         </span>
         <Select
           value={pursuitId ? String(pursuitId) : ""}
-          onValueChange={(v) => setPursuitId(v ? parseInt(v, 10) : null)}
+          onValueChange={(v) => setPursuitId(v || null)}
         >
           <SelectTrigger className="h-7 text-xs w-[220px]">
             <SelectValue placeholder="Select a pursuit…" />
@@ -170,7 +170,7 @@ export function RfpContextSelector({ compact = false, label }: RfpContextSelecto
         {/* Pursuit picker */}
         <Select
           value={pursuitId ? String(pursuitId) : ""}
-          onValueChange={(v) => setPursuitId(v ? parseInt(v, 10) : null)}
+          onValueChange={(v) => setPursuitId(v || null)}
           disabled={isLoading}
         >
           <SelectTrigger className={`h-8 text-sm w-[280px] ${

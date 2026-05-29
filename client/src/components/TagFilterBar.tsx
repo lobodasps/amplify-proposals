@@ -21,8 +21,8 @@ interface TagFilterBarProps {
   assetType: string;
   onAssetTypeChange: (v: string) => void;
   allTags: TagDef[];
-  selectedTagIds: number[];
-  onTagToggle: (id: number) => void;
+  selectedTagIds: string[];
+  onTagToggle: (id: string) => void;
   onClearAll: () => void;
 }
 

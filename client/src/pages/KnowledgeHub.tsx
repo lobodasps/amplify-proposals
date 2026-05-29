@@ -134,7 +134,7 @@ export default function KnowledgeHub() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Preview state ───────────────────────────────────────────────────────────
-  const [previewDocId, setPreviewDocId] = useState<number | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<UploadFormState>(DEFAULT_FORM);
 

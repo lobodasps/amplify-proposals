@@ -23,7 +23,7 @@ interface ParsedRow {
 interface MatchResult {
   identifier: string;
   matched: boolean;
-  contractId?: number;
+  contractId?: string;
   contractNumber?: string;
 }
 
