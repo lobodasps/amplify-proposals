@@ -77,7 +77,7 @@
 - [x] Personnel.tsx: Safe JSON.parse for serviceLines field (handles array, string, null, malformed)
 
 ## Backlog / Future Enhancements
-- [ ] Real Supabase/Postgres connection (replace TiDB with Supabase DATABASE_URL)
+- [x] Real Supabase/Postgres connection (replace TiDB with Supabase DATABASE_URL) — completed in Supabase Postgres Migration
 - [ ] Live public agency portal scraping with real HTTP scraper
 - [ ] Adobe UXP InDesign plugin (Phase 2 product)
 - [ ] SF 330 form auto-fill and PDF export
@@ -443,6 +443,12 @@
 - [x] Fix contracts.ts: z.number() → z.string().uuid(), eq() calls to string
 - [x] Fix remaining routers: assets, pursuits, proposals, personnel, projects, opportunities, analytics, rfpSessions, etc.
 - [x] Zero server-side TypeScript errors (140 client-side remain — client files not touched per instructions)
+- [x] All 16 vitest tests pass
+
+## Client-Side UUID Type Migration
+- [x] Fix all 140 client-side TypeScript errors (ContractDetail, Contracts, ProposalWorkspace, OpportunityDetail, DocumentShredder, ConflictDetector, RfpWiki, KnowledgeHub, Settings, QbSync, ResourceLibrary, FileLibrary, EntityContext, TagFilterBar, RfpContextSelector)
+- [x] All ID references updated from number to string throughout client code
+- [x] Zero TypeScript errors across entire codebase (server + client)
 - [x] All 16 vitest tests pass
 
 ## Client-Side Supabase Auth
