@@ -428,3 +428,12 @@
 - [x] Projects page: show linked Knowledge Hub documents in attachment panel with "Open Hub" link
 - [ ] Image extraction Stage 1: server-side PDF page rendering to thumbnails on upload (pdf-lib / pdfjs-dist)
 - [ ] Image extraction Stage 2: vision model pass on rendered pages to identify and extract photographs as standalone assets
+
+## Supabase Postgres Migration
+- [x] Step 2: Convert server/db.ts to Supabase Postgres (drizzle-orm/postgres-js)
+- [x] Step 3: Convert drizzle/schema.ts from mysqlTable to pgTable with all type changes
+- [x] Step 4: Add cross-app FK columns (profiles, projects, companies)
+- [x] Step 5: Push schema to Supabase via drizzle-kit push
+- [x] Step 6: Insert 3 real personnel records (Gregg, Renuka, Karen) and link to profiles
+- [x] Step 7: Replace Manus custom auth with Supabase Auth (server-side only)
+- [x] Step 8: Verify vitest suite passes (16/16) and app loads

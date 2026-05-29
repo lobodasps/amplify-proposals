@@ -121,7 +121,7 @@ describe("assets.list", () => {
 describe("assets.getById", () => {
   it("returns null for a non-existent asset ID", async () => {
     const caller = appRouter.createCaller(makeCtx());
-    const result = await caller.assets.getById({ id: 999999 });
+    const result = await caller.assets.getById({ id: "00000000-0000-0000-0000-000000000000" });
     expect(result).toBeNull();
   });
 });

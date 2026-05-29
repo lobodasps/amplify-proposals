@@ -146,7 +146,7 @@ export const assetsRouter = router({
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;

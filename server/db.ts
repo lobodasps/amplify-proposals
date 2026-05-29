@@ -1,15 +1,42 @@
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _sql: ReturnType<typeof postgres> | null = null;
+
+/**
+ * Build the postgres-js connection URL.
+ * The DATABASE_URL env var should point to the Supabase Session-mode pooler
+ * (port 6543). We force SSL with rejectUnauthorized:false for Supavisor compatibility
+ * and disable prepared statements (required by Supabase connection pooler).
+ */
+function buildSql() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+
+  // Ensure we use port 6543 for session-mode pooler
+  const connUrl = url.includes(':6543') ? url : url.replace(/:5432\//, ':6543/');
+
+  return postgres(connUrl, {
+    ssl: { rejectUnauthorized: false },
+    prepare: false,
+    idle_timeout: 20,
+    connect_timeout: 15,
+    max: 5,
+  });
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _sql = buildSql();
+      if (_sql) {
+        _db = drizzle(_sql);
+      }
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -68,7 +95,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    // Postgres upsert using ON CONFLICT
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
