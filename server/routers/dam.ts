@@ -113,6 +113,250 @@ async function withFreshUrl<T extends { fileKey: string; fileUrl: string }>(
   }
 }
 
+// ─── Extracted types ─────────────────────────────────────────────────────────
+
+interface ExtractedImage {
+  page: number;
+  caption: string | null;
+  description: string;
+  imageType: string;
+  tags: string[];
+}
+
+interface ExtractedSection {
+  title: string;
+  page: number | null;
+  content: string;
+}
+
+// ─── System prompts per docType ──────────────────────────────────────────────
+
+const SYSTEM_PROMPTS: Record<string, string> = {
+
+  resume: `You are an expert AEC HR analyst extracting structured data from a staff resume or CV.
+
+Return a single JSON object. Every field is required. Use null for missing values, empty arrays [] for missing lists.
+
+Schema:
+{
+  "name": string | null,
+  "title": string | null,
+  "yearsExperience": number | null,
+  "education": string[],
+  "certifications": string[],
+  "serviceLines": string[],
+  "skills": string[],
+  "projectExperience": string[],
+  "summary": string | null,
+  "sections": [
+    { "title": string, "page": number | null, "content": string }
+  ],
+  "images": [
+    {
+      "page": number,
+      "caption": string | null,
+      "description": string,
+      "imageType": "headshot" | "photo" | "diagram" | "chart" | "org-chart" | "site-plan" | "map" | "other",
+      "tags": string[]
+    }
+  ],
+  "tags": string[]
+}
+
+Be thorough with images — resumes often contain a headshot and project photos. Describe each one.`,
+
+  project_sheet: `You are an expert AEC project data analyst extracting structured data from a project sheet or project profile.
+
+Return a single JSON object. Every field is required. Use null for missing values, empty arrays [] for missing lists.
+
+Schema:
+{
+  "projectName": string | null,
+  "projectNumber": string | null,
+  "client": string | null,
+  "location": string | null,
+  "contractValue": string | null,
+  "startDate": string | null,
+  "endDate": string | null,
+  "serviceLines": string[],
+  "keyPersonnel": string[],
+  "description": string | null,
+  "highlights": string[],
+  "summary": string | null,
+  "sections": [
+    { "title": string, "page": number | null, "content": string }
+  ],
+  "images": [
+    {
+      "page": number,
+      "caption": string | null,
+      "description": string,
+      "imageType": "photo" | "site-plan" | "diagram" | "map" | "chart" | "rendering" | "before-after" | "other",
+      "tags": string[]
+    }
+  ],
+  "tags": string[]
+}
+
+Project sheets are image-heavy. Extract every photo, site plan, rendering, and diagram. These are critical for proposal assembly.`,
+
+  past_proposal: `You are an expert AEC proposal analyst extracting structured data from a past proposal document.
+
+Return a single JSON object. Every field is required. Use null for missing values, empty arrays [] for missing lists.
+
+Schema:
+{
+  "title": string | null,
+  "client": string | null,
+  "rfpNumber": string | null,
+  "submitDate": string | null,
+  "awardDate": string | null,
+  "contractValue": string | null,
+  "serviceLines": string[],
+  "keyPersonnel": string[],
+  "projectDescription": string | null,
+  "winThemes": string[],
+  "summary": string | null,
+  "sections": [
+    { "title": string, "page": number | null, "content": string }
+  ],
+  "images": [
+    {
+      "page": number,
+      "caption": string | null,
+      "description": string,
+      "imageType": "photo" | "site-plan" | "diagram" | "org-chart" | "map" | "chart" | "rendering" | "graphic" | "other",
+      "tags": string[]
+    }
+  ],
+  "tags": string[]
+}
+
+Extract all images — proposals contain org charts, project photos, graphics, diagrams, and site plans that are reused in future proposals.`,
+
+  certification: `You are an AEC certification document analyst.
+
+Return a single JSON object. Every field is required. Use null for missing values.
+
+Schema:
+{
+  "holderName": string | null,
+  "certificationName": string | null,
+  "certificationNumber": string | null,
+  "issuingAuthority": string | null,
+  "issueDate": string | null,
+  "expirationDate": string | null,
+  "level": string | null,
+  "summary": string | null,
+  "images": [
+    {
+      "page": number,
+      "caption": string | null,
+      "description": string,
+      "imageType": "photo" | "logo" | "seal" | "signature" | "other",
+      "tags": string[]
+    }
+  ],
+  "tags": string[]
+}`,
+
+  other: `You are a document analyst.
+
+Return a single JSON object. Every field is required. Use null for missing values, empty arrays [] for missing lists.
+
+Schema:
+{
+  "title": string | null,
+  "documentType": string | null,
+  "date": string | null,
+  "keyEntities": string[],
+  "summary": string | null,
+  "sections": [
+    { "title": string, "page": number | null, "content": string }
+  ],
+  "images": [
+    {
+      "page": number,
+      "caption": string | null,
+      "description": string,
+      "imageType": "photo" | "diagram" | "chart" | "map" | "other",
+      "tags": string[]
+    }
+  ],
+  "tags": string[]
+}`,
+};
+
+// ─── Tag builder ─────────────────────────────────────────────────────────────
+
+function buildTagString(extracted: Record<string, any>): string {
+  const tagSet = new Set<string>();
+
+  const normalize = (t: string) =>
+    t.trim().toLowerCase().replace(/\s+/g, "-");
+
+  const addAll = (arr: unknown) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach((t) => {
+      if (typeof t === "string" && t.trim()) tagSet.add(normalize(t));
+    });
+  };
+
+  // Top-level tags from LLM
+  addAll(extracted.tags);
+
+  // Service lines as tags
+  addAll(extracted.serviceLines);
+
+  // Certifications as tags (resume / certification docTypes)
+  addAll(extracted.certifications);
+
+  // Image-level tags
+  if (Array.isArray(extracted.images)) {
+    extracted.images.forEach((img: ExtractedImage) => addAll(img.tags));
+  }
+
+  return Array.from(tagSet).sort().join(",");
+}
+
+// ─── extractedText builder ───────────────────────────────────────────────────
+
+function buildExtractedText(extracted: Record<string, any>): string {
+  const parts: string[] = [];
+
+  // Summary / description fields
+  for (const key of ["summary", "description", "projectDescription"]) {
+    if (extracted[key]) parts.push(extracted[key]);
+  }
+
+  // Section content
+  if (Array.isArray(extracted.sections)) {
+    extracted.sections.forEach((s: ExtractedSection) => {
+      if (s.title) parts.push(`## ${s.title}`);
+      if (s.content) parts.push(s.content);
+    });
+  }
+
+  // Image descriptions (makes images searchable via plain text)
+  if (Array.isArray(extracted.images) && extracted.images.length > 0) {
+    parts.push("## Images");
+    extracted.images.forEach((img: ExtractedImage, i: number) => {
+      const label = img.caption ?? `Image ${i + 1}`;
+      parts.push(`${label} (page ${img.page}): ${img.description}`);
+    });
+  }
+
+  // List fields
+  for (const key of ["highlights", "winThemes", "keyPersonnel", "projectExperience", "skills"]) {
+    if (Array.isArray(extracted[key]) && extracted[key].length > 0) {
+      parts.push(`## ${key}`);
+      parts.push(extracted[key].join("\n"));
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const damRouter = router({
@@ -368,7 +612,7 @@ export const damRouter = router({
 
   // ── Trigger LLM text extraction ────────────────────────────────────────────
   // Reads the document URL, sends to LLM with file_url content type,
-  // saves extractedText + extractedMeta, sets processingStatus = 'indexed'.
+  // saves extractedText + extractedMeta + tags, sets processingStatus = 'indexed'.
   triggerExtract: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input }) => {
@@ -403,71 +647,9 @@ export const damRouter = router({
         ];
         const llmMime = supportedMimes.includes(mime) ? mime : "application/pdf";
 
-        // Build system prompt based on doc type
-        const systemPrompts: Record<string, string> = {
-          past_proposal: `You are an expert AEC (Architecture, Engineering, Construction) proposal analyst. 
-Extract structured information from this past proposal document. Return JSON with:
-- title: string (project/proposal title)
-- client: string (client/agency name)
-- rfpNumber: string (RFP or contract number if present)
-- submitDate: string (submission date if present)
-- awardDate: string (award date if present)
-- contractValue: string (dollar value if present)
-- serviceLines: string[] (disciplines: special_inspections, construction_management, traffic_engineering, etc.)
-- keyPersonnel: string[] (names of key staff mentioned)
-- projectDescription: string (2-3 sentence summary)
-- winThemes: string[] (key differentiators or win themes mentioned)
-- summary: string (plain-text summary of the full document, 3-5 paragraphs)`,
-
-          project_sheet: `You are an expert AEC project data analyst.
-Extract structured information from this project sheet/experience form. Return JSON with:
-- projectName: string
-- projectNumber: string (if present)
-- client: string
-- location: string
-- contractValue: string
-- startDate: string
-- endDate: string
-- serviceLines: string[] (disciplines)
-- keyPersonnel: string[] (names of staff on project)
-- description: string (project description, 2-3 paragraphs)
-- highlights: string[] (key accomplishments or notable aspects)
-- summary: string (plain-text summary)`,
-
-          resume: `You are an expert AEC HR analyst.
-Extract structured information from this staff resume/CV. Return JSON with:
-- name: string (full name)
-- title: string (job title)
-- yearsExperience: number
-- education: string[] (degrees and institutions)
-- certifications: string[] (all certifications, licenses, and credentials with numbers if present)
-- serviceLines: string[] (disciplines they work in)
-- skills: string[] (technical skills and software)
-- projectExperience: string[] (notable projects they've worked on)
-- summary: string (professional summary, 2-3 paragraphs)`,
-
-          certification: `You are an AEC certification document analyst.
-Extract structured information from this certification document. Return JSON with:
-- holderName: string (name of the certified individual)
-- certificationName: string (full name of the certification)
-- certificationNumber: string (credential/license number if present)
-- issuingAuthority: string (issuing organization)
-- issueDate: string
-- expirationDate: string (if present)
-- level: string (level or grade if applicable, e.g. "Level III")
-- summary: string (brief description of what this certification covers)`,
-
-          other: `You are a document analyst. Extract the key information from this document.
-Return JSON with:
-- title: string
-- documentType: string (what kind of document this appears to be)
-- date: string (any date found)
-- keyEntities: string[] (people, organizations, projects mentioned)
-- summary: string (plain-text summary of the document)`,
-        };
-
+        // Select system prompt by docType
         const systemPrompt =
-          systemPrompts[doc.docType] ?? systemPrompts.other;
+          SYSTEM_PROMPTS[doc.docType] ?? SYSTEM_PROMPTS.other;
 
         const userContent: any[] = [
           {
@@ -479,7 +661,7 @@ Return JSON with:
           },
           {
             type: "text",
-            text: `Please analyze this ${doc.docType.replace("_", " ")} document titled "${doc.title}" and extract the structured information as described. Return valid JSON only.`,
+            text: `Extract all structured data, sections, and images from this ${doc.docType.replace("_", " ")} document titled "${doc.title}". Return only the JSON object specified in your instructions.`,
           },
         ];
 
@@ -495,36 +677,30 @@ Return JSON with:
 
         const rawContentRaw = response?.choices?.[0]?.message?.content ?? "{}";
         const rawContent = typeof rawContentRaw === "string" ? rawContentRaw : JSON.stringify(rawContentRaw);
-        let extractedMeta: Record<string, unknown> = {};
+        let extracted: Record<string, any> = {};
         try {
-          extractedMeta = JSON.parse(rawContent);
+          extracted = JSON.parse(rawContent);
         } catch {
-          extractedMeta = { raw: rawContent };
+          extracted = { raw: rawContent };
         }
 
-        // Build plain-text summary from meta
-        const extractedText =
-          (extractedMeta.summary as string) ??
-          (extractedMeta.description as string) ??
-          rawContent;
+        // Build tags string and searchable text from structured output
+        const tagString = buildTagString(extracted);
+        const extractedText = buildExtractedText(extracted);
 
+        // Write back to dam_documents
         await db
           .update(damDocuments)
           .set({
+            extractedMeta: extracted,
             extractedText,
-            extractedMeta,
+            tags: tagString,
             processingStatus: "indexed",
             processingError: null,
           })
           .where(eq(damDocuments.id, input.id));
 
-        const [updated] = await db
-          .select()
-          .from(damDocuments)
-          .where(eq(damDocuments.id, input.id))
-          .limit(1);
-
-        return updated;
+        return { success: true, imageCount: extracted.images?.length ?? 0 };
       } catch (err: any) {
         await db
           .update(damDocuments)

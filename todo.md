@@ -454,3 +454,11 @@
 - [x] Protect all routes — redirect unauthenticated users to login
 - [x] Add logout via supabase.auth.signOut()
 - [x] Verify auth flow works end-to-end (0 TS errors, 16/16 tests pass, route protection confirmed)
+
+## Enhanced triggerExtract (v2.6)
+- [x] SYSTEM_PROMPTS constant: per-docType prompts (resume, project_sheet, past_proposal, certification, other) with sections[] and images[] extraction
+- [x] buildTagString() helper: merges tags from LLM output, serviceLines, certifications, image-level tags; normalizes to lowercase-hyphenated comma-separated
+- [x] buildExtractedText() helper: assembles searchable text from summary/description, section content, image descriptions, and list fields
+- [x] triggerExtract procedure updated: uses SYSTEM_PROMPTS, calls buildTagString/buildExtractedText, writes tags field back to dam_documents
+- [x] KnowledgeHub.tsx onSuccess callback updated for new return shape { success, imageCount }
+- [x] Zero TypeScript errors, 16/16 vitest tests pass

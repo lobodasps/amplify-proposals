@@ -187,11 +187,12 @@ export default function KnowledgeHub() {
   });
 
   const extractMutation = trpc.dam.triggerExtract.useMutation({
-    onSuccess: (doc) => {
+    onSuccess: (result) => {
       utils.dam.list.invalidate();
       utils.dam.getStats.invalidate();
       if (previewDocId) utils.dam.getById.invalidate({ id: previewDocId });
-      toast.success(`"${doc?.title}" indexed successfully`);
+      const imgMsg = result.imageCount > 0 ? ` (${result.imageCount} images found)` : "";
+      toast.success(`Document indexed successfully${imgMsg}`);
     },
     onError: (err) => toast.error(`Extraction failed: ${err.message}`),
   });

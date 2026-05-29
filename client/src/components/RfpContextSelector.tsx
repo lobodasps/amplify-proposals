@@ -13,6 +13,7 @@
  */
 import { createContext, useContext, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +50,7 @@ const RfpContext = createContext<RfpContextValue>({
 const STORAGE_KEY = "amplify_active_rfp_id";
 
 export function RfpContextProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
   const [pursuitId, setPursuitIdState] = useState<string | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored || null;
@@ -56,6 +58,7 @@ export function RfpContextProvider({ children }: { children: React.ReactNode }) 
 
   const { data: pursuits } = trpc.pursuits.list.useQuery(undefined, {
     staleTime: 60_000,
+    enabled: isAuthenticated && !loading,
   });
 
   const pursuit = pursuits?.find((p) => p.id === pursuitId) ?? null;

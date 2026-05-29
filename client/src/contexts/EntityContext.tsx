@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "./AuthContext";
 
 interface Entity {
   id: string;
@@ -27,7 +28,12 @@ const EntityContext = createContext<EntityContextValue>({
 });
 
 export function EntityProvider({ children }: { children: React.ReactNode }) {
-  const { data: entities = [] } = trpc.entities.list.useQuery();
+  const { isAuthenticated, loading } = useAuth();
+
+  // Only query entities when authenticated — prevents 401 on initial load
+  const { data: entities = [] } = trpc.entities.list.useQuery(undefined, {
+    enabled: isAuthenticated && !loading,
+  });
   const [activeEntityId, setActiveEntityId] = useState<string | null>(null);
 
   // Auto-select default entity or first entity
