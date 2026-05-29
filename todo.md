@@ -444,3 +444,13 @@
 - [x] Fix remaining routers: assets, pursuits, proposals, personnel, projects, opportunities, analytics, rfpSessions, etc.
 - [x] Zero server-side TypeScript errors (140 client-side remain — client files not touched per instructions)
 - [x] All 16 vitest tests pass
+
+## Client-Side Supabase Auth
+- [x] Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY secrets
+- [x] Create client/src/lib/supabase.ts Supabase client
+- [x] Update tRPC client to pass Supabase JWT as Bearer token
+- [x] Replace useAuth hook to use Supabase session (AuthContext + re-export)
+- [x] Create login page with email/password
+- [x] Protect all routes — redirect unauthenticated users to login
+- [x] Add logout via supabase.auth.signOut()
+- [x] Verify auth flow works end-to-end (0 TS errors, 16/16 tests pass, route protection confirmed)
