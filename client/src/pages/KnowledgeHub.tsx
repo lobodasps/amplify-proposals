@@ -36,7 +36,7 @@ import {
   Upload, FileText, Users, Building2, Award, File, Search,
   MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
   AlertCircle, Loader2, CloudUpload, X, Filter,
-  BookOpen, FolderOpen,
+  BookOpen, FolderOpen, ImageIcon,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1049,16 +1049,59 @@ export default function KnowledgeHub() {
                   </div>
                 )}
 
-                {previewDoc.extractedMeta != null && Object.keys(previewDoc.extractedMeta as Record<string, unknown>).length > 0 && (
-                  <div className="border-t pt-4">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
-                      Structured Data
-                    </p>
-                    <pre className="bg-muted/50 rounded-lg p-3 text-xs overflow-x-auto max-h-48 overflow-y-auto">
-                      {JSON.stringify(previewDoc.extractedMeta as Record<string, unknown>, null, 2)}
-                    </pre>
-                  </div>
-                )}
+                {/* ── Extracted Images ─────────────────────────────────────────── */}
+                {(() => {
+                  const meta = previewDoc.extractedMeta as Record<string, unknown> | null;
+                  const images = Array.isArray(meta?.images) ? (meta!.images as Array<{
+                    description?: string;
+                    type?: string;
+                    page?: number;
+                    tags?: string[];
+                  }>) : [];
+                  if (images.length === 0) return null;
+                  return (
+                    <div className="border-t pt-4">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Extracted Images ({images.length})
+                      </p>
+                      <div className="space-y-2.5">
+                        {images.map((img, idx) => (
+                          <div
+                            key={idx}
+                            className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5"
+                          >
+                            {/* Type badge + page */}
+                            <div className="flex items-center gap-2">
+                              {img.type && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">
+                                  {img.type}
+                                </Badge>
+                              )}
+                              {img.page != null && (
+                                <span className="text-[11px] text-muted-foreground">p. {img.page}</span>
+                              )}
+                            </div>
+                            {/* Description */}
+                            {img.description && (
+                              <p className="text-sm leading-snug">{img.description}</p>
+                            )}
+                            {/* Tags */}
+                            {Array.isArray(img.tags) && img.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {(img.tags as string[]).map((t) => (
+                                  <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                    {t}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <DialogFooter className="flex gap-2 pt-2">
