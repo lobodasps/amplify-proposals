@@ -166,6 +166,9 @@ export default function KnowledgeHub() {
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [expandedSplitIdx, setExpandedSplitIdx] = useState<number | null>(0);
   const [isSavingSplit, setIsSavingSplit] = useState(false);
+  // Shared resume metadata for split mode (entered once, applied to all records)
+  const [splitStaffName, setSplitStaffName] = useState("");
+  const [splitCompanyTag, setSplitCompanyTag] = useState<CompanyTag | "">("");
 
   // Duplicate detection state
   const [fileDuplicate, setFileDuplicate] = useState<{ id: string; title: string; fileName: string; createdAt: string } | null>(null);
@@ -315,6 +318,9 @@ export default function KnowledgeHub() {
       // Step 3a: Multi-project split mode
       if (meta.multiProject && meta.projects.length >= 2) {
         setIsSplitMode(true);
+        // Pre-fill shared resume fields from autoExtract
+        setSplitStaffName(meta.staffName ?? "");
+        setSplitCompanyTag((meta.companyTag as CompanyTag) ?? "");
         setSplitProjects(
           meta.projects.map((p) => ({
             projectName: p.projectName ?? "",
@@ -462,6 +468,8 @@ export default function KnowledgeHub() {
     setIsSplitMode(false);
     setSplitProjects([]);
     setExpandedSplitIdx(null);
+    setSplitStaffName("");
+    setSplitCompanyTag("");
     setFileDuplicate(null);
     setContentDuplicate(null);
     setDuplicateAction("dismissed");
@@ -488,7 +496,8 @@ export default function KnowledgeHub() {
           docType: "project_sheet",
           title: p.projectName.trim(),
           description: [p.scope, p.description].filter(Boolean).join(" ") || undefined,
-          companyTag: (p.companyTag as CompanyTag) || undefined,
+          companyTag: (splitCompanyTag as CompanyTag) || (p.companyTag as CompanyTag) || undefined,
+          staffName: splitStaffName.trim() || undefined,
           clientName: p.client.trim() || undefined,
           ownerName: p.owner.trim() || undefined,
           firmRole: p.firmRole.trim() || undefined,
@@ -890,28 +899,38 @@ export default function KnowledgeHub() {
               )}
 
               {/* Actions */}
-              <div className="flex gap-3 pt-1">
-                <Button
-                  onClick={handleUpload}
-                  disabled={isUploading || isAnalyzing || !form.title.trim() || !stagedUpload}
-                  className="gap-2"
-                >
-                  {isUploading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
-                  ) : isAnalyzing ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Reading…</>
-                  ) : (
-                    <><CheckCircle2 className="w-4 h-4" />Confirm &amp; Save</>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={resetUploadState}
-                  disabled={isUploading}
-                >
-                  Cancel
-                </Button>
-              </div>
+              {isSplitMode ? (
+                <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 flex items-start gap-2">
+                  <Layers className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-amber-800 dark:text-amber-200">
+                    <span className="font-medium">Multi-project resume detected.</span>{" "}
+                    Scroll down to the Split Panel to review each project and click <span className="font-medium">Create {splitProjects.length} Records</span>.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    onClick={handleUpload}
+                    disabled={isUploading || isAnalyzing || !form.title.trim() || !stagedUpload}
+                    className="gap-2"
+                  >
+                    {isUploading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                    ) : isAnalyzing ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Reading…</>
+                    ) : (
+                      <><CheckCircle2 className="w-4 h-4" />Confirm &amp; Save</>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={resetUploadState}
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -939,6 +958,34 @@ export default function KnowledgeHub() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Shared resume metadata — entered once, applied to all project records */}
+              <div className="p-3 rounded-lg border border-border bg-muted/40 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Applied to all {splitProjects.length} records</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Staff Name <span className="text-rose-500">*</span></Label>
+                    <Input
+                      value={splitStaffName}
+                      onChange={(e) => setSplitStaffName(e.target.value)}
+                      placeholder="e.g. Jane Smith, PE"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Company / Entity</Label>
+                    <Select value={splitCompanyTag} onValueChange={(v) => setSplitCompanyTag(v as CompanyTag | "")}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select entity…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="JPCL">JPCL</SelectItem>
+                        <SelectItem value="Strans">Strans</SelectItem>
+                        <SelectItem value="Both">Both</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
               {splitProjects.map((proj, idx) => (
                 <div key={idx} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
                   {/* Accordion header */}

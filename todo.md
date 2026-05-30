@@ -522,3 +522,9 @@
 - [x] Schema: added resumeVersion, pursuitContext columns to dam_documents
 - [x] Server: checkFileDuplicate, checkContentDuplicate, replaceFile procedures
 - [x] Client: duplicate banners (file-level amber, content-level orange), version/role fields in upload form
+
+## DAM Multi-Project Resume UX Fix
+- [ ] When autoExtract returns multiProject=true, auto-set docType to "resume" on upload form
+- [ ] Keep Staff Name and Company Entity fields visible on upload form for multi-project resumes
+- [ ] Propagate staffName and companyTag from upload form to all split project records on Create X Records
+- [ ] Disable "Confirm & Save" button when multiProject=true, show redirect banner to split panel
