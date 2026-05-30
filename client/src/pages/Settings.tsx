@@ -315,6 +315,154 @@ function AppSettingsTab() {
   );
 }
 
+function UsersTab() {
+  const utils = trpc.useUtils();
+  const { data: users = [], isLoading } = trpc.userManagement.listUsers.useQuery();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ email: "", firstName: "", lastName: "", role: "user" as "admin" | "user" });
+
+  const invite = trpc.userManagement.inviteUser.useMutation({
+    onSuccess: () => {
+      toast.success(`Invite sent to ${inviteForm.email}`);
+      utils.userManagement.listUsers.invalidate();
+      setInviteOpen(false);
+      setInviteForm({ email: "", firstName: "", lastName: "", role: "user" });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const ROLE_BADGE: Record<string, string> = {
+    admin: "bg-blue-100 text-blue-700 border-blue-300",
+    user: "bg-gray-100 text-gray-600 border-gray-300",
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" /> Users
+            <span className="text-xs font-normal text-muted-foreground ml-1">({users.length})</span>
+          </CardTitle>
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            <Plus className="h-3 w-3 mr-1" /> Invite User
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : users.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground text-sm">No users found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left p-3 font-medium text-muted-foreground">Name</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Email</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Role</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Joined</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="p-3 font-medium">{u.name}</td>
+                      <td className="p-3 text-muted-foreground">{u.email}</td>
+                      <td className="p-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded border capitalize ${ROLE_BADGE[u.role] ?? ROLE_BADGE.user}`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                          u.isActive ? "bg-green-50 text-green-700 border-green-300" : "bg-gray-100 text-gray-500 border-gray-300"
+                        }`}>
+                          {u.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-muted-foreground text-xs">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Invite User Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Email Address *</Label>
+              <Input
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="renuka@example.com"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>First Name</Label>
+                <Input
+                  value={inviteForm.firstName}
+                  onChange={(e) => setInviteForm((f) => ({ ...f, firstName: e.target.value }))}
+                  placeholder="Renuka"
+                />
+              </div>
+              <div>
+                <Label>Last Name</Label>
+                <Input
+                  value={inviteForm.lastName}
+                  onChange={(e) => setInviteForm((f) => ({ ...f, lastName: e.target.value }))}
+                  placeholder="S"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select
+                value={inviteForm.role}
+                onValueChange={(v) => setInviteForm((f) => ({ ...f, role: v as "admin" | "user" }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              An invitation email will be sent. The user will set their password when they accept the invite.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!inviteForm.email || invite.isPending}
+              onClick={() => invite.mutate(inviteForm)}
+            >
+              {invite.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Send Invite
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function Settings() {
   return (
     <AppLayout>
@@ -363,10 +511,7 @@ export default function Settings() {
             formFields={[{key:"code",label:"Code *",placeholder:"e.g. 01"},{key:"description",label:"Description",type:"textarea"}]} />
         </TabsContent>
         <TabsContent value="glossary" className="mt-4"><GlossaryTab /></TabsContent>
-        <TabsContent value="users" className="mt-4">
-          <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4"/>Users</CardTitle></CardHeader>
-          <CardContent className="py-8 text-center text-muted-foreground"><p className="text-sm">User management is handled through the Manus platform authentication system.</p><p className="text-sm mt-1">All authenticated users can access Amplify-Proposals based on their Manus login.</p></CardContent></Card>
-        </TabsContent>
+        <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
         <TabsContent value="reminders" className="mt-4">
           <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Bell className="h-4 w-4"/>Reminders</CardTitle></CardHeader>
           <CardContent className="space-y-4 py-4">
