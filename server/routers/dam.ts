@@ -745,19 +745,34 @@ export const damRouter = router({
       const systemPrompt = `You are an expert AEC (Architecture, Engineering, Construction) document analyst.
 Your job is to read any AEC firm document and extract ALL available metadata to help categorize it.
 
+IMPORTANT: Some documents are multi-project experience sheets or project lists that contain multiple distinct projects on a single page or document. If you detect that the document contains 2 or more distinct projects (each with their own name, client, scope, or value), set multiProject to true and populate the projects array. Otherwise set multiProject to false and leave projects as an empty array.
+
 Return a JSON object with these fields (use null for fields you cannot determine):
 {
   "docType": one of: "past_proposal" | "project_sheet" | "resume" | "certification" | "rfp" | "contract" | "boilerplate" | "other",
   "companyTag": one of: "JPCL" | "Strans" | "Both" | null  (look for company names, logos, letterhead),
   "title": string (best descriptive title for this document),
-  "clientName": string | null (client or agency name),
+  "clientName": string | null (client or agency name — for single-project documents),
   "projectName": string | null,
   "projectNumber": string | null,
   "contractValue": string | null (formatted dollar amount e.g. "$1,250,000"),
   "awardYear": number | null (4-digit year),
   "staffName": string | null (for resumes/certifications: the person full name),
   "tags": string | null (comma-separated keywords: disciplines, location, agency type etc.),
-  "description": string | null (2-3 sentence summary of the document)
+  "description": string | null (2-3 sentence summary of the document),
+  "multiProject": boolean (true if this document lists 2+ distinct projects),
+  "projects": array of objects, each with:
+    {
+      "projectName": string,
+      "client": string | null,
+      "location": string | null,
+      "contractValue": string | null,
+      "startDate": string | null (e.g. "2021" or "Jan 2021"),
+      "endDate": string | null,
+      "serviceLines": string | null (comma-separated),
+      "scope": string | null (1-2 sentence scope description),
+      "description": string | null (any additional detail)
+    }
 }
 
 Return ONLY valid JSON. Do not include markdown fences or explanation.`;
@@ -786,6 +801,7 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         const raw = response?.choices?.[0]?.message?.content ?? "{}";
         const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
         const meta = JSON.parse(rawStr) as Record<string, unknown>;
+        const rawProjects = Array.isArray(meta.projects) ? meta.projects as Array<Record<string, unknown>> : [];
         return {
           docType: (meta.docType as string) ?? "other",
           companyTag: (meta.companyTag as string) ?? null,
@@ -798,6 +814,18 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           staffName: (meta.staffName as string) ?? null,
           tags: (meta.tags as string) ?? null,
           description: (meta.description as string) ?? null,
+          multiProject: Boolean(meta.multiProject) && rawProjects.length >= 2,
+          projects: rawProjects.map((p) => ({
+            projectName: (p.projectName as string) ?? "",
+            client: (p.client as string) ?? null,
+            location: (p.location as string) ?? null,
+            contractValue: (p.contractValue as string) ?? null,
+            startDate: (p.startDate as string) ?? null,
+            endDate: (p.endDate as string) ?? null,
+            serviceLines: (p.serviceLines as string) ?? null,
+            scope: (p.scope as string) ?? null,
+            description: (p.description as string) ?? null,
+          })),
         };
       } catch {
         // If LLM fails, return safe defaults so the user can fill in manually
@@ -813,6 +841,18 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           staffName: null as string | null,
           tags: null as string | null,
           description: null as string | null,
+          multiProject: false,
+          projects: [] as Array<{
+            projectName: string;
+            client: string | null;
+            location: string | null;
+            contractValue: string | null;
+            startDate: string | null;
+            endDate: string | null;
+            serviceLines: string | null;
+            scope: string | null;
+            description: string | null;
+          }>,
         };
       }
     }),

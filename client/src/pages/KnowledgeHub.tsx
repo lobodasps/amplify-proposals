@@ -36,7 +36,7 @@ import {
   Upload, FileText, Users, Building2, Award, File, Search,
   MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
   AlertCircle, Loader2, CloudUpload, X, Filter,
-  BookOpen, FolderOpen, ImageIcon,
+  BookOpen, FolderOpen, ImageIcon, Layers, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -111,6 +111,23 @@ const DEFAULT_FORM: UploadFormState = {
   tags: "",
 };
 
+// ─── Multi-project split types ───────────────────────────────────────────────
+
+interface SplitProject {
+  projectName: string;
+  client: string;
+  location: string;
+  contractValue: string;
+  startDate: string;
+  endDate: string;
+  serviceLines: string;
+  scope: string;
+  description: string;
+  // shared with source file
+  companyTag: CompanyTag | "";
+  tags: string;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function KnowledgeHub() {
@@ -132,6 +149,12 @@ export default function KnowledgeHub() {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Multi-project split state
+  const [splitProjects, setSplitProjects] = useState<SplitProject[]>([]);
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [expandedSplitIdx, setExpandedSplitIdx] = useState<number | null>(0);
+  const [isSavingSplit, setIsSavingSplit] = useState(false);
 
   // ── Preview state ───────────────────────────────────────────────────────────
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
@@ -252,7 +275,29 @@ export default function KnowledgeHub() {
         fileName: file.name,
       });
 
-      // Step 3: Pre-fill the form with whatever the LLM found
+      // Step 3a: Multi-project split mode
+      if (meta.multiProject && meta.projects.length >= 2) {
+        setIsSplitMode(true);
+        setSplitProjects(
+          meta.projects.map((p) => ({
+            projectName: p.projectName ?? "",
+            client: p.client ?? "",
+            location: p.location ?? "",
+            contractValue: p.contractValue ?? "",
+            startDate: p.startDate ?? "",
+            endDate: p.endDate ?? "",
+            serviceLines: p.serviceLines ?? "",
+            scope: p.scope ?? "",
+            description: p.description ?? "",
+            companyTag: (meta.companyTag as CompanyTag) ?? "",
+            tags: meta.tags ?? "",
+          }))
+        );
+        setExpandedSplitIdx(0);
+        return;
+      }
+
+      // Step 3b: Single-record pre-fill
       setForm({
         docType: (meta.docType as DocType) ?? "other",
         companyTag: (meta.companyTag as CompanyTag) ?? "",
@@ -322,6 +367,62 @@ export default function KnowledgeHub() {
 
   function updateForm(key: keyof UploadFormState, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateSplitProject(idx: number, key: keyof SplitProject, value: string) {
+    setSplitProjects((prev) => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p));
+  }
+
+  function resetUploadState() {
+    setShowUploadForm(false);
+    setUploadFile(null);
+    setStagedUpload(null);
+    setForm(DEFAULT_FORM);
+    setIsSplitMode(false);
+    setSplitProjects([]);
+    setExpandedSplitIdx(null);
+  }
+
+  async function handleSaveSplit() {
+    if (!stagedUpload) return;
+    const invalid = splitProjects.findIndex((p) => !p.projectName.trim());
+    if (invalid !== -1) {
+      toast.error(`Project ${invalid + 1} is missing a project name.`);
+      setExpandedSplitIdx(invalid);
+      return;
+    }
+    setIsSavingSplit(true);
+    let saved = 0;
+    for (const p of splitProjects) {
+      try {
+        await createMutation.mutateAsync({
+          fileName: stagedUpload.fileName,
+          fileKey: stagedUpload.key,
+          fileUrl: stagedUpload.url,
+          mimeType: uploadFile?.type || "application/octet-stream",
+          fileSizeBytes: stagedUpload.size,
+          docType: "project_sheet",
+          title: p.projectName.trim(),
+          description: [p.scope, p.description].filter(Boolean).join(" ") || undefined,
+          companyTag: (p.companyTag as CompanyTag) || undefined,
+          clientName: p.client.trim() || undefined,
+          contractValue: p.contractValue.trim() || undefined,
+          tags: [
+            p.serviceLines,
+            p.location,
+            p.tags,
+          ].filter(Boolean).join(", ") || undefined,
+        });
+        saved++;
+      } catch (err: any) {
+        toast.error(`Failed to save "${p.projectName}": ${err.message}`);
+      }
+    }
+    setIsSavingSplit(false);
+    if (saved > 0) {
+      toast.success(`${saved} project record${saved !== 1 ? "s" : ""} saved to Knowledge Hub`);
+      resetUploadState();
+    }
   }
 
   const docs = listData?.docs ?? [];
@@ -443,7 +544,7 @@ export default function KnowledgeHub() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setStagedUpload(null); setForm(DEFAULT_FORM); }}
+                  onClick={resetUploadState}
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -602,9 +703,185 @@ export default function KnowledgeHub() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => { setShowUploadForm(false); setUploadFile(null); setStagedUpload(null); setForm(DEFAULT_FORM); }}
+                  onClick={resetUploadState}
                   disabled={isUploading}
                 >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Multi-project Split Panel ──────────────────────────────────────────── */}
+        {isSplitMode && uploadFile && stagedUpload && (
+          <Card className="border-amber-300/60 shadow-sm bg-amber-50/30 dark:bg-amber-950/10">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-amber-600" />
+                    <CardTitle className="text-base text-amber-800 dark:text-amber-300">
+                      Multi-Project Experience Sheet Detected
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="mt-0.5">
+                    {splitProjects.length} projects found in <span className="font-medium">{uploadFile.name}</span>.
+                    Review and edit each project, then create {splitProjects.length} separate records.
+                  </CardDescription>
+                </div>
+                <Button variant="ghost" size="icon" onClick={resetUploadState}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {splitProjects.map((proj, idx) => (
+                <div key={idx} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                  {/* Accordion header */}
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-accent/40 transition-colors"
+                    onClick={() => setExpandedSplitIdx(expandedSplitIdx === idx ? null : idx)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <span className="font-medium text-sm truncate">
+                        {proj.projectName || <span className="text-muted-foreground italic">Unnamed project</span>}
+                      </span>
+                      {proj.client && (
+                        <span className="text-xs text-muted-foreground truncate">— {proj.client}</span>
+                      )}
+                    </div>
+                    {expandedSplitIdx === idx
+                      ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                      : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                  </button>
+
+                  {/* Accordion body */}
+                  {expandedSplitIdx === idx && (
+                    <div className="px-4 pb-4 pt-1 space-y-3 border-t border-border">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5 col-span-2">
+                          <Label>Project Name <span className="text-rose-500">*</span></Label>
+                          <Input
+                            value={proj.projectName}
+                            onChange={(e) => updateSplitProject(idx, "projectName", e.target.value)}
+                            placeholder="Project name"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Client / Agency</Label>
+                          <Input
+                            value={proj.client}
+                            onChange={(e) => updateSplitProject(idx, "client", e.target.value)}
+                            placeholder="e.g. NJDOT"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Location</Label>
+                          <Input
+                            value={proj.location}
+                            onChange={(e) => updateSplitProject(idx, "location", e.target.value)}
+                            placeholder="e.g. Newark, NJ"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Contract Value</Label>
+                          <Input
+                            value={proj.contractValue}
+                            onChange={(e) => updateSplitProject(idx, "contractValue", e.target.value)}
+                            placeholder="e.g. $1,250,000"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Service Lines</Label>
+                          <Input
+                            value={proj.serviceLines}
+                            onChange={(e) => updateSplitProject(idx, "serviceLines", e.target.value)}
+                            placeholder="e.g. Traffic Engineering, Inspection"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Start Date</Label>
+                          <Input
+                            value={proj.startDate}
+                            onChange={(e) => updateSplitProject(idx, "startDate", e.target.value)}
+                            placeholder="e.g. 2021"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>End Date</Label>
+                          <Input
+                            value={proj.endDate}
+                            onChange={(e) => updateSplitProject(idx, "endDate", e.target.value)}
+                            placeholder="e.g. 2023 or Ongoing"
+                          />
+                        </div>
+                        <div className="space-y-1.5 col-span-2">
+                          <Label>Scope</Label>
+                          <Textarea
+                            value={proj.scope}
+                            onChange={(e) => updateSplitProject(idx, "scope", e.target.value)}
+                            placeholder="1-2 sentence scope description"
+                            rows={2}
+                          />
+                        </div>
+                        <div className="space-y-1.5 col-span-2">
+                          <Label>Additional Notes</Label>
+                          <Textarea
+                            value={proj.description}
+                            onChange={(e) => updateSplitProject(idx, "description", e.target.value)}
+                            placeholder="Any additional detail"
+                            rows={2}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Company / Entity</Label>
+                          <Select
+                            value={proj.companyTag}
+                            onValueChange={(v) => updateSplitProject(idx, "companyTag", v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select entity…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="JPCL">JPCL</SelectItem>
+                              <SelectItem value="Strans">Strans</SelectItem>
+                              <SelectItem value="Both">Both</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Tags</Label>
+                          <Input
+                            value={proj.tags}
+                            onChange={(e) => updateSplitProject(idx, "tags", e.target.value)}
+                            placeholder="Comma-separated keywords"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <Button
+                  onClick={handleSaveSplit}
+                  disabled={isSavingSplit}
+                  className="gap-2"
+                >
+                  {isSavingSplit ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                  ) : (
+                    <><CheckCircle2 className="w-4 h-4" />Create {splitProjects.length} Records</>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={resetUploadState} disabled={isSavingSplit}>
                   Cancel
                 </Button>
               </div>
