@@ -498,3 +498,17 @@
 - [x] Step 2 (Go/No-Go) unchanged
 - [x] fflate 0.8.3 added as dependency (xlsx already present)
 - [x] Zero TypeScript errors, 16/16 vitest tests pass
+
+## Opportunities — Manual Entry Form (v3.1)
+- [x] New Opportunity button on Opportunities page header
+- [x] Full manual entry dialog: Title (required), Agency/Client (required), RFP Number, Estimated Value, Due Date, Service Lines (multi-select chips), Source dropdown (Manual Entry / Agency Portal / GovWin / BidNet / Client Referral / Teaming Partner / Other), Description/Notes, Attachments (optional file upload via /api/upload)
+- [x] Live DB opportunities merged with demo data in the opportunities list (DB badge shown)
+- [x] Calls opportunities.create tRPC mutation, invalidates list on success
+
+## Proposal Launchpad — Manual Entry Path (v3.1)
+- [x] Step 1 now shows an entry mode chooser: "Upload RFP Package" vs "Enter Manually"
+- [x] Manual entry form: Title (required), Agency (required), RFP Number, Due Date, Estimated Value, Service Lines (chip toggles), Scope Summary
+- [x] Manual path skips file upload and processing — goes directly to review → Go/No-Go
+- [x] Step indicator adapts to show 2 steps (Enter Details → Go/No-Go) for manual mode
+- [x] Back button returns to mode chooser from either path
+- [x] Reset clears entryMode back to "choose"

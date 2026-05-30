@@ -67,6 +67,7 @@ import {
   ArrowLeft,
   X,
   Package,
+  PenLine,
 } from "lucide-react";
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
 
@@ -125,6 +126,20 @@ interface GoNoGoResult {
 }
 
 type WizardStep = "upload" | "processing" | "review" | "scoring" | "decision" | "archived";
+type EntryMode = "choose" | "upload" | "manual";
+
+const MANUAL_SERVICE_LINES = [
+  "Special Inspections",
+  "Construction Management",
+  "Traffic Engineering",
+  "Landscape / Streetscape",
+  "Environmental",
+  "Structural Engineering",
+  "Civil Engineering",
+  "Geotechnical",
+  "MEP Engineering",
+  "Other",
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -246,6 +261,9 @@ function FileTypeBadge({ type }: { type: FileType }) {
 
 export default function ProposalLaunchpad() {
   const [, navigate] = useLocation();
+
+  // ── Entry mode ────────────────────────────────────────────────────────────
+  const [entryMode, setEntryMode] = useState<EntryMode>("choose");
 
   // ── Wizard state ──────────────────────────────────────────────────────────
   const [step, setStep] = useState<WizardStep>("upload");
@@ -534,9 +552,17 @@ export default function ProposalLaunchpad() {
     toast.info("RFP archived. No pursuit created.");
   };
 
+  // ── Manual entry: populate fields and go straight to review ─────────────
+  const handleManualSubmit = () => {
+    if (!rfpTitle.trim()) { toast.error("Title is required."); return; }
+    if (!rfpAgency.trim()) { toast.error("Agency / Client is required."); return; }
+    setStep("review");
+  };
+
   // ── Reset wizard ──────────────────────────────────────────────────────────
   const handleReset = () => {
     setStep("upload");
+    setEntryMode("choose");
     setQueue([]);
     setSessionId(null);
     setProcessingProgress(0);
@@ -554,11 +580,16 @@ export default function ProposalLaunchpad() {
 
   // ── Step indicator ────────────────────────────────────────────────────────
   const stepIndex = ["upload", "processing", "review", "scoring", "decision", "archived"].indexOf(step);
-  const progressSteps = [
-    { label: "Upload Package", active: stepIndex >= 0 },
-    { label: "Extract Info", active: stepIndex >= 2 },
-    { label: "Go/No-Go", active: stepIndex >= 4 },
-  ];
+  const progressSteps = entryMode === "manual"
+    ? [
+        { label: "Enter Details", active: true },
+        { label: "Go/No-Go", active: stepIndex >= 4 },
+      ]
+    : [
+        { label: "Upload Package", active: stepIndex >= 0 },
+        { label: "Extract Info", active: stepIndex >= 2 },
+        { label: "Go/No-Go", active: stepIndex >= 4 },
+      ];
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -597,9 +628,197 @@ export default function ProposalLaunchpad() {
         <Separator />
 
         {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* ENTRY MODE CHOOSER                                                 */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {step === "upload" && entryMode === "choose" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">How would you like to start?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Upload option */}
+              <button
+                type="button"
+                onClick={() => setEntryMode("upload")}
+                className="group flex flex-col items-start gap-3 p-5 rounded-xl border-2 border-border hover:border-primary/60 hover:bg-accent/30 transition-all duration-200 text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Package className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">Upload RFP Package</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Drag &amp; drop PDF, Word, Excel, or ZIP files. AI extracts key details automatically.
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-primary flex items-center gap-1">
+                  Start upload <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
+
+              {/* Manual entry option */}
+              <button
+                type="button"
+                onClick={() => setEntryMode("manual")}
+                className="group flex flex-col items-start gap-3 p-5 rounded-xl border-2 border-border hover:border-primary/60 hover:bg-accent/30 transition-all duration-200 text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:bg-violet-500/20 transition-colors">
+                  <PenLine className="w-5 h-5 text-violet-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">Enter Manually</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Type in opportunity details directly — no file needed. Proceed straight to Go/No-Go scoring.
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-violet-600 flex items-center gap-1">
+                  Enter details <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* MANUAL ENTRY FORM                                                  */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {step === "upload" && entryMode === "manual" && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PenLine className="w-5 h-5 text-violet-600" />
+                  Enter Opportunity Details
+                </CardTitle>
+                <CardDescription>
+                  Fill in the key details and we'll run an instant Go/No-Go analysis.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Title */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" /> Project / RFP Title <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    value={rfpTitle}
+                    onChange={(e) => setRfpTitle(e.target.value)}
+                    placeholder="e.g. Bridge Inspection Services — Route 9 Corridor"
+                    className="font-medium"
+                  />
+                </div>
+
+                {/* Agency + RFP Number */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5" /> Agency / Client <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      value={rfpAgency}
+                      onChange={(e) => setRfpAgency(e.target.value)}
+                      placeholder="e.g. NJDOT, NYC SCA"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5" /> RFP / Solicitation Number
+                    </label>
+                    <Input
+                      value={rfpNumber}
+                      onChange={(e) => setRfpNumber(e.target.value)}
+                      placeholder="e.g. RFP-2025-001"
+                    />
+                  </div>
+                </div>
+
+                {/* Due Date + Estimated Value */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" /> Submission Deadline
+                    </label>
+                    <Input
+                      type="date"
+                      value={rfpDueDate}
+                      onChange={(e) => setRfpDueDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <DollarSign className="w-3.5 h-3.5" /> Estimated Value
+                    </label>
+                    <Input
+                      value={rfpEstValue}
+                      onChange={(e) => setRfpEstValue(e.target.value)}
+                      placeholder="e.g. $500,000"
+                    />
+                  </div>
+                </div>
+
+                {/* Service Lines */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" /> Service Lines
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 p-2 rounded-md border border-input bg-background min-h-[2.5rem]">
+                    {MANUAL_SERVICE_LINES.map((sl) => (
+                      <button
+                        key={sl}
+                        type="button"
+                        onClick={() =>
+                          setRfpServiceLines((prev) =>
+                            prev.includes(sl) ? prev.filter((x) => x !== sl) : [...prev, sl]
+                          )
+                        }
+                        className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                          rfpServiceLines.includes(sl)
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                        }`}
+                      >
+                        {sl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Scope Summary */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <AlignLeft className="w-3.5 h-3.5" /> Scope Summary / Notes
+                  </label>
+                  <Textarea
+                    value={rfpSummary}
+                    onChange={(e) => setRfpSummary(e.target.value)}
+                    placeholder="Brief description of the project scope, requirements, or notes on fit…"
+                    rows={4}
+                    className="resize-none text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center justify-between gap-4">
+              <Button variant="ghost" size="sm" onClick={() => setEntryMode("choose")} className="text-muted-foreground">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                Back
+              </Button>
+              <Button
+                size="lg"
+                onClick={handleManualSubmit}
+                disabled={!rfpTitle.trim() || !rfpAgency.trim()}
+                className="gap-2"
+              >
+                Continue to Go/No-Go
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
         {/* STEP 1 — Upload Drop Zone + File Queue                            */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {step === "upload" && (
+        {step === "upload" && entryMode === "upload" && (
           <div className="space-y-6">
             <Card>
               <CardHeader>
@@ -709,11 +928,10 @@ export default function ProposalLaunchpad() {
 
             {/* CTA */}
             <div className="flex items-center justify-between gap-4">
-              <p className="text-xs text-muted-foreground">
-                {queue.length === 0
-                  ? "Add at least one file to continue."
-                  : `${queue.length} file${queue.length !== 1 ? "s" : ""} ready to process.`}
-              </p>
+              <Button variant="ghost" size="sm" onClick={() => setEntryMode("choose")} className="text-muted-foreground">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                Back
+              </Button>
               <Button
                 size="lg"
                 onClick={handleProcess}
@@ -788,8 +1006,8 @@ export default function ProposalLaunchpad() {
         {/* ══════════════════════════════════════════════════════════════════ */}
         {step === "review" && (
           <div className="space-y-6">
-            {/* File manifest */}
-            <Card>
+            {/* File manifest — only shown for upload mode */}
+            {entryMode !== "manual" && <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -812,7 +1030,7 @@ export default function ProposalLaunchpad() {
                   ))}
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Extracted RFP data */}
             <Card>
