@@ -54,6 +54,7 @@ import {
   LineChart,
   HardDrive,
   RefreshCw,
+  Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +129,13 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Target,
     step: 2,
     items: [
+      {
+        label: "Proposal Launchpad",
+        href: "/launch",
+        icon: Rocket,
+        badge: "AI",
+        description: "Upload RFP, extract info, and get instant Go/No-Go",
+      },
       {
         label: "Pursuits",
         href: "/pursuits",

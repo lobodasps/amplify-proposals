@@ -39,6 +39,7 @@ import ProposalScorer from "./pages/ProposalScorer";
 import ConflictDetector from "./pages/ConflictDetector";
 import FileLibrary from "@/pages/FileLibrary";
 import QbSync from "@/pages/QbSync";
+import ProposalLaunchpad from "@/pages/ProposalLaunchpad";
 
 /**
  * ProtectedRoute wrapper — redirects to /login if not authenticated.
@@ -102,6 +103,7 @@ function Router() {
       <Route path="/proposal-scorer">{() => <ProtectedRoute component={ProposalScorer} />}</Route>
       <Route path="/conflict-detector">{() => <ProtectedRoute component={ConflictDetector} />}</Route>
       <Route path="/qb-sync">{() => <ProtectedRoute component={QbSync} />}</Route>
+      <Route path="/launch">{() => <ProtectedRoute component={ProposalLaunchpad} />}</Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

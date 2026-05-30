@@ -468,3 +468,18 @@
 - [x] triggerExtract procedure updated: uses SYSTEM_PROMPTS, calls buildTagString/buildExtractedText, writes tags field back to dam_documents
 - [x] KnowledgeHub.tsx onSuccess callback updated for new return shape { success, imageCount }
 - [x] Zero TypeScript errors, 16/16 vitest tests pass
+
+## Proposal Launchpad (/launch) — 2-Step Wizard (v2.7)
+- [x] New page ProposalLaunchpad.tsx at /launch — no existing files modified
+- [x] Step 1: drag-and-drop PDF upload via existing /api/upload endpoint (rfp folder)
+- [x] Step 1: auto-create rfpSession (rfpSessions.create), save file metadata (rfpSessions.saveRfpFile)
+- [x] Step 1: run rfp_parser skill (rfpSessions.executeSkill) with animated progress bar
+- [x] Step 1: display editable summary card (title, agency, RFP#, due date, est. value, service line chips, scope summary)
+- [x] Step 2: invoke proposals.scoreGoNoGo with extracted data
+- [x] Step 2: display score (0–100 with color-coded bar), recommendation (GO/NO-GO/CONDITIONAL GO), rationale, strengths, risks, win themes
+- [x] Step 2: GO button → pursuits.create → redirect to /pursuits/:id (newest record via list invalidation)
+- [x] Step 2: NO-GO button → archived state with "Launch Another RFP" reset option
+- [x] Step indicator (3 steps) at top of wizard
+- [x] "Proposal Launchpad" nav item (AI badge, Rocket icon) added to Pursuits & Proposals sidebar group
+- [x] /launch protected route registered in App.tsx
+- [x] Zero new backend code — only existing tRPC procedures and /api/upload used
