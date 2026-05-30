@@ -248,14 +248,12 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Contracts & Compliance",
     icon: Gavel,
     step: 4,
-    roles: ["administrator", "executive", "contract_manager", "admin"],
     items: [
       {
         label: "Contracts",
         href: "/contracts",
         icon: FileSignature,
         description: "Active & awarded contracts",
-        roles: ["administrator", "executive", "contract_manager", "admin"],
       },
       {
         label: "Contract Analyzer",
@@ -263,14 +261,12 @@ const NAV_GROUPS: NavGroup[] = [
         icon: ScanText,
         badge: "AI",
         description: "AI review of contract terms & risks",
-        roles: ["administrator", "contract_manager", "admin"],
       },
       {
         label: "Compliance",
         href: "/compliance",
         icon: Shield,
         description: "Compliance tracking & certifications",
-        roles: ["administrator", "executive", "contract_manager", "admin"],
       },
     ],
   },
@@ -480,8 +476,10 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
   // Track which groups are open — default: open the group containing the current path
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
+    // Always open key groups by default so users can see them immediately
+    const alwaysOpen = new Set(["pursuits", "contracts"]);
     NAV_GROUPS.forEach((g) => {
-      initial[g.id] = groupContainsPath(g, location) || g.pinned === true;
+      initial[g.id] = groupContainsPath(g, location) || g.pinned === true || alwaysOpen.has(g.id);
     });
     return initial;
   });
