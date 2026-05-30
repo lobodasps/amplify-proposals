@@ -1007,8 +1007,10 @@ export const damDocuments = pgTable("dam_documents", {
   pursuitId: uuid("pursuitId"),
   proposalId: uuid("proposalId"),
 
-  // Client / agency
-  clientName: text("clientName"),
+  // Client / agency / owner
+  clientName: text("clientName"),       // Direct contracting party (prime if owner contract, prime contractor if sub)
+  ownerName: text("ownerName"),          // Public agency / asset owner (e.g. NYSDOT, NYC Parks). Comma-separated if multiple.
+  firmRole: text("firmRole"),            // Our role: prime | sub | joint-venture
   contractValue: text("contractValue"),
   awardYear: integer("awardYear"),
 

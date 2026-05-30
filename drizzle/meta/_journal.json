@@ -8,6 +8,13 @@
       "when": 1780082227621,
       "tag": "0000_big_johnny_blaze",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780170788313,
+      "tag": "0001_omniscient_hercules",
+      "breakpoints": true
     }
   ]
 }

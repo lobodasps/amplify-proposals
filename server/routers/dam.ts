@@ -64,8 +64,10 @@ const createInput = z.object({
   pursuitId: z.string().uuid().optional(),
   proposalId: z.string().uuid().optional(),
 
-  // Client / contract
-  clientName: z.string().optional(),
+  // Client / owner / role
+  clientName: z.string().optional(),    // Direct contracting party
+  ownerName: z.string().optional(),     // Public agency / asset owner (comma-separated if multiple)
+  firmRole: z.string().optional(),      // prime | sub | joint-venture
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
 
@@ -86,6 +88,8 @@ const updateMetaInput = z.object({
   pursuitId: z.string().uuid().optional(),
   proposalId: z.string().uuid().optional(),
   clientName: z.string().optional(),
+  ownerName: z.string().optional(),
+  firmRole: z.string().optional(),
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
   tags: z.string().optional(),
@@ -173,7 +177,9 @@ Schema:
 {
   "projectName": string | null,
   "projectNumber": string | null,
-  "client": string | null,
+  "owner": string[] (the public agency or asset owner — e.g. ["NYSDOT"], ["NYC Parks", "FHWA"]. Can be multiple.),
+  "client": string | null (the direct contracting party: same as owner if we are prime; if we are a subconsultant, this is the prime contractor name e.g. "AECOM", "Naik Consulting Group"),
+  "firmRole": "prime" | "sub" | "joint-venture" | null (our firm's role on this project),
   "location": string | null,
   "contractValue": string | null,
   "startDate": string | null,
@@ -207,7 +213,9 @@ Return a single JSON object. Every field is required. Use null for missing value
 Schema:
 {
   "title": string | null,
-  "client": string | null,
+  "owner": string[] (the public agency or asset owner issuing the RFP — e.g. ["NJDOT"], ["Port Authority of NY/NJ"]. Can be multiple.),
+  "client": string | null (the direct contracting party: same as owner if we are prime; if we are a subconsultant, this is the prime contractor name),
+  "firmRole": "prime" | "sub" | "joint-venture" | null (our firm's role on this proposal),
   "rfpNumber": string | null,
   "submitDate": string | null,
   "awardDate": string | null,
@@ -688,6 +696,16 @@ export const damRouter = router({
         const tagString = buildTagString(extracted);
         const extractedText = buildExtractedText(extracted);
 
+        // Resolve ownerName: join array or use string
+        const rawOwner = extracted.owner;
+        const resolvedOwnerName: string | null = Array.isArray(rawOwner)
+          ? (rawOwner as string[]).join(", ") || null
+          : typeof rawOwner === "string" ? rawOwner || null : null;
+
+        // Resolve firmRole
+        const resolvedFirmRole: string | null =
+          typeof extracted.firmRole === "string" ? extracted.firmRole : null;
+
         // Write back to dam_documents
         await db
           .update(damDocuments)
@@ -695,6 +713,8 @@ export const damRouter = router({
             extractedMeta: extracted,
             extractedText,
             tags: tagString,
+            ownerName: resolvedOwnerName,
+            firmRole: resolvedFirmRole,
             processingStatus: "indexed",
             processingError: null,
           })
@@ -752,7 +772,9 @@ Return a JSON object with these fields (use null for fields you cannot determine
   "docType": one of: "past_proposal" | "project_sheet" | "resume" | "certification" | "rfp" | "contract" | "boilerplate" | "other",
   "companyTag": one of: "JPCL" | "Strans" | "Both" | null  (look for company names, logos, letterhead),
   "title": string (best descriptive title for this document),
-  "clientName": string | null (client or agency name — for single-project documents),
+  "clientName": string | null (for single-project docs: the direct contracting party — if prime, same as owner; if sub, the prime contractor e.g. AECOM),
+  "ownerName": string | null (for single-project docs: the public agency or asset owner e.g. NYSDOT, NYC Parks; comma-separated if multiple),
+  "firmRole": one of: "prime" | "sub" | "joint-venture" | null (our firm’s role on this project),
   "projectName": string | null,
   "projectNumber": string | null,
   "contractValue": string | null (formatted dollar amount e.g. "$1,250,000"),
@@ -764,7 +786,9 @@ Return a JSON object with these fields (use null for fields you cannot determine
   "projects": array of objects, each with:
     {
       "projectName": string,
-      "client": string | null,
+      "owner": string[] (public agency / asset owner names — can be multiple e.g. ["NYSDOT", "FHWA"]),
+      "client": string | null (direct contracting party: same as owner if prime, prime contractor name if sub),
+      "firmRole": one of: "prime" | "sub" | "joint-venture" | null,
       "location": string | null,
       "contractValue": string | null,
       "startDate": string | null (e.g. "2021" or "Jan 2021"),
@@ -814,10 +838,14 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           staffName: (meta.staffName as string) ?? null,
           tags: (meta.tags as string) ?? null,
           description: (meta.description as string) ?? null,
+          ownerName: (meta.ownerName as string) ?? null,
+          firmRole: (meta.firmRole as string) ?? null,
           multiProject: Boolean(meta.multiProject) && rawProjects.length >= 2,
           projects: rawProjects.map((p) => ({
             projectName: (p.projectName as string) ?? "",
+            owner: Array.isArray(p.owner) ? (p.owner as string[]).join(", ") : ((p.owner as string) ?? ""),
             client: (p.client as string) ?? null,
+            firmRole: (p.firmRole as string) ?? null,
             location: (p.location as string) ?? null,
             contractValue: (p.contractValue as string) ?? null,
             startDate: (p.startDate as string) ?? null,
@@ -841,10 +869,14 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           staffName: null as string | null,
           tags: null as string | null,
           description: null as string | null,
+          ownerName: null as string | null,
+          firmRole: null as string | null,
           multiProject: false,
           projects: [] as Array<{
             projectName: string;
+            owner: string;
             client: string | null;
+            firmRole: string | null;
             location: string | null;
             contractValue: string | null;
             startDate: string | null;

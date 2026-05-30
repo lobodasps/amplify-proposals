@@ -115,7 +115,9 @@ const DEFAULT_FORM: UploadFormState = {
 
 interface SplitProject {
   projectName: string;
-  client: string;
+  owner: string;       // comma-separated public agency/asset owners
+  client: string;      // direct contracting party
+  firmRole: string;    // prime | sub | joint-venture | ""
   location: string;
   contractValue: string;
   startDate: string;
@@ -281,7 +283,9 @@ export default function KnowledgeHub() {
         setSplitProjects(
           meta.projects.map((p) => ({
             projectName: p.projectName ?? "",
+            owner: p.owner ?? "",
             client: p.client ?? "",
+            firmRole: p.firmRole ?? "",
             location: p.location ?? "",
             contractValue: p.contractValue ?? "",
             startDate: p.startDate ?? "",
@@ -406,6 +410,8 @@ export default function KnowledgeHub() {
           description: [p.scope, p.description].filter(Boolean).join(" ") || undefined,
           companyTag: (p.companyTag as CompanyTag) || undefined,
           clientName: p.client.trim() || undefined,
+          ownerName: p.owner.trim() || undefined,
+          firmRole: p.firmRole.trim() || undefined,
           contractValue: p.contractValue.trim() || undefined,
           tags: [
             p.serviceLines,
@@ -773,12 +779,36 @@ export default function KnowledgeHub() {
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <Label>Client / Agency</Label>
+                          <Label>Owner(s)</Label>
+                          <Input
+                            value={proj.owner}
+                            onChange={(e) => updateSplitProject(idx, "owner", e.target.value)}
+                            placeholder="e.g. NYSDOT, FHWA (comma-separated)"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Client</Label>
                           <Input
                             value={proj.client}
                             onChange={(e) => updateSplitProject(idx, "client", e.target.value)}
-                            placeholder="e.g. NJDOT"
+                            placeholder="Direct contracting party (prime or prime contractor)"
                           />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Our Role</Label>
+                          <Select
+                            value={proj.firmRole}
+                            onValueChange={(v) => updateSplitProject(idx, "firmRole", v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select role…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="prime">Prime</SelectItem>
+                              <SelectItem value="sub">Subconsultant</SelectItem>
+                              <SelectItem value="joint-venture">Joint Venture</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="space-y-1.5">
                           <Label>Location</Label>
