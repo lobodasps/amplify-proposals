@@ -214,11 +214,68 @@ A new 2-step wizard page for rapid RFP intake and Go/No-Go decision. No new back
 - PDF + DOCX → `rfp_parser` LLM skill; XLSX → client-side SheetJS parse (up to 5 sheets × 30 rows)
 - Per-file status icons in processing view; multi-file manifest card in review step
 
+**Step 1 — Enter Manually (alternative path):**
+- Two entry point cards: "Upload RFP Package" vs "Enter Manually"
+- Manual form: Title, Agency, RFP Number, Due Date, Estimated Value, Service Lines (chip toggles), Scope Summary
+- Skips upload/processing entirely; proceeds directly to review card → Go/No-Go
+
 **Step 2 — Go/No-Go:**
 - `proposals.scoreGoNoGo` → score (0–100), recommendation (GO/NO-GO/CONDITIONAL GO), strengths, risks, win themes
 - GO → `pursuits.create` → redirect to `/pursuits/:id`; NO-GO → archived state
 
 **Navigation:** "Proposal Launchpad" nav item (Rocket icon, AI badge) in Pursuits & Proposals sidebar group.
+
+---
+
+## Recent Additions (Session — May 30, 2026)
+
+### Enhanced `triggerExtract`
+
+- `SYSTEM_PROMPTS` constant with per-docType prompts (resume, project_sheet, past_proposal, certification, other) — each extracts `sections[]` and `images[]` arrays
+- `buildTagString()` helper — merges tags from LLM output, serviceLines, certifications, and image-level tags
+- `buildExtractedText()` helper — assembles searchable text from summaries, section content, image descriptions
+- Tags written back to `dam_documents.tags` column
+
+### Owner / Client / Firm Role Distinction
+
+For AEC project sheets, the system now distinguishes between:
+
+| Field | Definition | Example |
+|-------|-----------|----------|
+| `ownerName` | Public agency or end client who owns the asset | NYSDOT, NYC Parks, FHWA |
+| `clientName` | Firm that contracted directly with Strans/JPCL | AECOM, Naik Consulting |
+| `firmRole` | Relationship to the project | `prime` \| `sub` \| `joint-venture` |
+
+- Schema: `ownerName` (text) and `firmRole` (text) columns added to `dam_documents`
+- `autoExtract` prompt returns `owner[]`, `client`, `firmRole` per project
+- `triggerExtract` SYSTEM_PROMPTS for `project_sheet` and `past_proposal` updated
+- Multi-project split panel UI: Owner(s) text input, Client text input, Our Role dropdown
+
+### DAM Duplicate Detection & Versioning
+
+- **Schema**: `resumeVersion` and `pursuitContext` columns added to `dam_documents`
+- **Server procedures**: `checkFileDuplicate` (matches by fileName), `checkContentDuplicate` (per-docType logic: project_sheet by projectNumber/projectName, resume by staffName+version, past_proposal by rfpNumber, certification by staffName+title, rfp by rfpNumber, contract by contractNumber, boilerplate by title), `replaceFile` (updates file columns on existing record)
+- **Upload flow**: File-level duplicate banner (amber) with Replace/Keep Both/Cancel; content-level duplicate warning (orange) with dismiss
+- **Resume fields**: Version dropdown (Short/Long/Project-Specific) and Pursuit Context text input, shown for resume docType
+- **Library grid**: Version badges (violet for resumeVersion, blue for firmRole), Owner field in meta section
+
+### Opportunities — Manual Entry
+
+- "New Opportunity" button on Opportunities page header
+- Full dialog form: Title (required), Agency/Client (required), RFP Number, Estimated Value, Due Date, Service Lines (multi-select chips), Source dropdown (7 options), Description/Notes, optional file attachments
+- Calls `opportunities.create` mutation; DB records shown with "DB" badge in list
+
+### Settings — Users Tab
+
+- Replaced placeholder text with real user list from `profiles` table (name, email, role badge, status, joined date)
+- "Invite User" button: dialog with email, first/last name, role selector; calls `supabase.auth.admin.inviteUserByEmail()` on server
+- Admin-only access (enforced server-side)
+
+### Sidebar Navigation Fix
+
+- Removed all role restrictions from sidebar nav groups and items
+- All authenticated users see all menu items; access control enforced at procedure level
+- Pursuits & Proposals and Contracts & Compliance groups default to expanded
 
 ---
 
