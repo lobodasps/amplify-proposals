@@ -528,3 +528,9 @@
 - [ ] Keep Staff Name and Company Entity fields visible on upload form for multi-project resumes
 - [ ] Propagate staffName and companyTag from upload form to all split project records on Create X Records
 - [ ] Disable "Confirm & Save" button when multiProject=true, show redirect banner to split panel
+
+## DAM Resume Upload Fix (correct behavior)
+- [x] When docType=resume, never trigger split panel — save one resume record with projects[] in extractedMeta
+- [x] Split panel (multi-project) only triggers for project_sheet and past_proposal docTypes
+- [x] Resume record shows staff name, entity, project count badge in library grid
+- [x] autoExtract: when docType=resume, return multiProject=false regardless of project count

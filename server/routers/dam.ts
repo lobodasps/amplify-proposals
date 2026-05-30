@@ -855,7 +855,9 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
             return "base";
           })() as string | null,
           pursuitContext: (meta.pursuitContext as string) ?? null,
-          multiProject: Boolean(meta.multiProject) && rawProjects.length >= 2,
+          // Resumes always save as a single record — projects[] are stored in extractedMeta only.
+          // Split-into-separate-records only applies to project_sheet and past_proposal.
+          multiProject: Boolean(meta.multiProject) && rawProjects.length >= 2 && (meta.docType as string) !== "resume",
           projects: rawProjects.map((p) => ({
             projectName: (p.projectName as string) ?? "",
             owner: Array.isArray(p.owner) ? (p.owner as string[]).join(", ") : ((p.owner as string) ?? ""),

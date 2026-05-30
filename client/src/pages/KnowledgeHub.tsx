@@ -316,7 +316,9 @@ export default function KnowledgeHub() {
       });
 
       // Step 3a: Multi-project split mode
-      if (meta.multiProject && meta.projects.length >= 2) {
+      // Only applies to project_sheet and past_proposal — resumes always save as a single record
+      const splitEligible = meta.docType === "project_sheet" || meta.docType === "past_proposal";
+      if (meta.multiProject && meta.projects.length >= 2 && splitEligible) {
         setIsSplitMode(true);
         // Pre-fill shared resume fields from autoExtract
         setSplitStaffName(meta.staffName ?? "");
@@ -1344,6 +1346,12 @@ export default function KnowledgeHub() {
                         {doc.staffName && (
                           <p className="truncate">
                             <span className="font-medium text-foreground/70">Staff:</span> {doc.staffName}
+                          </p>
+                        )}
+                        {doc.docType === "resume" && (doc as any).extractedMeta?.projects?.length > 0 && (
+                          <p className="truncate">
+                            <span className="font-medium text-foreground/70">Projects:</span>{" "}
+                            {(doc as any).extractedMeta.projects.length} in resume
                           </p>
                         )}
                         {doc.projectName && (
