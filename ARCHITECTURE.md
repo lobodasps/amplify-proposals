@@ -18,7 +18,7 @@ This document describes the current technical architecture of the Amplify Propos
 | Database | Supabase Postgres | Session pooler (port 6543) |
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
-| LLM | Manus Built-in | `invokeLLM()` helper, supports file_url |
+| LLM | Configurable | Currently defaults to Manus Built-in via `invokeLLM()`; designed to support OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API per task type |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
 | Testing | Vitest | 16 tests across 3 files |
@@ -126,6 +126,20 @@ Postgres `numeric` columns return strings from Drizzle ORM. All arithmetic on th
 ### LLM Integration Pattern
 
 All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function accepts a `messages` array (system + user roles) and optional `response_format`. There is **no top-level `system` parameter** — system prompts must be passed as `{ role: "system", content: "..." }` in the messages array. For document analysis, use `file_url` content type with a signed URL from `storageGet()`.
+
+**The LLM layer is intentionally configurable.** The current default is the Manus built-in model, but the system is designed so that Gregg can supply his own API keys and select different providers per feature. The planned `llmConfigs` table (see Phase 4 in todo.md) will allow per-task configuration:
+
+| Task | Configurable? | Planned Providers |
+|------|--------------|-------------------|
+| RFP Shredding | Yes | OpenAI, Anthropic, Gemini, Manus |
+| Resume Tailoring | Yes | OpenAI, Anthropic, Gemini, Manus |
+| Go/No-Go Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
+| Opportunity Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
+| Contract Analyzer | Yes | OpenAI, Anthropic, Gemini, Manus |
+| DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
+| DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
+
+When implementing the LLM config system, `invokeLLM()` should first check the `llmConfigs` table for a task-specific config and use that provider/model/key; if none is found, fall back to the Manus built-in. This means **no existing AI procedures need to change their call signatures** — only the helper itself needs to route correctly.
 
 ---
 
