@@ -19,6 +19,8 @@ This document describes the current technical architecture of the Amplify Propos
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
 | LLM | Manus Built-in | `invokeLLM()` helper, supports file_url |
+| ZIP Extraction | fflate | 0.8.3, client-side only |
+| Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
 | Testing | Vitest | 16 tests across 3 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
@@ -44,7 +46,7 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `amp_tasks` | Amplify task records (renamed from `tasks`) |
 | `pursuits` | Bid pipeline / pursuit tracking |
 | `proposals` | Proposal records linked to pursuits |
-| `rfp_sessions` | Proposal Workspace AI skill workflow state |
+| `rfp_sessions` | Proposal Workspace AI skill workflow state; `extractedData.rfpFiles[]` stores multi-file manifest |
 | `opportunities` | Public opportunity ingestion records |
 | `ai_skill_configs` | Configurable AI skill prompts |
 | `document_shreds` | XML-shredded RFP sections |
@@ -195,6 +197,28 @@ pnpm db:push          # Push schema changes (drizzle-kit generate + migrate)
 pnpm test             # Run vitest (16 tests)
 npx tsc --noEmit      # TypeScript check (must be zero errors)
 ```
+
+---
+
+## Recent Additions (Session — May 29, 2026)
+
+### Proposal Launchpad (`/launch`)
+
+A new 2-step wizard page for rapid RFP intake and Go/No-Go decision. No new backend code — only existing tRPC procedures and `/api/upload` are used.
+
+**Step 1 — Upload RFP Package (multi-file):**
+- Accepts PDF, DOCX (.doc/.docx), XLSX (.xls/.xlsx), and ZIP files — multiple files simultaneously
+- ZIP files are extracted **client-side** using `fflate` before upload; each inner file is queued individually
+- Per-file label selector (7 labels: Main RFP, Scope of Work, Appendix, Addendum, Fee Schedule, Reference Doc, Other) with auto-guess from filename keywords
+- All files uploaded via `/api/upload` (rfp folder); primary file saved via `rfpSessions.saveRfpFile`; full manifest stored in `rfp_sessions.extractedData.rfpFiles[]`
+- PDF + DOCX → `rfp_parser` LLM skill; XLSX → client-side SheetJS parse (up to 5 sheets × 30 rows)
+- Per-file status icons in processing view; multi-file manifest card in review step
+
+**Step 2 — Go/No-Go:**
+- `proposals.scoreGoNoGo` → score (0–100), recommendation (GO/NO-GO/CONDITIONAL GO), strengths, risks, win themes
+- GO → `pursuits.create` → redirect to `/pursuits/:id`; NO-GO → archived state
+
+**Navigation:** "Proposal Launchpad" nav item (Rocket icon, AI badge) in Pursuits & Proposals sidebar group.
 
 ---
 
