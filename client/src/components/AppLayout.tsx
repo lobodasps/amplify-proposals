@@ -280,14 +280,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/analytics",
         icon: BarChart3,
         description: "Win rates, pipeline metrics & trends",
-        roles: ["administrator", "executive", "business_development", "admin"],
       },
       {
         label: "QB Sync",
         href: "/qb-sync",
         icon: RefreshCw,
         description: "Bulk import billed amounts from QuickBooks",
-        roles: ["administrator", "admin", "project_manager"],
       },
       {
         label: "Help",
@@ -300,7 +298,6 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/settings",
         icon: Settings,
         description: "Account & system settings",
-        roles: ["administrator", "admin"],
       },
     ],
   },
