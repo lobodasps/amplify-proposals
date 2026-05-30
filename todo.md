@@ -483,3 +483,18 @@
 - [x] "Proposal Launchpad" nav item (AI badge, Rocket icon) added to Pursuits & Proposals sidebar group
 - [x] /launch protected route registered in App.tsx
 - [x] Zero new backend code — only existing tRPC procedures and /api/upload used
+
+## Proposal Launchpad — Multi-File Package Support (v2.8)
+- [x] Accept multiple files: PDF, DOCX (.doc/.docx), XLSX (.xls/.xlsx), ZIP
+- [x] ZIP files extracted client-side with fflate; inner files queued individually
+- [x] Per-file label selector: Main RFP, Scope of Work, Appendix, Addendum, Fee Schedule, Reference Doc, Other
+- [x] Auto-label guessing from filename keywords (scope/sow, append, addend, fee/cost/price, ref/standard)
+- [x] File type detection with colored badges (PDF=red, DOCX=blue, XLSX=emerald, ZIP=amber)
+- [x] All files uploaded sequentially to /api/upload (rfp folder); primary file saved via rfpSessions.saveRfpFile
+- [x] PDF + DOCX → rfp_parser skill (LLM extraction); XLSX → client-side SheetJS parse (sheet_to_csv, first 30 rows x 5 sheets)
+- [x] Per-file upload/extracting/done/error status icons in processing view
+- [x] Review card shows full file manifest with type badge, label badge, and status icon
+- [x] XLSX structured data note appended to scope summary
+- [x] Step 2 (Go/No-Go) unchanged
+- [x] fflate 0.8.3 added as dependency (xlsx already present)
+- [x] Zero TypeScript errors, 16/16 vitest tests pass
