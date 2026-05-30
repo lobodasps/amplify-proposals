@@ -512,3 +512,13 @@
 - [x] Step indicator adapts to show 2 steps (Enter Details → Go/No-Go) for manual mode
 - [x] Back button returns to mode chooser from either path
 - [x] Reset clears entryMode back to "choose"
+
+## DAM Duplicate Detection & Versioning (v3.2)
+- [x] Part 1: File-level duplicate detection (check fileName match before autoExtract, show Replace/Keep Both/Cancel)
+- [x] Part 2: Content-level duplicate detection per docType (project_sheet, past_proposal, resume, certification, rfp, boilerplate, contract)
+- [x] Part 3: Resume versioning — resumeVersion + pursuitContext columns, dropdown in upload form, autoExtract default logic
+- [x] Part 4: replaceFile procedure for updating existing record's file
+- [x] Part 5: Knowledge Hub display — resume version badge, firmRole badge, owner field in library cards
+- [x] Schema: added resumeVersion, pursuitContext columns to dam_documents
+- [x] Server: checkFileDuplicate, checkContentDuplicate, replaceFile procedures
+- [x] Client: duplicate banners (file-level amber, content-level orange), version/role fields in upload form

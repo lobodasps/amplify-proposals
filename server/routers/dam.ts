@@ -68,6 +68,8 @@ const createInput = z.object({
   clientName: z.string().optional(),    // Direct contracting party
   ownerName: z.string().optional(),     // Public agency / asset owner (comma-separated if multiple)
   firmRole: z.string().optional(),      // prime | sub | joint-venture
+  resumeVersion: z.string().optional(), // base | tailored | submitted (resume docType only)
+  pursuitContext: z.string().optional(),// Free-form pursuit description when no pursuitId linked
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
 
@@ -90,6 +92,8 @@ const updateMetaInput = z.object({
   clientName: z.string().optional(),
   ownerName: z.string().optional(),
   firmRole: z.string().optional(),
+  resumeVersion: z.string().optional(),
+  pursuitContext: z.string().optional(),
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
   tags: z.string().optional(),
@@ -840,6 +844,17 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           description: (meta.description as string) ?? null,
           ownerName: (meta.ownerName as string) ?? null,
           firmRole: (meta.firmRole as string) ?? null,
+          resumeVersion: (() => {
+            if ((meta.docType as string) !== "resume") return null;
+            // Check filename for pursuit-specific indicators
+            const fn = input.fileName.toLowerCase();
+            const pursuitIndicators = ["tailored", "rfp", "pursuit", "proposal", "submitted", "final"];
+            if (pursuitIndicators.some(k => fn.includes(k))) return "tailored";
+            // Check if LLM detected pursuit context
+            if (meta.pursuitContext || meta.pursuitId) return "tailored";
+            return "base";
+          })() as string | null,
+          pursuitContext: (meta.pursuitContext as string) ?? null,
           multiProject: Boolean(meta.multiProject) && rawProjects.length >= 2,
           projects: rawProjects.map((p) => ({
             projectName: (p.projectName as string) ?? "",
@@ -871,6 +886,8 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           description: null as string | null,
           ownerName: null as string | null,
           firmRole: null as string | null,
+          resumeVersion: null as string | null,
+          pursuitContext: null as string | null,
           multiProject: false,
           projects: [] as Array<{
             projectName: string;
@@ -887,5 +904,201 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           }>,
         };
       }
+    }),
+
+  // ── File-level duplicate check ─────────────────────────────────────────────
+  checkFileDuplicate: protectedProcedure
+    .input(z.object({ fileName: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [existing] = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          fileName: damDocuments.fileName,
+          uploadedBy: damDocuments.uploadedBy,
+          createdAt: damDocuments.createdAt,
+        })
+        .from(damDocuments)
+        .where(eq(damDocuments.fileName, input.fileName))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(1);
+      return existing ?? null;
+    }),
+
+  // ── Content-level duplicate check (per docType) ────────────────────────────
+  checkContentDuplicate: protectedProcedure
+    .input(z.object({
+      docType: docTypeEnum,
+      projectName: z.string().optional(),
+      projectNumber: z.string().optional(),
+      rfpNumber: z.string().optional(),
+      clientName: z.string().optional(),
+      staffName: z.string().optional(),
+      resumeVersion: z.string().optional(),
+      pursuitId: z.string().optional(),
+      pursuitContext: z.string().optional(),
+      certificationName: z.string().optional(),
+      title: z.string().optional(),
+      contractNumber: z.string().optional(),
+      fileName: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+
+      const { docType } = input;
+
+      // Skip check for "other" docType
+      if (docType === "other") return null;
+
+      // Skip check for rfp/contract if filename contains addendum/amendment
+      if ((docType === "rfp" || docType === "contract") && input.fileName) {
+        const fn = input.fileName.toLowerCase();
+        if (fn.includes("addendum") || fn.includes("addenda") || fn.includes("amendment")) {
+          return null;
+        }
+      }
+
+      let conditions: any[] = [eq(damDocuments.docType, docType)];
+
+      switch (docType) {
+        case "project_sheet": {
+          if (input.projectNumber) {
+            conditions.push(sql`LOWER(${damDocuments.projectNumber}) = LOWER(${input.projectNumber})`);
+          } else if (input.projectName) {
+            conditions.push(sql`LOWER(${damDocuments.projectName}) = LOWER(${input.projectName})`);
+          } else {
+            return null;
+          }
+          break;
+        }
+        case "past_proposal": {
+          if (input.rfpNumber) {
+            conditions.push(sql`LOWER(${damDocuments.projectNumber}) = LOWER(${input.rfpNumber})`);
+          } else if (input.projectName && input.clientName) {
+            conditions.push(sql`LOWER(${damDocuments.projectName}) = LOWER(${input.projectName})`);
+            conditions.push(sql`LOWER(${damDocuments.clientName}) = LOWER(${input.clientName})`);
+          } else {
+            return null;
+          }
+          break;
+        }
+        case "resume": {
+          if (!input.staffName) return null;
+          conditions.push(sql`LOWER(${damDocuments.staffName}) = LOWER(${input.staffName})`);
+          // Base resumes: flag if same staffName + base version
+          if (input.resumeVersion === "base") {
+            conditions.push(sql`${damDocuments.resumeVersion} = 'base'`);
+          } else if (input.resumeVersion === "tailored" || input.resumeVersion === "submitted") {
+            // Only flag if same staffName + same pursuitId + same version
+            // OR same staffName + same version + similar pursuitContext
+            if (input.pursuitId) {
+              conditions.push(eq(damDocuments.pursuitId, input.pursuitId));
+              conditions.push(sql`${damDocuments.resumeVersion} = ${input.resumeVersion}`);
+            } else {
+              return null; // Don't flag tailored/submitted without pursuit match
+            }
+          } else {
+            // No resumeVersion specified — flag if base exists
+            conditions.push(sql`${damDocuments.resumeVersion} = 'base'`);
+          }
+          break;
+        }
+        case "certification": {
+          if (!input.staffName) return null;
+          conditions.push(sql`LOWER(${damDocuments.staffName}) = LOWER(${input.staffName})`);
+          if (input.certificationName) {
+            conditions.push(sql`LOWER(${damDocuments.title}) = LOWER(${input.certificationName})`);
+          } else if (input.title) {
+            conditions.push(sql`LOWER(${damDocuments.title}) = LOWER(${input.title})`);
+          } else {
+            return null;
+          }
+          break;
+        }
+        case "rfp": {
+          if (input.rfpNumber) {
+            conditions.push(sql`LOWER(${damDocuments.projectNumber}) = LOWER(${input.rfpNumber})`);
+          } else if (input.title && input.clientName) {
+            conditions.push(sql`LOWER(${damDocuments.title}) = LOWER(${input.title})`);
+            conditions.push(sql`LOWER(${damDocuments.clientName}) = LOWER(${input.clientName})`);
+          } else {
+            return null;
+          }
+          break;
+        }
+        case "boilerplate": {
+          if (!input.title) return null;
+          conditions.push(sql`LOWER(${damDocuments.title}) = LOWER(${input.title})`);
+          break;
+        }
+        case "contract": {
+          if (input.contractNumber) {
+            conditions.push(sql`LOWER(${damDocuments.projectNumber}) = LOWER(${input.contractNumber})`);
+          } else if (input.title && input.clientName) {
+            conditions.push(sql`LOWER(${damDocuments.title}) = LOWER(${input.title})`);
+            conditions.push(sql`LOWER(${damDocuments.clientName}) = LOWER(${input.clientName})`);
+          } else {
+            return null;
+          }
+          break;
+        }
+        default:
+          return null;
+      }
+
+      const [existing] = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          docType: damDocuments.docType,
+          fileName: damDocuments.fileName,
+          staffName: damDocuments.staffName,
+          clientName: damDocuments.clientName,
+          resumeVersion: damDocuments.resumeVersion,
+          extractedMeta: damDocuments.extractedMeta,
+          createdAt: damDocuments.createdAt,
+          uploadedBy: damDocuments.uploadedBy,
+        })
+        .from(damDocuments)
+        .where(and(...conditions))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(1);
+
+      return existing ?? null;
+    }),
+
+  // ── Replace existing document file ─────────────────────────────────────────
+  replaceFile: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      fileName: z.string().min(1),
+      fileKey: z.string().min(1),
+      fileUrl: z.string().min(1),
+      mimeType: z.string().optional(),
+      fileSizeBytes: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      await db
+        .update(damDocuments)
+        .set({
+          fileName: input.fileName,
+          fileKey: input.fileKey,
+          fileUrl: input.fileUrl,
+          mimeType: input.mimeType ?? null,
+          fileSizeBytes: input.fileSizeBytes ?? null,
+          processingStatus: "uploaded",
+          processingError: null,
+          extractedMeta: null,
+          extractedText: null,
+        })
+        .where(eq(damDocuments.id, input.id));
+
+      return { success: true };
     }),
 });

@@ -37,6 +37,7 @@ import {
   MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
   AlertCircle, Loader2, CloudUpload, X, Filter,
   BookOpen, FolderOpen, ImageIcon, Layers, ChevronDown, ChevronUp,
+  AlertTriangle, RefreshCw,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -92,6 +93,10 @@ interface UploadFormState {
   projectName: string;
   projectNumber: string;
   clientName: string;
+  ownerName: string;
+  firmRole: string;
+  resumeVersion: string;
+  pursuitContext: string;
   contractValue: string;
   awardYear: string;
   tags: string;
@@ -106,6 +111,10 @@ const DEFAULT_FORM: UploadFormState = {
   projectName: "",
   projectNumber: "",
   clientName: "",
+  ownerName: "",
+  firmRole: "",
+  resumeVersion: "",
+  pursuitContext: "",
   contractValue: "",
   awardYear: "",
   tags: "",
@@ -158,6 +167,11 @@ export default function KnowledgeHub() {
   const [expandedSplitIdx, setExpandedSplitIdx] = useState<number | null>(0);
   const [isSavingSplit, setIsSavingSplit] = useState(false);
 
+  // Duplicate detection state
+  const [fileDuplicate, setFileDuplicate] = useState<{ id: string; title: string; fileName: string; createdAt: string } | null>(null);
+  const [contentDuplicate, setContentDuplicate] = useState<{ id: string; title: string; docType: string; fileName: string; resumeVersion?: string | null; createdAt: string } | null>(null);
+  const [duplicateAction, setDuplicateAction] = useState<"pending" | "replace" | "keep_both" | "dismissed">("dismissed");
+
   // ── Preview state ───────────────────────────────────────────────────────────
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -199,6 +213,15 @@ export default function KnowledgeHub() {
   });
 
   const autoExtractMutation = trpc.dam.autoExtract.useMutation();
+
+  const replaceFileMutation = trpc.dam.replaceFile.useMutation({
+    onSuccess: () => {
+      utils.dam.list.invalidate();
+      utils.dam.getStats.invalidate();
+      toast.success("File replaced successfully");
+    },
+    onError: (err: any) => toast.error(`Replace failed: ${err.message}`),
+  });
 
   const updateMetaMutation = trpc.dam.updateMeta.useMutation({
     onSuccess: () => {
@@ -252,11 +275,23 @@ export default function KnowledgeHub() {
     setUploadFile(file);
     setIsAnalyzing(true);
     setShowUploadForm(true);
+    setFileDuplicate(null);
+    setContentDuplicate(null);
+    setDuplicateAction("dismissed");
     // Pre-fill title from filename as fallback while LLM runs
     const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
     setForm({ ...DEFAULT_FORM, title: baseName });
 
     try {
+      // Step 0: File-level duplicate check
+      try {
+        const fileDup = await utils.dam.checkFileDuplicate.fetch({ fileName: file.name });
+        if (fileDup) {
+          setFileDuplicate({ id: fileDup.id, title: fileDup.title, fileName: fileDup.fileName, createdAt: fileDup.createdAt as any });
+          setDuplicateAction("pending");
+        }
+      } catch { /* ignore check failures */ }
+
       // Step 1: Upload file to storage
       const formData = new FormData();
       formData.append("file", file);
@@ -302,19 +337,48 @@ export default function KnowledgeHub() {
       }
 
       // Step 3b: Single-record pre-fill
+      const extractedDocType = (meta.docType as DocType) ?? "other";
       setForm({
-        docType: (meta.docType as DocType) ?? "other",
+        docType: extractedDocType,
         companyTag: (meta.companyTag as CompanyTag) ?? "",
         title: meta.title || baseName,
         description: meta.description ?? "",
         staffName: meta.staffName ?? "",
         clientName: meta.clientName ?? "",
+        ownerName: meta.ownerName ?? "",
+        firmRole: meta.firmRole ?? "",
+        resumeVersion: meta.resumeVersion ?? "",
+        pursuitContext: meta.pursuitContext ?? "",
         projectName: meta.projectName ?? "",
         projectNumber: meta.projectNumber ?? "",
         contractValue: meta.contractValue ?? "",
         awardYear: meta.awardYear ? String(meta.awardYear) : "",
         tags: meta.tags ?? "",
       });
+
+      // Step 4: Content-level duplicate check
+      try {
+        const contentDup = await utils.dam.checkContentDuplicate.fetch({
+          docType: extractedDocType,
+          projectName: meta.projectName ?? undefined,
+          projectNumber: meta.projectNumber ?? undefined,
+          clientName: meta.clientName ?? undefined,
+          staffName: meta.staffName ?? undefined,
+          resumeVersion: meta.resumeVersion ?? undefined,
+          title: meta.title ?? undefined,
+          fileName: file.name,
+        });
+        if (contentDup) {
+          setContentDuplicate({
+            id: contentDup.id,
+            title: contentDup.title ?? "",
+            docType: contentDup.docType ?? "",
+            fileName: contentDup.fileName ?? "",
+            resumeVersion: contentDup.resumeVersion,
+            createdAt: contentDup.createdAt as any,
+          });
+        }
+      } catch { /* ignore check failures */ }
     } catch (err: any) {
       // LLM failed — form stays with filename-derived defaults, user fills in manually
       toast.warning("Auto-fill could not read this file. Please fill in the details manually.");
@@ -335,37 +399,50 @@ export default function KnowledgeHub() {
     setUploadProgress(50);
 
     try {
-      await createMutation.mutateAsync({
-        fileName: stagedUpload.fileName,
-        fileKey: stagedUpload.key,
-        fileUrl: stagedUpload.url,
-        mimeType: uploadFile?.type || "application/octet-stream",
-        fileSizeBytes: stagedUpload.size,
-        docType: form.docType,
-        title: form.title.trim(),
-        description: form.description.trim() || undefined,
-        companyTag: (form.companyTag as CompanyTag) || undefined,
-        staffName: form.staffName.trim() || undefined,
-        projectName: form.projectName.trim() || undefined,
-        projectNumber: form.projectNumber.trim() || undefined,
-        clientName: form.clientName.trim() || undefined,
-        contractValue: form.contractValue.trim() || undefined,
-        awardYear: form.awardYear ? parseInt(form.awardYear) : undefined,
-        tags: form.tags.trim() || undefined,
-      });
+      // If user chose "replace" and we have a file-level duplicate, replace the file on the existing record
+      if (duplicateAction === "replace" && fileDuplicate) {
+        await replaceFileMutation.mutateAsync({
+          id: fileDuplicate.id,
+          fileName: stagedUpload.fileName,
+          fileKey: stagedUpload.key,
+          fileUrl: stagedUpload.url,
+          mimeType: uploadFile?.type || "application/octet-stream",
+          fileSizeBytes: stagedUpload.size,
+        });
+      } else {
+        // Create new record (keep_both or no duplicate)
+        await createMutation.mutateAsync({
+          fileName: stagedUpload.fileName,
+          fileKey: stagedUpload.key,
+          fileUrl: stagedUpload.url,
+          mimeType: uploadFile?.type || "application/octet-stream",
+          fileSizeBytes: stagedUpload.size,
+          docType: form.docType,
+          title: form.title.trim(),
+          description: form.description.trim() || undefined,
+          companyTag: (form.companyTag as CompanyTag) || undefined,
+          staffName: form.staffName.trim() || undefined,
+          projectName: form.projectName.trim() || undefined,
+          projectNumber: form.projectNumber.trim() || undefined,
+          clientName: form.clientName.trim() || undefined,
+          ownerName: form.ownerName.trim() || undefined,
+          firmRole: form.firmRole.trim() || undefined,
+          resumeVersion: form.resumeVersion.trim() || undefined,
+          pursuitContext: form.pursuitContext.trim() || undefined,
+          contractValue: form.contractValue.trim() || undefined,
+          awardYear: form.awardYear ? parseInt(form.awardYear) : undefined,
+          tags: form.tags.trim() || undefined,
+        });
+      }
 
       setUploadProgress(100);
       toast.success(`"${form.title}" saved to Knowledge Hub`);
-
-      setUploadFile(null);
-      setStagedUpload(null);
-      setForm(DEFAULT_FORM);
-      setShowUploadForm(false);
-      setUploadProgress(0);
+      resetUploadState();
     } catch (err: any) {
       toast.error(err.message ?? "Save failed");
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   }
 
@@ -385,6 +462,9 @@ export default function KnowledgeHub() {
     setIsSplitMode(false);
     setSplitProjects([]);
     setExpandedSplitIdx(null);
+    setFileDuplicate(null);
+    setContentDuplicate(null);
+    setDuplicateAction("dismissed");
   }
 
   async function handleSaveSplit() {
@@ -557,6 +637,61 @@ export default function KnowledgeHub() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* File-level duplicate banner */}
+              {fileDuplicate && duplicateAction === "pending" && (
+                <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Duplicate filename detected</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                        "{fileDuplicate.fileName}" already exists as "{fileDuplicate.title}" (uploaded {new Date(fileDuplicate.createdAt).toLocaleDateString()})
+                      </p>
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" variant="outline" className="h-7 text-xs border-amber-400" onClick={() => setDuplicateAction("replace")}>
+                          Replace existing
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs border-amber-400" onClick={() => setDuplicateAction("keep_both")}>
+                          Keep both
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDuplicateAction("dismissed"); resetUploadState(); }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {duplicateAction === "replace" && fileDuplicate && (
+                <div className="p-2 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-700 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Replacing "{fileDuplicate.title}" — the existing record's file will be updated.
+                </div>
+              )}
+
+              {/* Content-level duplicate warning */}
+              {contentDuplicate && (
+                <div className="p-3 rounded-lg border border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-700">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-orange-600 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Similar content already exists</p>
+                      <p className="text-xs text-orange-700 dark:text-orange-300 mt-0.5">
+                        Found existing {contentDuplicate.docType.replace("_", " ")}: "{contentDuplicate.title}"
+                        {contentDuplicate.resumeVersion && ` (${contentDuplicate.resumeVersion} version)`}
+                        {" "}— uploaded {new Date(contentDuplicate.createdAt).toLocaleDateString()}
+                      </p>
+                      <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                        You can still save this as a new record if it's a different version or update.
+                      </p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => setContentDuplicate(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Row 1: type + company */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -643,6 +778,68 @@ export default function KnowledgeHub() {
                       placeholder="e.g. 2023"
                       type="number"
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Resume version — shown for resume docType */}
+              {form.docType === "resume" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Resume Version</Label>
+                    <Select value={form.resumeVersion} onValueChange={(v) => updateForm("resumeVersion", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select version…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="short">Short (1-page)</SelectItem>
+                        <SelectItem value="long">Long (full CV)</SelectItem>
+                        <SelectItem value="project_specific">Project-Specific</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Pursuit Context</Label>
+                    <Input
+                      value={form.pursuitContext}
+                      onChange={(e) => updateForm("pursuitContext", e.target.value)}
+                      placeholder="e.g. NYSDOT Bridge Inspection 2024"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Owner / Client / Firm Role — shown for project_sheet and past_proposal */}
+              {(form.docType === "project_sheet" || form.docType === "past_proposal") && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Owner(s)</Label>
+                    <Input
+                      value={form.ownerName}
+                      onChange={(e) => updateForm("ownerName", e.target.value)}
+                      placeholder="e.g. NYSDOT, FHWA"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Client</Label>
+                    <Input
+                      value={form.clientName}
+                      onChange={(e) => updateForm("clientName", e.target.value)}
+                      placeholder="Direct contracting party"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Our Role</Label>
+                    <Select value={form.firmRole} onValueChange={(v) => updateForm("firmRole", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select role…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="prime">Prime</SelectItem>
+                        <SelectItem value="sub">Subconsultant</SelectItem>
+                        <SelectItem value="joint-venture">Joint Venture</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               )}
@@ -1028,11 +1225,23 @@ export default function KnowledgeHub() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm leading-tight line-clamp-2">{doc.title}</p>
-                          {doc.companyTag && (
-                            <Badge variant="outline" className="mt-1 text-[10px] h-4 px-1.5">
-                              {doc.companyTag}
-                            </Badge>
-                          )}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {doc.companyTag && (
+                              <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                                {doc.companyTag}
+                              </Badge>
+                            )}
+                            {(doc as any).resumeVersion && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                {(doc as any).resumeVersion === "short" ? "Short" : (doc as any).resumeVersion === "long" ? "Long" : (doc as any).resumeVersion === "project_specific" ? "Project-Specific" : (doc as any).resumeVersion}
+                              </Badge>
+                            )}
+                            {(doc as any).firmRole && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                {(doc as any).firmRole === "prime" ? "Prime" : (doc as any).firmRole === "sub" ? "Sub" : "JV"}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -1075,6 +1284,11 @@ export default function KnowledgeHub() {
 
                       {/* Meta */}
                       <div className="space-y-1 text-xs text-muted-foreground">
+                        {(doc as any).ownerName && (
+                          <p className="truncate">
+                            <span className="font-medium text-foreground/70">Owner:</span> {(doc as any).ownerName}
+                          </p>
+                        )}
                         {doc.clientName && (
                           <p className="truncate">
                             <span className="font-medium text-foreground/70">Client:</span> {doc.clientName}
@@ -1170,6 +1384,10 @@ export default function KnowledgeHub() {
                           description: previewDoc.description ?? "",
                           staffName: previewDoc.staffName ?? "",
                           clientName: previewDoc.clientName ?? "",
+                          ownerName: (previewDoc as any).ownerName ?? "",
+                          firmRole: (previewDoc as any).firmRole ?? "",
+                          resumeVersion: (previewDoc as any).resumeVersion ?? "",
+                          pursuitContext: (previewDoc as any).pursuitContext ?? "",
                           projectName: previewDoc.projectName ?? "",
                           projectNumber: previewDoc.projectNumber ?? "",
                           contractValue: previewDoc.contractValue ?? "",
