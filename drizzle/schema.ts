@@ -960,6 +960,8 @@ export const rfpSessions = pgTable("rfp_sessions", {
   rfpFileUrl: text("rfpFileUrl"),
   rfpMimeType: text("rfpMimeType"),
   rfpFileSizeBytes: integer("rfpFileSizeBytes"),
+  // All uploaded file URLs (array of {name, url, mimeType})
+  uploadedFiles: jsonb("uploadedFiles"),
   // Extracted RFP context
   extractedData: jsonb("extractedData"),
   // Sequential skill outputs

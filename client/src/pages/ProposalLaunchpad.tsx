@@ -293,6 +293,7 @@ export default function ProposalLaunchpad() {
   // ── tRPC mutations ────────────────────────────────────────────────────────
   const createSession = trpc.rfpSessions.create.useMutation();
   const saveRfpFile = trpc.rfpSessions.saveRfpFile.useMutation();
+  const saveUploadedFiles = trpc.rfpSessions.saveUploadedFiles.useMutation();
   const executeSkill = trpc.rfpSessions.executeSkill.useMutation();
   const scoreGoNoGo = trpc.proposals.scoreGoNoGo.useMutation();
   const createPursuit = trpc.pursuits.create.useMutation();
@@ -428,6 +429,16 @@ export default function ProposalLaunchpad() {
         rfpFileUrl: primary.uploadedUrl,
         rfpMimeType: primary.file.type || "application/octet-stream",
         rfpFileSizeBytes: primary.file.size,
+      });
+
+      // 3b. Save ALL uploaded file URLs so the LLM can read them
+      await saveUploadedFiles.mutateAsync({
+        sessionId: sid,
+        files: uploadedFiles.map((f) => ({
+          name: f.file.name,
+          url: f.uploadedUrl,
+          mimeType: f.file.type || "application/octet-stream",
+        })),
       });
       setProcessingProgress(45);
 

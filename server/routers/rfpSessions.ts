@@ -496,6 +496,28 @@ export const rfpSessionsRouter = router({
       return { success: true };
     }),
 
+  /** Save all uploaded file metadata (name, url, mimeType) for multi-file RFP packages */
+  saveUploadedFiles: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string().uuid(),
+        files: z.array(z.object({
+          name: z.string(),
+          url: z.string(),
+          mimeType: z.string(),
+        })),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db
+        .update(rfpSessions)
+        .set({ uploadedFiles: input.files })
+        .where(eq(rfpSessions.id, input.sessionId));
+      return { success: true };
+    }),
+
   // ── Manually update a skill output (for human edits) ─────────────────────
   updateSkillOutput: protectedProcedure
     .input(
@@ -646,11 +668,27 @@ export const rfpSessionsRouter = router({
         const responseFormat = getResponseFormat(input.skillName);
         const systemOverride = getSystemOverride(input.skillName);
 
+        // For rfp_parser: attach all uploaded files as file_url content parts
+        // so the LLM can actually read the PDFs/DOCXs
+        let extraUserContent: Array<{ type: "file_url"; file_url: { url: string; mime_type?: string } }> | undefined;
+        if (input.skillName === "rfp_parser") {
+          const allFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
+          if (allFiles.length > 0) {
+            extraUserContent = allFiles
+              .filter((f) => f.mimeType === "application/pdf" || f.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+              .map((f) => ({ type: "file_url" as const, file_url: { url: f.url, mime_type: f.mimeType as any } }));
+          } else if (session.rfpFileUrl) {
+            // Fallback: use the single primary file
+            extraUserContent = [{ type: "file_url", file_url: { url: session.rfpFileUrl, mime_type: (session.rfpMimeType ?? "application/pdf") as any } }];
+          }
+        }
+
         const result = await invokeLLMWithSkill({
           skillType,
           variables,
           ...(responseFormat ? { responseFormat } : {}),
           ...(systemOverride ? { systemOverride } : {}),
+          ...(extraUserContent && extraUserContent.length > 0 ? { extraUserContent } : {}),
         });
 
         llmOutput = result.choices[0]?.message?.content ?? "";
