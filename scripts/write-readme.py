@@ -1,4 +1,4 @@
-# Amplify Proposals
+content = """# Amplify Proposals
 
 > **The AI-powered proposal intelligence platform for AEC firms.**
 > From opportunity discovery to contract execution — every pursuit, every proposal, every win.
@@ -143,3 +143,10 @@ The application deploys to Manus hosting (Cloud Run backend + CDN frontend) via 
 ## License
 
 Proprietary — all rights reserved. © 2026 Amplify Proposals.
+"""
+
+with open('/home/ubuntu/amplify-proposals/README.md', 'w') as f:
+    f.write(content)
+
+lines = len(content.splitlines())
+print(f"README.md written: {lines} lines")
