@@ -495,38 +495,59 @@ export default function ProposalLaunchpad() {
         setProcessingProgress(extractPct);
       }
 
-      // 5. Run rfp_parser skill on the session (uses primary file URL)
-      // Start polling for sub-step messages while the long-running skill executes
+      // 5. Run rfp_parser skill on the session (fire-and-forget — backend returns immediately)
+      // We poll getById every 2s until workflowState.rfp_parser.status === 'complete' or 'error'
       setProcessingStatus("Starting AI extraction…");
-      let pollInterval: ReturnType<typeof setInterval> | null = null;
-      const startPoll = () => {
-        pollInterval = setInterval(async () => {
-          try {
-            const sessionData = await utils.rfpSessions.getById.fetch({ id: sid });
-            const rfpParserState = (sessionData?.workflowState as Record<string, { status?: string; subStepMessage?: string }> | null)?.rfp_parser;
-            if (rfpParserState?.subStepMessage) {
-              setProcessingStatus(rfpParserState.subStepMessage);
-            }
-          } catch { /* non-fatal */ }
-        }, 2000);
-      };
-      startPoll();
-      let result;
+
+      // Kick off the skill (returns immediately with running:true)
       try {
-        result = await executeSkill.mutateAsync({ sessionId: sid, skillName: "rfp_parser" });
+        await executeSkill.mutateAsync({ sessionId: sid, skillName: "rfp_parser" });
       } catch (skillErr) {
-        if (pollInterval) clearInterval(pollInterval);
         throw skillErr;
       }
-      if (pollInterval) clearInterval(pollInterval);
+
+      // Poll until complete (max 15 minutes)
+      const POLL_INTERVAL_MS = 2500;
+      const MAX_POLL_MS = 15 * 60 * 1000;
+      const pollStart = Date.now();
+      let finalSessionData: Awaited<ReturnType<typeof utils.rfpSessions.getById.fetch>> | null = null;
+
+      while (Date.now() - pollStart < MAX_POLL_MS) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        try {
+          const sessionData = await utils.rfpSessions.getById.fetch({ id: sid });
+          const rfpParserState = (sessionData?.workflowState as Record<string, { status?: string; subStepMessage?: string }> | null)?.rfp_parser;
+          // Show sub-step message while running
+          if (rfpParserState?.subStepMessage) {
+            setProcessingStatus(rfpParserState.subStepMessage);
+          }
+          if (rfpParserState?.status === "complete") {
+            finalSessionData = sessionData;
+            break;
+          }
+          if (rfpParserState?.status === "error") {
+            const errMsg = (rfpParserState as Record<string, unknown>).errorMessage as string | undefined;
+            throw new Error(errMsg ?? "RFP extraction failed");
+          }
+        } catch (pollErr) {
+          if (pollErr instanceof Error && pollErr.message.startsWith("RFP extraction")) throw pollErr;
+          // network hiccup — keep polling
+        }
+      }
+
+      if (!finalSessionData) {
+        throw new Error("RFP extraction timed out — please try again.");
+      }
+
       setProcessingProgress(90);
 
-      // 6. Parse structured output
+      // 6. Parse structured output from skillOutputs (not the mutation response)
+      const rawOutput = (finalSessionData.skillOutputs as Record<string, string> | null)?.rfp_parser ?? "";
       let parsed: Partial<ParsedRfpData> = {};
       try {
-        parsed = JSON.parse(result.output) as ParsedRfpData;
+        parsed = JSON.parse(rawOutput) as ParsedRfpData;
       } catch {
-        parsed = { scopeSummary: result.output };
+        parsed = { scopeSummary: rawOutput };
       }
 
       // Merge XLSX summaries into scope summary
