@@ -21,6 +21,7 @@ import { damDocuments, personnel, projects } from "../../drizzle/schema";
 import { storageGet } from "../storage";
 import { invokeLLM, type Message } from "../_core/llm";
 import { TRPCError } from "@trpc/server";
+import { shredDocumentForDam } from "../damShredder";
 
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -645,10 +646,71 @@ export const damRouter = router({
         .where(eq(damDocuments.id, input.id));
 
       try {
-        // Get a fresh signed URL for the LLM
+        // Get a fresh signed URL
         const { url: freshUrl } = await storageGet(doc.fileKey);
 
-        // Determine MIME type for LLM file_url content
+        // ── Routing decision ──────────────────────────────────────────────────
+        //
+        // DocTypes that always use llm_single_pass regardless of page count:
+        //   project_sheet, resume — structured per-field extraction needed.
+        //
+        // DocTypes eligible for xml_shredder when page count >= 9:
+        //   past_proposal, rfp, boilerplate
+        //
+        // All other docTypes: llm_single_pass.
+        //
+        const SHREDDER_ELIGIBLE = new Set(["past_proposal", "rfp", "boilerplate"]);
+        const ALWAYS_SINGLE_PASS = new Set(["project_sheet", "resume"]);
+
+        // Detect page count for PDFs before choosing extraction method
+        let detectedPageCount: number | null = null;
+        if (!ALWAYS_SINGLE_PASS.has(doc.docType)) {
+          const { getPdfPageCount } = await import("../damShredder");
+          detectedPageCount = await getPdfPageCount(freshUrl, doc.mimeType ?? undefined);
+        }
+
+        const useShredder =
+          SHREDDER_ELIGIBLE.has(doc.docType) &&
+          !ALWAYS_SINGLE_PASS.has(doc.docType) &&
+          detectedPageCount !== null &&
+          detectedPageCount >= 9;
+
+        const chosenMethod = useShredder ? "xml_shredder" : "llm_single_pass";
+
+        // ── Path A: XML Shredder ──────────────────────────────────────────────
+        if (useShredder) {
+          const result = await shredDocumentForDam({
+            fileUrl: freshUrl,
+            fileName: doc.fileName,
+            mimeType: doc.mimeType ?? undefined,
+            docType: doc.docType,
+            pageCount: detectedPageCount,
+          });
+
+          await db
+            .update(damDocuments)
+            .set({
+              extractedMeta: result.extractedMeta,
+              extractedText: result.extractedText,
+              tags: result.tags,
+              ownerName: result.ownerName,
+              firmRole: result.firmRole,
+              pageCount: result.pageCount,
+              extractionMethod: "xml_shredder",
+              processingStatus: "indexed",
+              processingError: null,
+            })
+            .where(eq(damDocuments.id, input.id));
+
+          return {
+            success: true,
+            extractionMethod: "xml_shredder",
+            pageCount: result.pageCount,
+            imageCount: result.extractedMeta.images?.length ?? 0,
+          };
+        }
+
+        // ── Path B: LLM Single Pass ───────────────────────────────────────────
         const mime = doc.mimeType ?? "application/pdf";
         const supportedMimes = [
           "application/pdf",
@@ -659,9 +721,7 @@ export const damRouter = router({
         ];
         const llmMime = supportedMimes.includes(mime) ? mime : "application/pdf";
 
-        // Select system prompt by docType
-        const systemPrompt =
-          SYSTEM_PROMPTS[doc.docType] ?? SYSTEM_PROMPTS.other;
+        const systemPrompt = SYSTEM_PROMPTS[doc.docType] ?? SYSTEM_PROMPTS.other;
 
         const userContent: any[] = [
           {
@@ -696,21 +756,17 @@ export const damRouter = router({
           extracted = { raw: rawContent };
         }
 
-        // Build tags string and searchable text from structured output
         const tagString = buildTagString(extracted);
         const extractedText = buildExtractedText(extracted);
 
-        // Resolve ownerName: join array or use string
         const rawOwner = extracted.owner;
         const resolvedOwnerName: string | null = Array.isArray(rawOwner)
           ? (rawOwner as string[]).join(", ") || null
           : typeof rawOwner === "string" ? rawOwner || null : null;
 
-        // Resolve firmRole
         const resolvedFirmRole: string | null =
           typeof extracted.firmRole === "string" ? extracted.firmRole : null;
 
-        // Write back to dam_documents
         await db
           .update(damDocuments)
           .set({
@@ -719,12 +775,19 @@ export const damRouter = router({
             tags: tagString,
             ownerName: resolvedOwnerName,
             firmRole: resolvedFirmRole,
+            pageCount: detectedPageCount,
+            extractionMethod: chosenMethod,
             processingStatus: "indexed",
             processingError: null,
           })
           .where(eq(damDocuments.id, input.id));
 
-        return { success: true, imageCount: extracted.images?.length ?? 0 };
+        return {
+          success: true,
+          extractionMethod: chosenMethod,
+          pageCount: detectedPageCount,
+          imageCount: extracted.images?.length ?? 0,
+        };
       } catch (err: any) {
         await db
           .update(damDocuments)

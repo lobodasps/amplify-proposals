@@ -22,6 +22,13 @@
       "when": 1780171235450,
       "tag": "0002_old_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780191210638,
+      "tag": "0003_daffy_luminals",
+      "breakpoints": true
     }
   ]
 }

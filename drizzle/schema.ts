@@ -1031,6 +1031,12 @@ export const damDocuments = pgTable("dam_documents", {
   processingStatus: text("processingStatus").notNull().default("uploaded"),
   processingError: text("processingError"),
 
+  // Extraction method used — Valid values: llm_single_pass | xml_shredder
+  extractionMethod: text("extractionMethod"),
+
+  // Page count detected before extraction (null for non-PDF or if detection failed)
+  pageCount: integer("pageCount"),
+
   // Tags (comma-separated keywords)
   tags: text("tags"),
 

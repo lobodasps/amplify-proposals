@@ -543,3 +543,14 @@
 - [x] Bulk extract: sequential processing with per-file status (queued → processing → done/error)
 - [x] Bulk extract: progress panel showing overall count and current file being processed
 - [x] Bulk extract: only selectable for non-indexed documents (already indexed are greyed out)
+
+## Knowledge Hub — Page-Count-Aware Extraction Routing
+- [x] Add extractionMethod column to dam_documents (values: llm_single_pass | xml_shredder)
+- [x] Add pageCount column to dam_documents (integer, null for non-PDF)
+- [x] triggerExtract: detect PDF page count via pdf-parse before choosing extraction method
+- [x] triggerExtract: 1-8 pages → llm_single_pass (all docTypes)
+- [x] triggerExtract: 9+ pages AND docType in (past_proposal, rfp, boilerplate) → xml_shredder
+- [x] triggerExtract: project_sheet and resume always use llm_single_pass regardless of page count
+- [x] Create damShredder.ts adapter: runs xml_shredder pipeline, converts XML → DAM JSON schema, returns extractedMeta/extractedText/tags/ownerName/firmRole identical to single-pass output
+- [x] Both paths write extractionMethod and pageCount to the DAM record
+- [x] Zero new tRPC routers added
