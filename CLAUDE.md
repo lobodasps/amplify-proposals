@@ -459,3 +459,44 @@ The following major features are planned but not yet implemented. See `todo.md` 
 - SSO/SAML enterprise authentication
 - Mobile-responsive optimization pass
 - Live public agency portal scraping
+
+---
+
+## Documentation Audit & Corrections (Session — May 31, 2026, Evening)
+
+### Contract Fields — All Now Confirmed LIVE
+
+A documentation audit via GitHub connector and direct code inspection confirmed that all seven contract fields previously listed as PLANNED in `FEATURE_CATALOG.md` were already fully implemented. The following were incorrectly marked PLANNED:
+
+| Field | Actual Status | Location |
+|-------|--------------|----------|
+| QB Name, Client Project Reference | **LIVE** | `server/routers/personnel.ts` create/update + `Contracts.tsx` form |
+| Department dropdown (from lookup) | **LIVE** | `server/routers/personnel.ts` + `Contracts.tsx` Select |
+| Service Types multi-select | **LIVE** | `server/routers/personnel.ts` + `Contracts.tsx` chip multi-select |
+| Form 254 Code dropdown | **LIVE** | `server/routers/personnel.ts` + `Contracts.tsx` Select |
+| Project Manager / Accountant dropdowns | **LIVE** | `server/routers/personnel.ts` + `Contracts.tsx` Select |
+| Public/Private sector toggle | **LIVE** | `isPublic` boolean column (schema line 394); Select in `ContractDetail.tsx` Edit dialog |
+| Initial contract amount editable in Edit dialog | **LIVE** | Number input in `ContractDetail.tsx` Edit dialog, seeded from `contract.value` |
+
+`FEATURE_CATALOG.md` section 3.5 updated from **[MOSTLY LIVE]** to **[LIVE]** accordingly.
+
+A redundant `isPublicSector` column was briefly added to the schema in error (it duplicated the existing `isPublic` column) and was immediately removed via migration `drizzle/0009_vengeful_banshee.sql`.
+
+### New Documentation Files Added
+
+Three strategic documents added to the repository root and linked from `README.md`:
+
+- **`SPECIFICATIONS.md`** — Full product specification v3.7 (all modules, DB schema, auth, integrations, non-functional requirements)
+- **`FEATURE_CATALOG.md`** — Comprehensive categorized feature list with LIVE / PLANNED status for every feature across 8 categories
+- **`ROADMAP_AND_DIFFERENTIATION.md`** — Prioritized 29-item backlog in 5 tiers + 6 competitive differentiation recommendations vs. Joist.ai, Shred.ai, and Unanet Proposals with positioning matrix
+
+### README.md Rewritten
+
+`README.md` replaced the generic Manus framework template with a project-specific document covering: product vision, module summary table, full tech stack table, local dev setup, key files reference, documentation index, deployment info, and license. Original template preserved as `README.template.md`.
+
+### GitHub Connector Verified
+
+The `user_github` remote is confirmed working. Live data fetched from `lobodasps/amplify-proposals`:
+- 261 tracked files, 86 commits, TypeScript primary language (2.03 MB)
+- Repo is private, created May 29 2026, last push May 31 2026
+- 0 open issues, 0 open PRs

@@ -206,17 +206,17 @@ This category covers the firm's institutional memory — every document, resume,
 | Prime agreement on file tracking | LIVE | |
 | Activity log per contract | LIVE | |
 
-### 3.5 Contract Fields & Lookups **[PARTIALLY LIVE]**
+### 3.5 Contract Fields & Lookups **[LIVE]**
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| QB Name, Client Project Reference | PLANNED | Schema ready |
-| Public/Private sector toggle | PLANNED | Schema ready |
-| Department dropdown (from lookup) | PLANNED | |
-| Service Types multi-select | PLANNED | |
-| Form 254 Code dropdown | PLANNED | |
-| Project Manager / Accountant dropdowns | PLANNED | |
-| Initial contract amount editable in Edit dialog | PLANNED | |
+| QB Name, Client Project Reference | LIVE | Backend + UI wired in Contracts.tsx |
+| Department dropdown (from lookup) | LIVE | Backend + UI wired in Contracts.tsx |
+| Service Types multi-select | LIVE | Backend + UI wired in Contracts.tsx |
+| Form 254 Code dropdown | LIVE | Backend + UI wired in Contracts.tsx |
+| Project Manager / Accountant dropdowns | LIVE | Backend + UI wired in Contracts.tsx |
+| Public/Private sector toggle | LIVE | `isPublic` column; Select in ContractDetail Edit dialog |
+| Initial contract amount editable in Edit dialog | LIVE | Number input in ContractDetail Edit dialog, seeded from contract.value |
 
 ### 3.6 Analytics **[PARTIALLY LIVE]**
 

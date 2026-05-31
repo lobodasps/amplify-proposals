@@ -57,6 +57,20 @@
       "when": 1780205079894,
       "tag": "0007_nasty_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780207547488,
+      "tag": "0008_wakeful_prism",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780207674212,
+      "tag": "0009_vengeful_banshee",
+      "breakpoints": true
     }
   ]
 }
