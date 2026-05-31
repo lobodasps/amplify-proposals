@@ -400,6 +400,11 @@ export default function ProposalWorkspace() {
   const [, navigate] = useLocation();
   const proposalId = id ?? "";
 
+  // Guard: demo proposals use integer ids ("1", "2", etc.) — not valid UUIDs.
+  // Disable all session queries/mutations when the id is not a UUID.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isRealProposal = UUID_RE.test(proposalId);
+
   // ── tRPC utils ─────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
 
@@ -408,7 +413,7 @@ export default function ProposalWorkspace() {
   const { data: sessionList, isLoading: sessionsLoading } =
     trpc.rfpSessions.listByProposal.useQuery(
       { proposalId },
-      { enabled: !!proposalId }
+      { enabled: !!proposalId && isRealProposal }
     );
 
   const createSessionMutation = trpc.rfpSessions.create.useMutation({
@@ -672,6 +677,36 @@ export default function ProposalWorkspace() {
     if (resumeState.completedCount === 0) return "Ready to generate";
     return `${resumeState.completedCount} of ${WORKFLOW_SKILL_NAMES.length} complete`;
   })();
+
+  // Demo proposal guard — show a friendly message instead of firing UUID-only API calls
+  if (!isRealProposal) {
+    return (
+      <TooltipProvider>
+        <AppLayout title="Proposal Workspace">
+          <div className="flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] gap-6 text-center px-4">
+            <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <FileText className="w-8 h-8 text-amber-600" />
+            </div>
+            <div className="max-w-md">
+              <h2 className="text-xl font-semibold text-foreground mb-2">Demo Proposal</h2>
+              <p className="text-muted-foreground text-sm">
+                This is a sample proposal used to illustrate the interface. To use the full AI
+                workflow, create a real proposal via the Proposal Launchpad or the Proposals page.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => navigate("/proposals")}>
+                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Proposals
+              </Button>
+              <Button className="bg-amplify-gradient text-white" onClick={() => navigate("/launch")}>
+                Start New Proposal
+              </Button>
+            </div>
+          </div>
+        </AppLayout>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>
