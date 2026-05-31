@@ -682,33 +682,55 @@ export const rfpSessionsRouter = router({
           const allFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
 
           if (allFiles.length > 0) {
+            // Classify each file by its likely role based on filename
+            const classifyFile = (name: string, index: number): { type: string; label: string } => {
+              const lower = name.toLowerCase();
+              if (/rfp|solicitation|request.for.(proposal|qualification)/i.test(lower)) return { type: "main_rfp", label: "Main RFP" };
+              if (/scope|sow|scope.of.work/i.test(lower)) return { type: "scope", label: "Scope of Work" };
+              if (/addendum|amendment/i.test(lower)) return { type: "addendum", label: "Addendum" };
+              if (/appendix/i.test(lower)) return { type: "appendix", label: "Appendix" };
+              if (/attachment/i.test(lower)) return { type: "attachment", label: "Attachment" };
+              if (/form|data.form/i.test(lower)) return { type: "form", label: "Form" };
+              if (/cover.letter|transmittal/i.test(lower)) return { type: "cover_letter", label: "Cover Letter" };
+              if (/insurance|certificate/i.test(lower)) return { type: "certificate", label: "Certificate" };
+              if (/pre-proposal|conference|instruction/i.test(lower)) return { type: "instructions", label: "Instructions" };
+              if (/rider|community|hiring/i.test(lower)) return { type: "rider", label: "Rider" };
+              if (/subcontract|utilization|mwbe|dbe/i.test(lower)) return { type: "compliance", label: "Compliance" };
+              if (index === 0) return { type: "main_rfp", label: "Main RFP" };
+              return { type: "supplemental", label: "Supplemental Document" };
+            }
+
             // Shred each file sequentially with a 1.5s delay to avoid rate limits
-            const fileFragments: string[] = [];
+            const documentFragments: string[] = [];
             for (let i = 0; i < allFiles.length; i++) {
               if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+              const { type: docType, label } = classifyFile(allFiles[i].name, i);
               try {
                 const fragment = await shredSingleFile({
                   fileName: allFiles[i].name,
                   fileUrl: allFiles[i].url,
                   mimeType: allFiles[i].mimeType,
-                  fileRole: i === 0 ? "primary" : "attachment",
+                  fileRole: docType === "main_rfp" ? "primary" : "attachment",
                   asFragment: true,
                 });
-                fileFragments.push(fragment);
+                // Wrap the shredded content in a <document> tag with metadata
+                documentFragments.push(
+                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(allFiles[i].name)}">\n${fragment}\n  </document>`
+                );
               } catch (err: any) {
                 // If one file fails, log it and continue
-                fileFragments.push(
-                  `  <file name="${escapeXml(allFiles[i].name)}" type="attachment" format="error" extraction="failed">\n    <error>${escapeXml(err.message ?? "Unknown error")}</error>\n  </file>`
+                documentFragments.push(
+                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(allFiles[i].name)}" status="error">\n    <error>${escapeXml(err.message ?? "Unknown error")}</error>\n  </document>`
                 );
               }
             }
 
-            // Combine into a single XML document
+            // Combine into a single <rfp_package> XML document
             const combinedXml = [
               `<?xml version="1.0" encoding="UTF-8"?>`,
-              `<rfp-package name="RFP Upload Package" files="${allFiles.length}" compiled="${new Date().toISOString()}">`,
-              ...fileFragments,
-              `</rfp-package>`,
+              `<rfp_package files="${allFiles.length}" compiled="${new Date().toISOString()}">`,
+              ...documentFragments,
+              `</rfp_package>`,
             ].join("\n");
 
             // Pass the combined XML as text content to the rfp_parser
