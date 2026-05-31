@@ -161,6 +161,8 @@ export default function KnowledgeHub() {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Multi-file queue — files are processed one at a time through the metadata form
+  const [uploadQueue, setUploadQueue] = useState<File[]>([]);
 
   // Multi-project split state
   const [splitProjects, setSplitProjects] = useState<SplitProject[]>([]);
@@ -326,14 +328,29 @@ export default function KnowledgeHub() {
       toast.error("Maximum 10 files at a time. Please split into batches.");
       return;
     }
-    const file = files[0];
-    if (file) prepareUpload(file);
+    if (files.length === 0) return;
+    const [first, ...rest] = files;
+    if (rest.length > 0) {
+      setUploadQueue((prev) => [...prev, ...rest]);
+      toast.info(`${files.length} files selected — processing one at a time.`);
+    }
+    prepareUpload(first);
   }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) prepareUpload(file);
+    const files = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (files.length === 0) return;
+    if (files.length > 10) {
+      toast.error("Maximum 10 files at a time. Please split into batches.");
+      return;
+    }
+    const [first, ...rest] = files;
+    if (rest.length > 0) {
+      setUploadQueue((prev) => [...prev, ...rest]);
+      toast.info(`${files.length} files selected — processing one at a time.`);
+    }
+    prepareUpload(first);
   }, []);
 
   // New flow: upload to storage immediately, then call autoExtract to pre-fill form
@@ -529,7 +546,7 @@ export default function KnowledgeHub() {
     setSplitProjects((prev) => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p));
   }
 
-  function resetUploadState() {
+  function resetUploadState(processNext = true) {
     setShowUploadForm(false);
     setUploadFile(null);
     setStagedUpload(null);
@@ -542,6 +559,18 @@ export default function KnowledgeHub() {
     setFileDuplicate(null);
     setContentDuplicate(null);
     setDuplicateAction("dismissed");
+    // Process next file in queue if any
+    if (processNext) {
+      setUploadQueue((prev) => {
+        if (prev.length > 0) {
+          const [next, ...rest] = prev;
+          // Slight delay so state resets fully before the next form opens
+          setTimeout(() => prepareUpload(next), 100);
+          return rest;
+        }
+        return prev;
+      });
+    }
   }
 
   async function handleSaveSplit() {
@@ -611,6 +640,7 @@ export default function KnowledgeHub() {
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             className="hidden"
             accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
             onChange={handleFileSelect}
@@ -688,6 +718,11 @@ export default function KnowledgeHub() {
                 <div>
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-base">Document Details</CardTitle>
+                    {uploadQueue.length > 0 && (
+                      <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-full">
+                        {uploadQueue.length} more in queue
+                      </span>
+                    )}
                     {isAnalyzing && (
                       <span className="flex items-center gap-1.5 text-xs text-primary font-medium">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -708,7 +743,7 @@ export default function KnowledgeHub() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={resetUploadState}
+                  onClick={() => resetUploadState()}
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -993,7 +1028,7 @@ export default function KnowledgeHub() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={resetUploadState}
+                    onClick={() => resetUploadState()}
                     disabled={isUploading}
                   >
                     Cancel
@@ -1021,7 +1056,7 @@ export default function KnowledgeHub() {
                     Review and edit each project, then create {splitProjects.length} separate records.
                   </CardDescription>
                 </div>
-                <Button variant="ghost" size="icon" onClick={resetUploadState}>
+                <Button variant="ghost" size="icon" onClick={() => resetUploadState()}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -1224,7 +1259,7 @@ export default function KnowledgeHub() {
                     <><CheckCircle2 className="w-4 h-4" />Create {splitProjects.length} Records</>
                   )}
                 </Button>
-                <Button variant="outline" onClick={resetUploadState} disabled={isSavingSplit}>
+                <Button variant="outline" onClick={() => resetUploadState()} disabled={isSavingSplit}>
                   Cancel
                 </Button>
               </div>
