@@ -50,6 +50,12 @@ const DOC_TYPES = [
   "rfp",
   "contract",
   "boilerplate",
+  "proposal_template",
+  "rate_sheet",
+  "content_block",
+  "presentation",
+  "spreadsheet",
+  "video",
   "image",
   "other",
 ] as const;
@@ -976,7 +982,7 @@ IMPORTANT: Some documents are multi-project experience sheets or project lists t
 
 Return a JSON object with these fields (use null for fields you cannot determine):
 {
-  "docType": one of: "past_proposal" | "project_sheet" | "resume" | "certification" | "rfp" | "contract" | "boilerplate" | "other",
+  "docType": one of: "past_proposal" | "project_sheet" | "resume" | "certification" | "rfp" | "contract" | "boilerplate" | "proposal_template" | "rate_sheet" | "content_block" | "presentation" | "spreadsheet" | "video" | "other",
   "companyTag": one of: "JPCL" | "Strans" | "Both" | null  (look for company names, logos, letterhead),
   "title": string (best descriptive title for this document),
   "clientName": string | null (for single-project docs: the direct contracting party — if prime, same as owner; if sub, the prime contractor e.g. AECOM),

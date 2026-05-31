@@ -39,6 +39,7 @@ import {
   AlertCircle, Loader2, CloudUpload, X, Filter,
   BookOpen, FolderOpen, ImageIcon, Layers, ChevronDown, ChevronUp,
   AlertTriangle, RefreshCw, ListChecks, Square, SquareCheck, Images,
+  Presentation, Table2, Video,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -46,7 +47,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 type DocType =
   | "past_proposal" | "project_sheet" | "resume"
-  | "certification" | "rfp" | "contract" | "boilerplate" | "image" | "other";
+  | "certification" | "rfp" | "contract" | "boilerplate"
+  | "proposal_template" | "rate_sheet" | "content_block"
+  | "presentation" | "spreadsheet" | "video"
+  | "image" | "other";
 
 type CompanyTag = "JPCL" | "Strans" | "Both";
 
@@ -62,6 +66,12 @@ const DOC_TYPE_CONFIG: Record<DocType, { label: string; icon: any; color: string
   rfp:           { label: "RFP Package",    icon: FolderOpen, color: "text-rose-600",   bg: "bg-rose-50" },
   contract:      { label: "Contract",       icon: FileText,   color: "text-slate-600",  bg: "bg-slate-50" },
   boilerplate:   { label: "Boilerplate",    icon: BookOpen,   color: "text-teal-600",   bg: "bg-teal-50" },
+  proposal_template: { label: "Proposal Template", icon: Layers, color: "text-indigo-600", bg: "bg-indigo-50" },
+  rate_sheet:    { label: "Rate Sheet",      icon: Table2,     color: "text-emerald-600",bg: "bg-emerald-50" },
+  content_block: { label: "Content Block",   icon: BookOpen,   color: "text-cyan-600",   bg: "bg-cyan-50" },
+  presentation:  { label: "Presentation",    icon: Presentation,color: "text-amber-600", bg: "bg-amber-50" },
+  spreadsheet:   { label: "Spreadsheet",     icon: Table2,     color: "text-green-600",  bg: "bg-green-50" },
+  video:         { label: "Video",           icon: Video,      color: "text-purple-600", bg: "bg-purple-50" },
   image:         { label: "Images",         icon: ImageIcon,  color: "text-pink-600",   bg: "bg-pink-50" },
   other:         { label: "Other",          icon: File,       color: "text-gray-500",   bg: "bg-gray-50" },
 };
@@ -1618,7 +1628,10 @@ export default function KnowledgeHub() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className={filterDocType === "image"
+              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+              : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+            }>
               {docs.map((doc) => {
                 const cfg = DOC_TYPE_CONFIG[doc.docType as DocType] ?? DOC_TYPE_CONFIG.other;
                 const statusCfg = STATUS_CONFIG[doc.processingStatus as ProcessingStatus] ?? STATUS_CONFIG.uploaded;
@@ -1668,7 +1681,10 @@ export default function KnowledgeHub() {
                       {/* Header */}
                       <div className={`flex items-start gap-3 ${selectionMode ? "pl-6" : ""}`}>
                         {doc.docType === "image" && doc.fileUrl ? (
-                          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted">
+                          <div className={filterDocType === "image"
+                            ? "w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-muted"
+                            : "w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted"
+                          }>
                             <img
                               src={doc.fileUrl}
                               alt={doc.title}

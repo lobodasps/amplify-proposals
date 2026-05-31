@@ -598,3 +598,23 @@ No new schema migrations in this session. All changes were router/frontend only.
 | `147a854c` | Extraction tier control: Full Extract / Metadata Only / SheetJS badges |
 | `175b925c` | File auto-classification fix: new keyword rules, Supplemental default, Main RFP validation |
 | `b3846c96` | Two-pass pre-classification: Pass 1 heuristics + Pass 2 Gemini Flash skim |
+
+---
+
+## Session Notes — May 31, 2026 (Knowledge Hub Consolidation Reconciliation)
+
+### v3.7 Tracking Reconciled and ResourceLibrary Retired
+
+A follow-up audit resolved a tracking discrepancy where `todo.md` still showed v3.7 Knowledge Hub consolidation, Bulk Image Import Phase 2, Extraction Tier Control v3.8, and Two-Pass Pre-Classification v3.9 items as unchecked even though prior session notes documented most of that work as complete.
+
+**Verified and completed in this session:**
+
+- `client/src/pages/ResourceLibrary.tsx` was audited and removed. The `/resource-library` route already redirects to `/knowledge-hub`, and Resource Library is no longer present in `AppLayout` navigation.
+- Resource Library-era document categories were merged into Knowledge Hub and DAM validation: `proposal_template`, `rate_sheet`, `content_block`, `presentation`, `spreadsheet`, and `video`.
+- `server/routers/dam.ts` auto-classification guidance now permits the merged categories so new uploads can be classified directly into Knowledge Hub.
+- Knowledge Hub image-only filtering now uses a larger thumbnail grid, matching the remaining Bulk Image Import checklist item.
+- `todo.md` checkboxes were reconciled for the verified duplicate/stale sections: v3.7, Bulk Image Import Phase 2, Extraction Tier Control v3.8, and Two-Pass Pre-Classification v3.9.
+
+**Validation:** `pnpm check` passed after the implementation updates.
+
+**Remaining caveat:** The separate `/file-library` route and `server/routers/assets.ts` legacy asset/tag system are still live and remain separate from Knowledge Hub. They were not removed in this pass because they support a broader cross-module file library surface, not just the retired `ResourceLibrary.tsx` page.

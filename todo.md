@@ -615,17 +615,17 @@
 - [x] Make status text more prominent (font-medium, full width, larger text)
 
 ## Knowledge Hub Consolidation & Image Upload (v3.7)
-- [ ] Audit ResourceLibrary.tsx: identify any unique doc types or backend procedures not in KnowledgeHub
-- [ ] Remove ResourceLibrary page from App.tsx routes
-- [ ] Remove Resource Library from sidebar navigation in DashboardLayout/AppLayout
-- [ ] Merge any unique Resource Library doc types into Knowledge Hub docType filter
-- [ ] Add image upload support to Knowledge Hub: accept JPG, JPEG, PNG, TIFF
-- [ ] Skip triggerExtract for image uploads; invoke dam_image_caption skill instead
-- [ ] Image upload form fields: Project association, Location, Year taken, Photographer (optional), Usage rights
-- [ ] Store caption as extractedText, full vision output as extractedMeta in assets table
-- [ ] Show image thumbnail in Knowledge Hub grid instead of document icon for image assets
-- [ ] Add 'Images' as a docType filter option in the Knowledge Hub toolbar
-- [ ] Run TypeScript check and verify zero errors
+- [x] Audit ResourceLibrary.tsx: identify any unique doc types or backend procedures not in KnowledgeHub
+- [x] Remove ResourceLibrary page from App.tsx routes
+- [x] Remove Resource Library from sidebar navigation in DashboardLayout/AppLayout
+- [x] Merge any unique Resource Library doc types into Knowledge Hub docType filter
+- [x] Add image upload support to Knowledge Hub: accept JPG, JPEG, PNG, TIFF
+- [x] Skip triggerExtract for image uploads; invoke dam_image_caption skill instead
+- [x] Image upload form fields: Project association, Location, Year taken, Photographer (optional), Usage rights
+- [x] Store caption as extractedText, full vision output as extractedMeta in DAM document records
+- [x] Show image thumbnail in Knowledge Hub grid instead of document icon for image assets
+- [x] Add 'Images' as a docType filter option in the Knowledge Hub toolbar
+- [x] Run TypeScript check and verify zero errors
 
 ## Image Upload Support — Phase 1 (v2.5)
 - [x] dam.ts: Add "image" to DOC_TYPES and createInput/updateMetaInput schemas
@@ -649,17 +649,17 @@
 - [x] TypeScript: zero errors after all changes
 
 ## Bulk Image Import — Phase 2 (v2.5 — Roadmap Part 1-11)
-- [ ] BulkImageImport.tsx: Entry point — "Bulk Import" button in Knowledge Hub toolbar opens full-screen Sheet
-- [ ] BulkImageImport.tsx: Drop zone — multi-file drag & drop (up to 200 images), folder drag support
-- [ ] BulkImageImport.tsx: Upload stage — fan out POST /api/upload calls in batches of 5, progress bar per file
-- [ ] BulkImageImport.tsx: Captioning queue — after each upload, call triggerExtract; show live caption/quality badge per file
-- [ ] BulkImageImport.tsx: Smart grouping UI — group images by structureType or project, drag to regroup
-- [ ] BulkImageImport.tsx: Group metadata panel — set project, location, year, photographer, usage rights per group
-- [ ] BulkImageImport.tsx: Review panel — thumbnail grid with caption overlay, quality badges, deselect bad images
-- [ ] BulkImageImport.tsx: Confirm & create — call dam.create for each selected image, show success/error summary
-- [ ] KnowledgeHub.tsx: Add "Images" docType filter tab
-- [ ] KnowledgeHub.tsx: Image grid view — larger thumbnails when filtered to images only
-- [ ] KnowledgeHub.tsx: Quality filter (high/medium/low) in toolbar when images filter active
+- [x] BulkImageImport.tsx: Entry point — "Bulk Import" button in Knowledge Hub toolbar opens full-screen Sheet
+- [x] BulkImageImport.tsx: Drop zone — multi-file drag & drop (up to 200 images), folder drag support
+- [x] BulkImageImport.tsx: Upload stage — fan out POST /api/upload calls in batches of 5, progress bar per file
+- [x] BulkImageImport.tsx: Captioning queue — after each upload, call triggerExtract; show live caption/quality badge per file
+- [x] BulkImageImport.tsx: Smart grouping UI — group images by structureType or project, drag to regroup
+- [x] BulkImageImport.tsx: Group metadata panel — set project, location, year, photographer, usage rights per group
+- [x] BulkImageImport.tsx: Review panel — thumbnail grid with caption overlay, quality badges, deselect bad images
+- [x] BulkImageImport.tsx: Confirm & create — call dam.create for each selected image, show success/error summary
+- [x] KnowledgeHub.tsx: Add "Images" docType filter tab
+- [x] KnowledgeHub.tsx: Image grid view — larger thumbnails when filtered to images only
+- [x] KnowledgeHub.tsx: Quality filter (high/medium/low) in toolbar when images filter active
 
 ## Bulk Image Import — Parts 1-9 (Phase 2)
 - [x] BulkImageImport.tsx component created (Parts 1-9)
@@ -676,24 +676,24 @@
 - [x] TypeScript: zero errors
 
 ## Extraction Tier Control — Proposal Launchpad (v3.8)
-- [ ] Add EXTRACTION_TIER type and DOC_TYPE_TIER map to shared/types.ts
-- [ ] Update classifyFile() in rfpSessions.ts to return tier alongside type/label
-- [ ] Apply metadata-only path in shredding loop (skip LLM, store title/pageCount/fileSize)
-- [ ] Apply SheetJS path for fee_schedule XLSX files (no LLM)
-- [ ] Add Full Extract (blue) / Metadata Only (gray) / SheetJS (green) badge to manifest in ProposalLaunchpad.tsx
-- [ ] Zero TypeScript errors after changes
+- [x] Add EXTRACTION_TIER type and DOC_TYPE_TIER map to shared/types.ts
+- [x] Update classifyFile() in rfpSessions.ts to return tier alongside type/label
+- [x] Apply metadata-only path in shredding loop (skip LLM, store title/pageCount/fileSize)
+- [x] Apply SheetJS path for fee_schedule XLSX files (no LLM)
+- [x] Add Full Extract (blue) / Metadata Only (gray) / SheetJS (green) badge to manifest in ProposalLaunchpad.tsx
+- [x] Zero TypeScript errors after changes
 
 ## Two-Pass File Pre-Classification — Proposal Launchpad (v3.9)
-- [ ] Extend QueuedFile type: add confidence, keyEvidence, pageCount, pass2Running fields
-- [ ] Pass 1: PDF page count reader (client-side, read PDF header bytes via FileReader)
-- [ ] Pass 1: Updated guessLabel — XLSX→fee_schedule (high), generic names→unclassified, size/page heuristics for medium confidence
-- [ ] Pass 1: Assign confidence (high/medium/unclassified) to each file on drop
-- [ ] Pass 2: Add classifyFile protected procedure to rfpSessions router (uploads first 2 pages, calls Gemini Flash, returns documentType/confidence/keyEvidence/suggestedLabel/extractionDepth)
-- [ ] Pass 2: classifyWithGemini helper in ProposalLaunchpad — upload file, call classifyFile mutation, update QueuedFile with result
-- [ ] Pass 2: Run in parallel for all unclassified/medium-confidence files after drop (batches of 5)
-- [ ] Manifest UI: confidence badge (✅ High / 〰️ Medium / ⚠️ Review needed)
-- [ ] Manifest UI: keyEvidence subtitle under filename in small gray text
-- [ ] Manifest UI: page count and file size display per file
-- [ ] Manifest UI: extraction depth badge (Full Extract blue / Metadata Only gray / Skip red)
-- [ ] Manifest UI: auto-open label dropdown for low-confidence files
-- [ ] Pre-process warning dialog: "X files need review" with Review Now / Process Anyway options
+- [x] Extend QueuedFile type: add confidence, keyEvidence, pageCount, pass2Running fields
+- [x] Pass 1: PDF page count reader (client-side, read PDF header bytes via FileReader)
+- [x] Pass 1: Updated guessLabel — XLSX→fee_schedule (high), generic names→unclassified, size/page heuristics for medium confidence
+- [x] Pass 1: Assign confidence (high/medium/unclassified) to each file on drop
+- [x] Pass 2: Add classifyFile protected procedure to rfpSessions router (uploads first 2 pages, calls Gemini Flash, returns documentType/confidence/keyEvidence/suggestedLabel/extractionDepth)
+- [x] Pass 2: classifyWithGemini helper in ProposalLaunchpad — upload file, call classifyFile mutation, update QueuedFile with result
+- [x] Pass 2: Run in parallel for all unclassified/medium-confidence files after drop (batches of 5)
+- [x] Manifest UI: confidence badge (High / Medium / Review needed)
+- [x] Manifest UI: keyEvidence subtitle under filename in small gray text
+- [x] Manifest UI: page count and file size display per file
+- [x] Manifest UI: extraction depth badge (Full Extract blue / Metadata Only gray / Skip red)
+- [x] Manifest UI: auto-open label dropdown for low-confidence files
+- [x] Pre-process warning dialog: "X files need review" with Review Now / Process Anyway options
