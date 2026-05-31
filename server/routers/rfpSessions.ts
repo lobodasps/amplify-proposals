@@ -28,6 +28,7 @@ import {
   WORKFLOW_SKILL_NAMES,
   SKILL_META,
 } from "../../shared/workflowTypes";
+import { shredSingleFile, escapeXml } from "./xmlShredder";
 
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
@@ -673,42 +674,56 @@ export const rfpSessionsRouter = router({
         const responseFormat = getResponseFormat(input.skillName);
         const systemOverride = getSystemOverride(input.skillName);
 
-        // For rfp_parser: attach the most relevant PDFs as file_url content parts
-        // Limit to max 3 files to avoid overwhelming the LLM / hitting upstream limits
-        let extraUserContent: Array<{ type: "file_url"; file_url: { url: string; mime_type?: string } } | { type: "text"; text: string }> | undefined;
+        // For rfp_parser: run XML Shredder on all uploaded files first,
+        // then pass the combined structured XML as text to the rfp_parser LLM.
+        // This ensures ALL files are read (not just 3) and avoids upstream size limits.
+        let extraUserContent: Array<{ type: "text"; text: string }> | undefined;
         if (input.skillName === "rfp_parser") {
           const allFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
-          const docFiles = allFiles.filter((f) => f.mimeType === "application/pdf" || f.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-          if (docFiles.length > 0) {
-            // Prioritize: files with "RFP" in name first, then by name length (longer names tend to be the main doc)
-            const sorted = [...docFiles].sort((a, b) => {
-              const aIsRfp = /rfp|solicitation|request for/i.test(a.name) ? 1 : 0;
-              const bIsRfp = /rfp|solicitation|request for/i.test(b.name) ? 1 : 0;
-              if (bIsRfp !== aIsRfp) return bIsRfp - aIsRfp;
-              return b.name.length - a.name.length;
-            });
-
-            // Send at most 3 files as actual file content
-            const toAttach = sorted.slice(0, 3);
-            const remaining = sorted.slice(3);
-
-            extraUserContent = toAttach.map((f) => ({
-              type: "file_url" as const,
-              file_url: { url: f.url, mime_type: f.mimeType as any },
-            }));
-
-            // List remaining files as text context so LLM knows they exist
-            if (remaining.length > 0) {
-              const fileList = remaining.map((f) => `- ${f.name}`).join("\n");
-              extraUserContent.push({
-                type: "text" as const,
-                text: `\n\nAdditional documents in this RFP package (not attached but part of the submission):\n${fileList}`,
-              });
+          if (allFiles.length > 0) {
+            // Shred each file sequentially with a 1.5s delay to avoid rate limits
+            const fileFragments: string[] = [];
+            for (let i = 0; i < allFiles.length; i++) {
+              if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+              try {
+                const fragment = await shredSingleFile({
+                  fileName: allFiles[i].name,
+                  fileUrl: allFiles[i].url,
+                  mimeType: allFiles[i].mimeType,
+                  fileRole: i === 0 ? "primary" : "attachment",
+                  asFragment: true,
+                });
+                fileFragments.push(fragment);
+              } catch (err: any) {
+                // If one file fails, log it and continue
+                fileFragments.push(
+                  `  <file name="${escapeXml(allFiles[i].name)}" type="attachment" format="error" extraction="failed">\n    <error>${escapeXml(err.message ?? "Unknown error")}</error>\n  </file>`
+                );
+              }
             }
+
+            // Combine into a single XML document
+            const combinedXml = [
+              `<?xml version="1.0" encoding="UTF-8"?>`,
+              `<rfp-package name="RFP Upload Package" files="${allFiles.length}" compiled="${new Date().toISOString()}">`,
+              ...fileFragments,
+              `</rfp-package>`,
+            ].join("\n");
+
+            // Pass the combined XML as text content to the rfp_parser
+            extraUserContent = [{
+              type: "text" as const,
+              text: `\n\n--- FULL RFP PACKAGE (XML-STRUCTURED EXTRACTION) ---\n\n${combinedXml}`,
+            }];
+
+            // Also update the rfpText variable to reference the shredded content
+            variables.rfpText = `The full RFP package has been shredded into structured XML and is provided below. Extract all details from the XML content.`;
           } else if (session.rfpFileUrl) {
-            // Fallback: use the single primary file
-            extraUserContent = [{ type: "file_url", file_url: { url: session.rfpFileUrl, mime_type: (session.rfpMimeType ?? "application/pdf") as any } }];
+            // Fallback: single file — attach as file_url
+            extraUserContent = [{ type: "text" as const, text: "" }] as any;
+            // Actually use file_url for single file
+            (extraUserContent as any) = [{ type: "file_url", file_url: { url: session.rfpFileUrl, mime_type: (session.rfpMimeType ?? "application/pdf") as any } }];
           }
         }
 

@@ -284,7 +284,7 @@ export const xmlShredderRouter = router({
  * Shred a single file — either returns a full XML document (for the legacy
  * shred endpoint) or just the <file> fragment (for shredPackage).
  */
-async function shredSingleFile(params: {
+export async function shredSingleFile(params: {
   fileName: string;
   fileUrl: string;
   mimeType?: string;
@@ -409,7 +409,7 @@ function extractMetadata(xmlContent: string) {
   };
 }
 
-function escapeXml(str: string): string {
+export function escapeXml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
