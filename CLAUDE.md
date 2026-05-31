@@ -321,6 +321,117 @@ Selection mode in the Knowledge Hub library grid allows batch AI extraction with
 
 ---
 
+## Recent Additions (Session — May 31, 2026)
+
+### Knowledge Hub — Image Upload Support (Part A)
+
+Single-file image upload is now fully supported in Knowledge Hub alongside existing document types.
+
+**Schema additions** (`dam_documents` table):
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `imageQuality` | text | `high` \| `medium` \| `low` — from Gemini vision output |
+| `hasPersonnel` | boolean | Whether people are visible in the image |
+| `structureType` | text | Primary structure type (bridge, roadway, building, etc.) |
+| `photographer` | text | Optional photographer credit |
+| `location` | text | Location where photo was taken |
+| `yearTaken` | integer | Year the photo was taken |
+| `usageRights` | text | `internal_only` \| `proposal_use` \| `marketing` \| `unrestricted` |
+
+**`dam_image_caption` AI skill** — updated system prompt to an AEC-specialist analyst that returns a structured JSON object with 9 fields: `caption`, `description`, `structureType`, `constructionPhase`, `setting`, `environment`, `tags[]`, `hasPersonnel`, and `qualityRating`. The skill is stored in the `ai_skills` DB table and seeded on server startup.
+
+**Upload flow for images:**
+1. File MIME type is detected client-side (`image/jpeg`, `image/png`, `image/tiff`, `image/webp`).
+2. `autoExtract` is skipped — no document LLM analysis.
+3. `docType` is automatically set to `image`.
+4. After the record is created, `triggerExtract` is called server-side, which routes image files to `invokeLLMWithSkill('dam_image_caption', ...)` instead of the document extraction path.
+5. The vision output is stored: `caption` → `title`, `description` → `extractedText`, full JSON → `extractedMeta`, and the three new dedicated columns (`imageQuality`, `hasPersonnel`, `structureType`) are also written.
+
+**Knowledge Hub UI changes:**
+- Image docType added to `DOC_TYPE_CONFIG` with a camera icon.
+- Upload form shows image-specific fields: Project Association, Location, Year Taken, Photographer (optional), Usage Rights.
+- Library grid shows an actual image thumbnail instead of a document icon for `docType = 'image'`.
+- Preview dialog shows a large image preview at the top, followed by structured vision metadata (structure type, quality rating, setting, environment, personnel indicator).
+- Extract Content button is hidden for image records (already processed on upload).
+- Quality filter (All / High / Medium / Low) appears in the toolbar when the Images docType filter is active.
+
+---
+
+### Bulk Image Import (Parts 1–9, Part B)
+
+A new full-screen modal for importing hundreds of AEC project photos at once. Accessed via the **"Bulk Import Images"** button (violet outline) in the Knowledge Hub toolbar. Does not change any existing single-file upload flow.
+
+**Entry point and drop zone (Parts 1–2):**
+- Full-screen `Dialog` modal with a large drag-and-drop zone.
+- Accepts JPG, JPEG, PNG, TIFF, WEBP — no file count limit, designed for 200+ photos.
+- Live thumbnail grid preview as files are dropped; total count and combined size shown.
+- Rejected file types trigger a toast with accepted format list.
+- "Select Files" and "Select Folder" buttons as alternatives to drag-and-drop.
+
+**Folder name parsing (Part 3):**
+Before uploading, each file's `webkitRelativePath` is parsed to extract metadata hints:
+
+| Folder keyword | Hint set |
+|---------------|----------|
+| `construction`, `under-construction`, `active` | `constructionPhase = 'under-construction'` |
+| `complete`, `completed`, `final`, `finished` | `constructionPhase = 'completed'` |
+| `before`, `existing` | `constructionPhase = 'existing-conditions'` |
+| `aerial`, `drone` | `setting = 'aerial'` |
+| Last folder before filename | `projectName` hint |
+
+These hints are passed as context to Gemini Vision and stored on the record. Vision output overrides hints if it contradicts them.
+
+**Upload stage (Part 4):**
+- Files uploaded in parallel batches of 10 via `POST /api/upload` (folder: `dam`).
+- Per-file status icons: waiting (gray dot) → uploading (blue spinner) → uploaded (green check) → error (red X).
+- Overall progress bar: `Uploading N of M`.
+- Errors do not stop the batch — failed files are assigned to the "Upload Failed" group.
+
+**Gemini Vision captioning queue (Part 5):**
+- Uploaded images processed sequentially in batches of 5 with a 500 ms delay between batches (rate-limit safe).
+- Each image goes through `dam.triggerExtract` which invokes `dam_image_caption` skill.
+- Returns: `caption`, `description`, `structureType`, `constructionPhase`, `setting`, `environment`, `tags[]`, `hasPersonnel`, `qualityRating`.
+- Low-confidence images (`qualityRating = 'low'` or `structureType = 'other'`) are flagged for manual review.
+- Caption progress bar: `Captioning N of M`.
+- As captions complete, images populate dynamically into structure-type groups.
+
+**Smart grouping UI (Part 6):**
+Images are grouped by `structureType` with AEC-specific icons:
+
+| Group key | Icon | Label |
+|-----------|------|-------|
+| `bridge` | 🌉 | Bridges & Overpasses |
+| `roadway` | 🛣️ | Roadways & Highways |
+| `under-construction` | 🏗️ | Under Construction |
+| `environmental-site` | 🌿 | Environmental Sites |
+| `athletic-field` / `park` | 🏟️ | Athletic Fields & Parks |
+| `building` | 🏢 | Buildings & Structures |
+| `dam` | 🌊 | Waterfront & Marine |
+| `utility` / `tunnel` | 🔧 | Utilities & Infrastructure |
+| `aerial` | ✈️ | Aerial & Drone |
+| `other` | 📁 | Other |
+| `needs_review` | ⚠️ | Needs Manual Review |
+| `upload_failed` | ❌ | Upload Failed |
+
+Groups are ordered by count descending; special groups always appear last. Each group is collapsible; the first group is expanded by default. Within each group, a 4-column thumbnail grid shows caption, tags chips, and quality badge.
+
+**Group-level metadata sheet (Part 7):**
+Each group header has an "Apply Group Metadata" button that opens a `Sheet` slide-out with: Project Association, Company Tag (JPCL / Strans / Both), Usage Rights, Year From/To, Additional Tags (comma-separated, appended to auto-tags), Override Construction Phase. Applied values are stored per group and merged at record creation time.
+
+**Review panel for flagged images (Part 8):**
+Images in "Needs Manual Review" show a larger thumbnail, the full Gemini output, a "What does this image show?" text field, a Move to Group dropdown, and a Discard button.
+
+**Confirm and create (Part 9):**
+- Sticky footer shows ready count, needs-review count (with warning), and a "Skip unresolved" checkbox.
+- "Create X Records" button is disabled if unresolved images exist unless skip is checked.
+- On confirm, each image's `dam_documents` record is updated with merged group metadata, tags, and final caption.
+- Creation progress bar shown; on completion a summary card with "View in Knowledge Hub" button closes the modal and activates the Images filter.
+
+**Key file:** `client/src/pages/BulkImageImport.tsx` (self-contained, ~900 lines, zero new routers).
+
+---
+
 ## Remaining Work
 
 The following major features are planned but not yet implemented. See `todo.md` for the full granular checklist.
@@ -331,13 +442,14 @@ The following major features are planned but not yet implemented. See `todo.md` 
 - **Opportunities Ingestion**: Settings-based portal scraping with cheerio, real DB wiring
 - **Pursuit Detail**: Wire mock data to real tRPC queries (tasks, requirements, team)
 - **Proposals**: Real DB integration, section CRUD, resume tailoring
-- **Image Extraction**: PDF page rendering to thumbnails, vision LLM pass for photo extraction from DAM documents
+- **Image Extraction from PDFs**: PDF page rendering to thumbnails, vision LLM pass for photo extraction from DAM documents
 
 ### Medium-Term
 
 - **Karpathy AI Patterns** (v2.1): XML Shredder as RFP pre-processor, LLM Wiki for context injection, Agent Guidelines with multi-approach advisor
 - **RFP-Centric Pipeline** (v2.2): Pursuit-scoped AI tools, RFP Workspace page, proposal scoring with history
 - **Contract Enhancements**: Tier labels on child orders, compliance field editing, sortable contracts list with rolled-up financials
+- **Bulk Import — Folder Project Matching**: Server-side fuzzy match of folder names against existing `dam_documents.projectName` values (currently client-side hint only)
 
 ### Long-Term
 
