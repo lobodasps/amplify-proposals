@@ -523,25 +523,30 @@ export default function ProposalLaunchpad() {
       const estValue = rfpEstValue ? parseFloat(rfpEstValue.replace(/[^0-9.]/g, "")) : undefined;
       const dueDate = rfpDueDate ? new Date(rfpDueDate) : undefined;
 
-      await createPursuit.mutateAsync({
+      const pursuitResult = await createPursuit.mutateAsync({
         title: rfpTitle,
         clientName: rfpAgency,
         rfpNumber: rfpNumber || undefined,
         dueDate: dueDate && !isNaN(dueDate.getTime()) ? dueDate : undefined,
         estimatedValue: isNaN(estValue ?? NaN) ? undefined : estValue,
         serviceLines: rfpServiceLines.length > 0 ? rfpServiceLines : undefined,
+        rfpSessionId: sessionId || undefined,
       });
 
       await utils.pursuits.list.invalidate();
       const pursuitList = await utils.pursuits.list.fetch();
       const newest = pursuitList?.[0];
+      const pursuitId = pursuitResult.pursuitId ?? newest?.id;
 
-      // Create a linked proposal so the workspace has a real UUID
+      // Create a linked proposal inheriting pursuit metadata
       const proposalResult = await createProposal.mutateAsync({
-        pursuitId: newest?.id,
+        pursuitId,
         title: rfpTitle,
         clientName: rfpAgency || undefined,
         rfpNumber: rfpNumber || undefined,
+        serviceLines: rfpServiceLines.length > 0 ? rfpServiceLines : undefined,
+        dueDate: dueDate && !isNaN(dueDate.getTime()) ? dueDate : undefined,
+        estimatedValue: isNaN(estValue ?? NaN) ? undefined : estValue,
       });
 
       // Link the Launchpad rfpSession to the new proposal so the Workspace finds it
@@ -549,7 +554,7 @@ export default function ProposalLaunchpad() {
         await linkSession.mutateAsync({
           sessionId,
           proposalId: proposalResult.proposalId,
-          pursuitId: newest?.id,
+          pursuitId,
         });
       }
 

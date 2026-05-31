@@ -233,6 +233,7 @@ export const pursuits = pgTable("pursuits", {
   dueDate: timestamp("dueDate", { withTimezone: true }),
   leadId: uuid("leadId"),
   coordinatorId: uuid("coordinatorId"),
+  rfpSessionId: uuid("rfpSessionId"),
   goNoGoScore: numeric("goNoGoScore"),
   goNoGoNotes: text("goNoGoNotes"),
   winThemes: text("winThemes"),

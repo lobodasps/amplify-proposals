@@ -35,6 +35,9 @@ export const proposalsRouter = router({
       title: z.string().min(1),
       clientName: z.string().optional(),
       rfpNumber: z.string().optional(),
+      serviceLines: z.array(z.string()).optional(),
+      dueDate: z.date().optional(),
+      estimatedValue: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -44,6 +47,8 @@ export const proposalsRouter = router({
         pursuitId: input.pursuitId,
         clientName: input.clientName,
         rfpNumber: input.rfpNumber,
+        serviceLines: input.serviceLines ? JSON.stringify(input.serviceLines) : null,
+        dueDate: input.dueDate,
         status: "draft",
         coordinatorId: ctx.user.id,
       }).returning({ id: proposals.id });

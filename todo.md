@@ -558,3 +558,8 @@
 ## Proposal Workspace — RFP Data Flow & Scroll Fix
 - [x] Link Launchpad rfpSession to the new proposal so Workspace uses existing parsed RFP data instead of creating a blank session
 - [x] Fix Proposal Workspace scroll clipping — content still cut off at viewport bottom
+
+## Pursuit ↔ Proposal ↔ rfpSession Wiring
+- [x] Add rfpSessionId column to pursuits table and save it when GO creates the pursuit
+- [x] Proposal inherits pursuit metadata: copy serviceLines, dueDate, estimatedValue from pursuit to proposal on create
+- [x] Verify Generate Proposal reads rfpSession extractedData and skillOutputs (already wired via linkToProposal)

@@ -29,6 +29,13 @@
       "when": 1780191210638,
       "tag": "0003_daffy_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780195110492,
+      "tag": "0004_daffy_next_avengers",
+      "breakpoints": true
     }
   ]
 }

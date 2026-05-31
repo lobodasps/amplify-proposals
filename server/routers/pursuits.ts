@@ -32,11 +32,12 @@ export const pursuitsRouter = router({
       estimatedValue: z.number().optional(),
       serviceLines: z.array(z.string()).optional(),
       leadId: z.string().uuid().optional(),
+      rfpSessionId: z.string().uuid().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(pursuits).values({
+      const rows = await db.insert(pursuits).values({
         title: input.title,
         clientId: input.clientId,
         clientName: input.clientName,
@@ -45,9 +46,10 @@ export const pursuitsRouter = router({
         estimatedValue: input.estimatedValue?.toString(),
         serviceLines: input.serviceLines ? JSON.stringify(input.serviceLines) : null,
         leadId: input.leadId,
+        rfpSessionId: input.rfpSessionId,
         status: "identify",
-      });
-      return { success: true };
+      }).returning({ id: pursuits.id });
+      return { success: true, pursuitId: rows[0]?.id ?? null };
     }),
 
   updateStatus: protectedProcedure
