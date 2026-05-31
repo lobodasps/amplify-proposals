@@ -144,10 +144,12 @@ export type RfpFileLabel =
   | "Scope of Work"
   | "Addendum"
   | "Appendix"
+  | "Cover Letter"
   | "Forms"
   | "Certificate"
   | "Reference Doc"
   | "Fee Schedule"
+  | "Supplemental"
   | "Other";
 
 /** Maps each user-visible file label to its extraction tier. */
@@ -156,10 +158,12 @@ export const LABEL_TIER_MAP: Record<RfpFileLabel, ExtractionTier> = {
   "Scope of Work":  "full_extract",
   "Addendum":       "full_extract",
   "Appendix":       "metadata_only",
+  "Cover Letter":   "metadata_only",
   "Forms":          "metadata_only",
   "Certificate":    "metadata_only",
   "Reference Doc":  "metadata_only",
   "Fee Schedule":   "sheetjs",
+  "Supplemental":   "metadata_only",
   "Other":          "metadata_only",
 };
 

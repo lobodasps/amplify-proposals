@@ -79,10 +79,12 @@ const FILE_LABELS = [
   "Scope of Work",
   "Addendum",
   "Appendix",
+  "Cover Letter",
   "Forms",
   "Certificate",
   "Fee Schedule",
   "Reference Doc",
+  "Supplemental",
   "Other",
 ] as const;
 
@@ -162,14 +164,26 @@ function isAccepted(file: File): boolean {
 
 function guessLabel(file: File): FileLabel {
   const name = file.name.toLowerCase();
-  if (name.includes("scope") || name.includes("sow")) return "Scope of Work";
-  if (name.includes("addend") || name.includes("amendment")) return "Addendum";
-  if (name.includes("append") || name.includes("exhibit")) return "Appendix";
-  if (name.includes("form") || name.includes("data.form")) return "Forms";
-  if (name.includes("insurance") || name.includes("certificate") || name.includes("cert")) return "Certificate";
-  if ((name.includes("fee") || name.includes("cost") || name.includes("price")) && (name.endsWith(".xlsx") || name.endsWith(".xls"))) return "Fee Schedule";
+  // Cover letter / transmittal — must check BEFORE generic 'form' or 'rfp' rules
+  if (name.includes("cover letter") || name.includes("cover sheet") || name.includes("transmittal")) return "Cover Letter";
+  // Main RFP — explicit keywords only
+  if (name.includes("rfp") || name.includes("solicitation") || name.includes("invitation for bid") || name.includes("ifb") || name.includes("request for proposal")) return "Main RFP";
+  // Scope of Work
+  if (name.includes("scope") || name.includes("sow") || name.includes("scope of work")) return "Scope of Work";
+  // Addendum / Amendment
+  if (name.includes("addend") || name.includes("add-") || name.includes("amendment")) return "Addendum";
+  // Appendix / Attachment + number
+  if (name.includes("append") || /attach(ment)?[\s_-]?\d/.test(name)) return "Appendix";
+  // Fee Schedule — XLSX/XLS preferred but also PDF fee docs
+  if (name.includes("fee schedule") || ((name.includes("fee") || name.includes("cost") || name.includes("price") || name.includes("budget")) && (name.endsWith(".xlsx") || name.endsWith(".xls")))) return "Fee Schedule";
+  // Insurance / Certificate
+  if (name.includes("insurance") || name.includes("coi") || name.includes("certificate") || name.includes("cert")) return "Certificate";
+  // Forms / Exhibits
+  if (name.includes("form") || name.includes("exhibit")) return "Forms";
+  // Reference docs
   if (name.includes("ref") || name.includes("standard") || name.includes("guide")) return "Reference Doc";
-  return "Main RFP";
+  // Default: Supplemental — force user to manually designate Main RFP
+  return "Supplemental";
 }
 
 async function uploadFile(file: File): Promise<{ fileUrl: string; fileKey: string; fileName: string; size: number }> {
@@ -395,6 +409,12 @@ export default function ProposalLaunchpad() {
   const handleProcess = async () => {
     if (queue.length === 0) {
       toast.error("Please add at least one file.");
+      return;
+    }
+    // Require at least one file labeled Main RFP
+    const hasMainRfp = queue.some((f) => f.label === "Main RFP");
+    if (!hasMainRfp) {
+      toast.error("No Main RFP document designated — please label at least one file as Main RFP before processing.");
       return;
     }
 
