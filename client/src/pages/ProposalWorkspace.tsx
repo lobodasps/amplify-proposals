@@ -514,26 +514,74 @@ export default function ProposalWorkspace() {
         }));
 
         try {
-          // ── SINGLE SKILL CALL — one tRPC request, one skill ───────────────
-          // The backend: invokes LLM → writes to DB → returns success.
-          // The DB is updated BEFORE this await resolves.
-          const result = await executeSkillMutation.mutateAsync({
+          // ── SINGLE SKILL CALL — one tRPC request, one skill ───────────────────
+          // The backend fires the LLM in a background job and returns
+          // immediately with running:true. We then poll getById every 2s
+          // until the skill reaches "complete" or "error" in workflowState.
+          await executeSkillMutation.mutateAsync({
             sessionId,
             skillName,
           });
 
-          // ── Update local state from server response ────────────────────────
+          // ── Poll DB until skill completes or errors ────────────────────────
+          const POLL_INTERVAL_MS = 2000;
+          const MAX_WAIT_MS = 15 * 60 * 1000; // 15 minutes
+          const pollStart = Date.now();
+
+          let finalOutput = "";
+          let finalModel = "unknown";
+          let finalProvider = "unknown";
+          let finalCompletedAt = new Date().toISOString();
+          let skillErrorMessage: string | undefined;
+
+          while (true) {
+            if (abortRef.current) break;
+            if (Date.now() - pollStart > MAX_WAIT_MS) {
+              throw new Error(`Skill "${skillName}" timed out after 15 minutes`);
+            }
+
+            await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+            // Fetch fresh session state from the server
+            const freshData = await utils.rfpSessions.getById.fetch({ id: sessionId });
+            const freshState = (freshData?.workflowState ?? {}) as WorkflowState;
+            const freshOutputs = (freshData?.skillOutputs ?? {}) as SkillOutputs;
+            const entry = freshState[skillName];
+
+            if (entry?.status === "complete") {
+              finalOutput = freshOutputs[skillName] ?? "";
+              finalModel = entry.model ?? "unknown";
+              finalProvider = entry.provider ?? "unknown";
+              finalCompletedAt = entry.completedAt ?? new Date().toISOString();
+              break;
+            }
+            if (entry?.status === "error") {
+              skillErrorMessage = entry.errorMessage ?? `Skill "${skillName}" failed`;
+              break;
+            }
+            // Still running — update sub-step message if present
+            if (entry?.subStepMessage) {
+              setLocalState((prev) => ({
+                ...prev,
+                [skillName]: { ...prev[skillName], subStepMessage: entry.subStepMessage } as SkillStateEntry,
+              }));
+            }
+          }
+
+          if (skillErrorMessage) throw new Error(skillErrorMessage);
+
+          // ── Update local state from polled result ──────────────────────────
           setLocalOutputs((prev) => ({
             ...prev,
-            [skillName]: result.output,
+            [skillName]: finalOutput,
           }));
           setLocalState((prev) => ({
             ...prev,
             [skillName]: {
               status: "complete",
-              completedAt: result.completedAt,
-              model: result.model,
-              provider: result.provider,
+              completedAt: finalCompletedAt,
+              model: finalModel,
+              provider: finalProvider,
             } satisfies SkillStateEntry,
           }));
 

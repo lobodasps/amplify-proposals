@@ -663,12 +663,16 @@ export const rfpSessionsRouter = router({
         })
         .where(eq(rfpSessions.id, input.sessionId));
 
-      // ── 4. Build variables and invoke LLM ────────────────────────────────
-      let llmOutput = "";
-      let usedModel = "unknown";
-      let usedProvider = "unknown";
+      // ── 4. Fire-and-forget: detach LLM work so the HTTP response returns
+      //        immediately (avoids 180-300s gateway timeout on long skills).
+      //        The frontend polls getById every 2s to detect completion.
 
-      try {
+      setImmediate(async () => {
+        let llmOutput = "";
+        let usedModel = "unknown";
+        let usedProvider = "unknown";
+
+        try {
         const variables = buildSkillVariables(input.skillName, session);
         const skillType = mapToSkillType(input.skillName) as Parameters<typeof invokeLLMWithSkill>[0]["skillType"];
         const responseFormat = getResponseFormat(input.skillName);
@@ -776,24 +780,28 @@ export const rfpSessionsRouter = router({
         usedModel = result._model;
         usedProvider = result._provider;
       } catch (llmError) {
-        // ── LLM failed: mark skill as error, save state, rethrow ──────────
+        // ── LLM failed inside setImmediate: write error state to DB (no throw —
+        //    throwing here would cause an unhandled promise rejection).
         const errorMessage =
           llmError instanceof Error ? llmError.message : String(llmError);
+
+        console.error(`[executeSkill] skill "${input.skillName}" failed:`, errorMessage);
 
         const errorEntry: SkillStateEntry = { status: "error", startedAt, errorMessage };
         const errorState: WorkflowState = { ...runningState, [input.skillName as string]: errorEntry } as WorkflowState;
 
-        await db
-          .update(rfpSessions)
-          .set({
-            workflowState: errorState,
-            sessionStatus: "error",
-          })
-          .where(eq(rfpSessions.id, input.sessionId));
-
-        throw new Error(
-          `Skill "${SKILL_META[input.skillName].displayName}" failed: ${errorMessage}`
-        );
+        try {
+          await db
+            .update(rfpSessions)
+            .set({
+              workflowState: errorState,
+              sessionStatus: "error",
+            })
+            .where(eq(rfpSessions.id, input.sessionId));
+        } catch (dbErr) {
+          console.error(`[executeSkill] failed to write error state to DB:`, dbErr);
+        }
+        return; // exit setImmediate callback cleanly
       }
 
       // ── 5. Save output + mark complete (single DB write) ─────────────────
@@ -865,15 +873,19 @@ export const rfpSessionsRouter = router({
         })
         .where(eq(rfpSessions.id, input.sessionId));
 
-      // ── 6. Return success ─────────────────────────────────────────────────
+        console.log(`[executeSkill] background job complete: ${input.skillName} session=${input.sessionId}`);
+      }); // end setImmediate
+
+      // ── 6. Return immediately — frontend polls getById for completion ──────
       return {
         success: true,
         skillName: input.skillName,
-        output: llmOutput,
-        model: usedModel,
-        provider: usedProvider,
-        completedAt,
+        output: "",
+        model: "pending",
+        provider: "pending",
+        completedAt: new Date().toISOString(),
         cached: false,
+        running: true,
       };
     }),
 });
