@@ -318,4 +318,36 @@ export const aiSkillsRouter = router({
 
       return rows;
     }),
+
+  /** Fix all manus_builtin providers to correct defaults */
+  fixProviders: protectedProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) throw new Error("Database unavailable");
+
+    const GEMINI_FLASH_SKILLS = [
+      "rfp_shredder", "asset_tagger", "autoExtract", "dam_image_caption",
+      "opportunity_ingestion", "wiki_compiler", "xml_shredder"
+    ];
+    const GEMINI_PRO_SKILLS = ["triggerExtract"];
+    const ANTHROPIC_SKILLS = [
+      "agent_guidelines", "conflict_detector", "contract_analyzer",
+      "go_no_go_advisor", "opportunity_scorer", "proposal_scorer",
+      "proposal_writer", "resume_tailor"
+    ];
+
+    // Update Gemini Flash
+    for (const skill of GEMINI_FLASH_SKILLS) {
+      await db.update(aiSkills).set({ provider: "google_gemini", model: "gemini-2.5-flash-preview-05-20" }).where(eq(aiSkills.skillType, skill));
+    }
+    // Update Gemini Pro
+    for (const skill of GEMINI_PRO_SKILLS) {
+      await db.update(aiSkills).set({ provider: "google_gemini", model: "gemini-2.5-pro-preview-05-06" }).where(eq(aiSkills.skillType, skill));
+    }
+    // Update Anthropic
+    for (const skill of ANTHROPIC_SKILLS) {
+      await db.update(aiSkills).set({ provider: "anthropic", model: "claude-sonnet-4-20250514" }).where(eq(aiSkills.skillType, skill));
+    }
+
+    return { success: true, updated: GEMINI_FLASH_SKILLS.length + GEMINI_PRO_SKILLS.length + ANTHROPIC_SKILLS.length };
+  }),
 });
