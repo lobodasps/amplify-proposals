@@ -537,7 +537,7 @@
 
 ## Knowledge Hub — Bulk Extract & Batch Upload
 - [x] Batch upload: enforce max 10 files at a time in the multi-file drop zone
-- [ ] Auto-extract checkbox on upload form: when checked, trigger extraction automatically after each file is saved
+- [x] Auto-extract checkbox on upload form: when checked, trigger extraction automatically after each file is saved
 - [x] Bulk extract: selection mode in library grid (checkboxes appear on hover)
 - [x] Bulk extract: "Extract Selected" button in toolbar when 1+ documents selected
 - [x] Bulk extract: sequential processing with per-file status (queued → processing → done/error)

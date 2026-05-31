@@ -173,6 +173,7 @@ export default function KnowledgeHub() {
   const [stagedUpload, setStagedUpload] = useState<{ url: string; key: string; fileName: string; size: number } | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
+  const [autoExtractOnSave, setAutoExtractOnSave] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Multi-file queue — files are processed one at a time through the metadata form
   const [uploadQueue, setUploadQueue] = useState<File[]>([]);
@@ -528,6 +529,9 @@ export default function KnowledgeHub() {
     setUploadProgress(50);
 
     try {
+      let savedDocId: string | null = null;
+      const savedTitle = form.title.trim();
+
       // If user chose "replace" and we have a file-level duplicate, replace the file on the existing record
       if (duplicateAction === "replace" && fileDuplicate) {
         await replaceFileMutation.mutateAsync({
@@ -538,9 +542,10 @@ export default function KnowledgeHub() {
           mimeType: uploadFile?.type || "application/octet-stream",
           fileSizeBytes: stagedUpload.size,
         });
+        savedDocId = fileDuplicate.id;
       } else {
         // Create new record (keep_both or no duplicate)
-        await createMutation.mutateAsync({
+        const createdDoc = await createMutation.mutateAsync({
           fileName: stagedUpload.fileName,
           fileKey: stagedUpload.key,
           fileUrl: stagedUpload.url,
@@ -565,10 +570,22 @@ export default function KnowledgeHub() {
           yearTaken: form.yearTaken ? parseInt(form.yearTaken) : undefined,
           usageRights: (form.usageRights as any) || undefined,
         });
+        savedDocId = createdDoc.id;
+      }
+
+      setUploadProgress(autoExtractOnSave ? 75 : 100);
+
+      if (autoExtractOnSave && savedDocId) {
+        toast.info(`"${savedTitle}" saved. Indexing content now…`);
+        try {
+          await extractMutation.mutateAsync({ id: savedDocId });
+        } catch {
+          // The record is already saved; keep the upload flow moving and let the extraction toast explain the failure.
+        }
       }
 
       setUploadProgress(100);
-      toast.success(`"${form.title}" saved to Knowledge Hub`);
+      toast.success(`"${savedTitle}" saved to Knowledge Hub`);
       resetUploadState();
     } catch (err: any) {
       toast.error(err.message ?? "Save failed");
@@ -1097,6 +1114,27 @@ export default function KnowledgeHub() {
                     <p className="font-medium text-primary">Reading your document…</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       The AI is extracting client, project, value, and other details automatically.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-extract after save */}
+              {!isAnalyzing && stagedUpload && !isSplitMode && (
+                <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
+                  <Checkbox
+                    id="auto-extract-on-save"
+                    checked={autoExtractOnSave}
+                    onCheckedChange={(checked) => setAutoExtractOnSave(checked === true)}
+                    disabled={isUploading}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="auto-extract-on-save" className="text-sm font-medium cursor-pointer">
+                      Index this file immediately after saving
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Runs the appropriate extraction workflow after the record is created, including image captioning for uploaded photos.
                     </p>
                   </div>
                 </div>
