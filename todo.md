@@ -524,13 +524,22 @@
 - [x] Client: duplicate banners (file-level amber, content-level orange), version/role fields in upload form
 
 ## DAM Multi-Project Resume UX Fix
-- [ ] When autoExtract returns multiProject=true, auto-set docType to "resume" on upload form
-- [ ] Keep Staff Name and Company Entity fields visible on upload form for multi-project resumes
-- [ ] Propagate staffName and companyTag from upload form to all split project records on Create X Records
-- [ ] Disable "Confirm & Save" button when multiProject=true, show redirect banner to split panel
+- [x] When autoExtract returns multiProject=true, auto-set docType to "resume" on upload form
+- [x] Keep Staff Name and Company Entity fields visible on upload form for multi-project resumes
+- [x] Propagate staffName and companyTag from upload form to all split project records on Create X Records
+- [x] Disable "Confirm & Save" button when multiProject=true, show redirect banner to split panel
 
 ## DAM Resume Upload Fix (correct behavior)
 - [x] When docType=resume, never trigger split panel — save one resume record with projects[] in extractedMeta
 - [x] Split panel (multi-project) only triggers for project_sheet and past_proposal docTypes
 - [x] Resume record shows staff name, entity, project count badge in library grid
 - [x] autoExtract: when docType=resume, return multiProject=false regardless of project count
+
+## Knowledge Hub — Bulk Extract & Batch Upload
+- [x] Batch upload: enforce max 10 files at a time in the multi-file drop zone
+- [ ] Auto-extract checkbox on upload form: when checked, trigger extraction automatically after each file is saved
+- [x] Bulk extract: selection mode in library grid (checkboxes appear on hover)
+- [x] Bulk extract: "Extract Selected" button in toolbar when 1+ documents selected
+- [x] Bulk extract: sequential processing with per-file status (queued → processing → done/error)
+- [x] Bulk extract: progress panel showing overall count and current file being processed
+- [x] Bulk extract: only selectable for non-indexed documents (already indexed are greyed out)

@@ -37,8 +37,9 @@ import {
   MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
   AlertCircle, Loader2, CloudUpload, X, Filter,
   BookOpen, FolderOpen, ImageIcon, Layers, ChevronDown, ChevronUp,
-  AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, ListChecks, Square, SquareCheck,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,17 @@ export default function KnowledgeHub() {
   const [contentDuplicate, setContentDuplicate] = useState<{ id: string; title: string; docType: string; fileName: string; resumeVersion?: string | null; createdAt: string } | null>(null);
   const [duplicateAction, setDuplicateAction] = useState<"pending" | "replace" | "keep_both" | "dismissed">("dismissed");
 
+  // ── Bulk extract state ────────────────────────────────────────────────────
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkProgress, setBulkProgress] = useState<{
+    active: boolean;
+    total: number;
+    current: number;
+    currentTitle: string;
+    errors: { id: string; title: string; message: string }[];
+  }>({ active: false, total: 0, current: 0, currentTitle: "", errors: [] });
+
   // ── Preview state ───────────────────────────────────────────────────────────
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -248,6 +260,56 @@ export default function KnowledgeHub() {
     onError: (err) => toast.error(`Extraction failed: ${err.message}`),
   });
 
+  // Bulk extract: sequential, one at a time, 1.5s delay between calls, errors don't stop batch
+  async function handleBulkExtract(ids: string[]) {
+    // Only extract docs that aren't already indexed
+    const targets = (listData?.docs ?? []).filter(
+      (d: any) => ids.includes(d.id) && d.processingStatus !== "indexed"
+    );
+    if (targets.length === 0) {
+      toast.info("All selected documents are already indexed");
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      return;
+    }
+    setBulkProgress({ active: true, total: targets.length, current: 0, currentTitle: "", errors: [] });
+    const errors: { id: string; title: string; message: string }[] = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const doc = targets[i];
+      setBulkProgress((prev) => ({ ...prev, current: i + 1, currentTitle: doc.title }));
+      try {
+        await new Promise<void>((resolve, reject) => {
+          extractMutation.mutate({ id: doc.id }, {
+            onSuccess: () => resolve(),
+            onError: (err) => reject(err),
+          });
+        });
+        utils.dam.list.invalidate();
+        utils.dam.getStats.invalidate();
+      } catch (err: any) {
+        errors.push({ id: doc.id, title: doc.title, message: err.message ?? "Unknown error" });
+        setBulkProgress((prev) => ({ ...prev, errors: [...prev.errors, { id: doc.id, title: doc.title, message: err.message ?? "Unknown error" }] }));
+      }
+      // 1.5s delay between calls to avoid LLM rate limits
+      if (i < targets.length - 1) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+
+    setBulkProgress((prev) => ({ ...prev, active: false }));
+    utils.dam.list.invalidate();
+    utils.dam.getStats.invalidate();
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+
+    if (errors.length === 0) {
+      toast.success(`Successfully extracted ${targets.length} document${targets.length !== 1 ? "s" : ""}`);
+    } else {
+      toast.warning(`Extracted ${targets.length - errors.length} of ${targets.length} — ${errors.length} failed (see progress panel)`);
+    }
+  }
+
   // ── Drag-and-drop ────────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -259,7 +321,12 @@ export default function KnowledgeHub() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 10) {
+      toast.error("Maximum 10 files at a time. Please split into batches.");
+      return;
+    }
+    const file = files[0];
     if (file) prepareUpload(file);
   }, []);
 
@@ -607,7 +674,7 @@ export default function KnowledgeHub() {
             <div className="text-center">
               <p className="text-sm font-medium">Drop a file here or click to browse</p>
               <p className="text-xs text-muted-foreground mt-1">
-                PDF, Word, Excel, PowerPoint, TXT — up to 50 MB
+                PDF, Word, Excel, PowerPoint, TXT — up to 50 MB &bull; max 10 files per batch
               </p>
             </div>
           </div>
@@ -1234,6 +1301,102 @@ export default function KnowledgeHub() {
             </span>
           </div>
 
+          {/* Bulk progress panel */}
+          {bulkProgress.active && (
+            <div className="rounded-xl border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm font-medium">Extracting documents…</span>
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  {bulkProgress.current} of {bulkProgress.total}
+                </span>
+              </div>
+              <Progress value={(bulkProgress.current / bulkProgress.total) * 100} className="h-2" />
+              {bulkProgress.currentTitle && (
+                <p className="text-xs text-muted-foreground truncate">
+                  Processing: <span className="text-foreground font-medium">{bulkProgress.currentTitle}</span>
+                </p>
+              )}
+              {bulkProgress.errors.length > 0 && (
+                <div className="space-y-1">
+                  {bulkProgress.errors.map((e) => (
+                    <div key={e.id} className="flex items-start gap-2 text-xs text-rose-600">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span><span className="font-medium">{e.title}</span>: {e.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bulk extract toolbar */}
+          {selectionMode ? (
+            <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-primary/5 border border-primary/20">
+              <span className="text-sm font-medium">
+                {selectedIds.size} selected
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const unindexed = (listData?.docs ?? []).filter((d: any) => d.processingStatus !== "indexed").map((d: any) => d.id);
+                  setSelectedIds(new Set(unindexed));
+                }}
+                className="text-xs h-7"
+              >
+                Select all unextracted
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set((listData?.docs ?? []).map((d: any) => d.id)))}
+                className="text-xs h-7"
+              >
+                Select all
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs h-7"
+              >
+                Clear
+              </Button>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => handleBulkExtract(Array.from(selectedIds))}
+                  disabled={selectedIds.size === 0 || bulkProgress.active}
+                  className="gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Extract {selectedIds.size > 0 ? selectedIds.size : ""} Selected
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectionMode(true)}
+              className="gap-1.5 self-start"
+              disabled={bulkProgress.active}
+            >
+              <ListChecks className="w-4 h-4" />
+              Bulk Extract
+            </Button>
+          )}
+
           {/* Document grid */}
           {listLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1260,15 +1423,47 @@ export default function KnowledgeHub() {
                 const StatusIcon = statusCfg.icon;
                 const isExtracting = extractMutation.isPending && extractMutation.variables?.id === doc.id;
 
+                const isSelected = selectedIds.has(doc.id);
                 return (
                   <Card
                     key={doc.id}
-                    className="group relative flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => setPreviewDocId(doc.id)}
+                    className={`group relative flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${
+                      selectionMode && isSelected ? "ring-2 ring-primary" : ""
+                    }`}
+                    onClick={() => {
+                      if (selectionMode) {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(doc.id)) next.delete(doc.id);
+                          else next.add(doc.id);
+                          return next;
+                        });
+                      } else {
+                        setPreviewDocId(doc.id);
+                      }
+                    }}
                   >
                     <CardContent className="flex flex-col gap-3 p-4 flex-1">
+                      {/* Selection checkbox overlay */}
+                      {selectionMode && (
+                        <div className="absolute top-2 left-2 z-10">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => {
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(doc.id)) next.delete(doc.id);
+                                else next.add(doc.id);
+                                return next;
+                              });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-background shadow-sm"
+                          />
+                        </div>
+                      )}
                       {/* Header */}
-                      <div className="flex items-start gap-3">
+                      <div className={`flex items-start gap-3 ${selectionMode ? "pl-6" : ""}`}>
                         <div className={`p-2 rounded-lg ${cfg.bg} shrink-0`}>
                           <Icon className={`w-4 h-4 ${cfg.color}`} />
                         </div>

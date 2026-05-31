@@ -291,6 +291,34 @@ For AEC project sheets, the system now distinguishes between:
 - All authenticated users see all menu items; access control enforced at procedure level
 - Pursuits & Proposals and Contracts & Compliance groups default to expanded
 
+### Multi-Project Resume UX Fix
+
+- When `autoExtract` returns `multiProject=true`, the upload form's **Confirm & Save** button is replaced with an amber redirect banner pointing to the Split Panel
+- Split Panel now shows a shared metadata bar at the top: Staff Name (required) and Company/Entity dropdown, applied to all project records on Create X Records
+- `splitStaffName` and `splitCompanyTag` state vars pre-filled from `autoExtract`, cleared on reset
+- `autoExtract` forces `multiProject=false` when `docType=resume`; client-side guard also prevents split mode for resume docType
+- Resume records show a project count badge in the library grid (e.g. "14 in resume")
+
+### DAM Bulk Extract
+
+Selection mode in the Knowledge Hub library grid allows batch AI extraction without uploading new files.
+
+**How it works:**
+1. User clicks "Select" button in the toolbar to enter selection mode — checkboxes appear on each card
+2. Only non-indexed documents (no `extractedText`) are selectable; already-indexed cards are greyed out
+3. "Select All Unextracted" shortcut selects all eligible documents in the current view
+4. Maximum 10 documents per batch (enforced with a toast warning if exceeded)
+5. "Extract Selected" button triggers sequential processing: each document is sent through `dam.triggerExtract` one at a time with a **1.5-second delay** between calls (rate-limit safety)
+6. A progress panel shows `Processing X of Y` with the current document title
+7. Errors do not stop the batch — the error is logged, the document is marked as failed, and processing continues
+8. Re-runnable: already-indexed documents are automatically skipped if re-selected
+9. On completion, the library grid refreshes and selection mode is exited
+
+**Key state variables in `KnowledgeHub.tsx`:**
+- `selectionMode: boolean` — toggles selection UI
+- `selectedIds: Set<string>` — selected document IDs
+- `extractProgress: { current, total, currentTitle, errors[] } | null` — progress panel state
+
 ---
 
 ## Remaining Work
