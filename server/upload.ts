@@ -34,8 +34,11 @@ export function registerUploadRoute(app: Express) {
       const timestamp = Date.now();
       const safeFileName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const key = `${folder}/${timestamp}-${safeFileName}`;
-      const { url } = await storagePut(key, file.buffer, file.mimetype);
-      res.json({ url, key, fileName: file.originalname, size: file.size });
+      // storagePut appends a random hash suffix to the key before uploading.
+      // We MUST use the returned key (with hash) — not the pre-hash key — so the DB
+      // stores the exact path that exists in Supabase Storage.
+      const { url, key: actualKey } = await storagePut(key, file.buffer, file.mimetype);
+      res.json({ url, key: actualKey, fileName: file.originalname, size: file.size });
     } catch (err: any) {
       console.error("[Upload] Error:", err.message);
       res.status(500).json({ error: err.message ?? "Upload failed" });
