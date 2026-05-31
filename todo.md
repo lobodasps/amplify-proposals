@@ -674,3 +674,11 @@
 - [x] Part 9: Confirm and create — sticky footer, ready/needs-review counts, skip unresolved checkbox, create progress bar, done summary card
 - [x] Part 10: Quality filter (All/High/Medium/Low) in KnowledgeHub toolbar (shown only when Images filter active)
 - [x] TypeScript: zero errors
+
+## Extraction Tier Control — Proposal Launchpad (v3.8)
+- [ ] Add EXTRACTION_TIER type and DOC_TYPE_TIER map to shared/types.ts
+- [ ] Update classifyFile() in rfpSessions.ts to return tier alongside type/label
+- [ ] Apply metadata-only path in shredding loop (skip LLM, store title/pageCount/fileSize)
+- [ ] Apply SheetJS path for fee_schedule XLSX files (no LLM)
+- [ ] Add Full Extract (blue) / Metadata Only (gray) / SheetJS (green) badge to manifest in ProposalLaunchpad.tsx
+- [ ] Zero TypeScript errors after changes

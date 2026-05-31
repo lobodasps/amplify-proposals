@@ -70,14 +70,17 @@ import {
   PenLine,
 } from "lucide-react";
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
+import { LABEL_TIER_MAP, TIER_BADGE, type RfpFileLabel } from "../../../shared/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FILE_LABELS = [
   "Main RFP",
   "Scope of Work",
-  "Appendix",
   "Addendum",
+  "Appendix",
+  "Forms",
+  "Certificate",
   "Fee Schedule",
   "Reference Doc",
   "Other",
@@ -160,9 +163,11 @@ function isAccepted(file: File): boolean {
 function guessLabel(file: File): FileLabel {
   const name = file.name.toLowerCase();
   if (name.includes("scope") || name.includes("sow")) return "Scope of Work";
+  if (name.includes("addend") || name.includes("amendment")) return "Addendum";
   if (name.includes("append") || name.includes("exhibit")) return "Appendix";
-  if (name.includes("addend")) return "Addendum";
-  if (name.includes("fee") || name.includes("cost") || name.includes("price")) return "Fee Schedule";
+  if (name.includes("form") || name.includes("data.form")) return "Forms";
+  if (name.includes("insurance") || name.includes("certificate") || name.includes("cert")) return "Certificate";
+  if ((name.includes("fee") || name.includes("cost") || name.includes("price")) && (name.endsWith(".xlsx") || name.endsWith(".xls"))) return "Fee Schedule";
   if (name.includes("ref") || name.includes("standard") || name.includes("guide")) return "Reference Doc";
   return "Main RFP";
 }
@@ -431,13 +436,15 @@ export default function ProposalLaunchpad() {
         rfpFileSizeBytes: primary.file.size,
       });
 
-      // 3b. Save ALL uploaded file URLs so the LLM can read them
+      // 3b. Save ALL uploaded file URLs so the LLM can read them.
+      // Include the user-chosen label so the backend can apply the correct extraction tier.
       await saveUploadedFiles.mutateAsync({
         sessionId: sid,
         files: uploadedFiles.map((f) => ({
           name: f.file.name,
           url: f.uploadedUrl,
           mimeType: f.file.type || "application/octet-stream",
+          label: f.label,
         })),
       });
       setProcessingProgress(45);
@@ -969,6 +976,16 @@ export default function ProposalLaunchpad() {
                               ))}
                             </SelectContent>
                           </Select>
+                          {/* Extraction tier badge */}
+                          {(() => {
+                            const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
+                            const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
+                            return (
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tierClass} shrink-0 whitespace-nowrap`}>
+                                {tierLabel}
+                              </span>
+                            );
+                          })()}
                           {/* Remove */}
                           <button
                             onClick={() => removeFromQueue(entry.id)}
@@ -1074,18 +1091,25 @@ export default function ProposalLaunchpad() {
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="space-y-1.5">
-                  {queue.map((entry) => (
-                    <div key={entry.id} className="flex items-center gap-2.5 py-1.5 border-b border-border/50 last:border-0">
-                      <FileTypeIcon type={entry.type} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-sm flex-1 truncate">{entry.file.name}</span>
-                      <FileTypeBadge type={entry.type} />
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{entry.label}</Badge>
-                      {entry.status === "done"
-                        ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                        : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      }
-                    </div>
-                  ))}
+                  {queue.map((entry) => {
+                    const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
+                    const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
+                    return (
+                      <div key={entry.id} className="flex items-center gap-2.5 py-1.5 border-b border-border/50 last:border-0">
+                        <FileTypeIcon type={entry.type} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm flex-1 truncate">{entry.file.name}</span>
+                        <FileTypeBadge type={entry.type} />
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{entry.label}</Badge>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tierClass} shrink-0 whitespace-nowrap`}>
+                          {tierLabel}
+                        </span>
+                        {entry.status === "done"
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        }
+                      </div>
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>}

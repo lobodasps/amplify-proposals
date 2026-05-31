@@ -29,6 +29,7 @@ import {
   SKILL_META,
 } from "../../shared/workflowTypes";
 import { shredSingleFile, escapeXml } from "./xmlShredder";
+import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
 
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
@@ -511,6 +512,8 @@ export const rfpSessionsRouter = router({
           name: z.string(),
           url: z.string(),
           mimeType: z.string(),
+          /** User-chosen label from FILE_LABELS — used to determine extraction tier */
+          label: z.string().optional(),
         })),
       })
     )
@@ -686,22 +689,60 @@ export const rfpSessionsRouter = router({
           const allFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
 
           if (allFiles.length > 0) {
-            // Classify each file by its likely role based on filename
-            const classifyFile = (name: string, index: number): { type: string; label: string } => {
+            // Classify each file by its likely role based on filename.
+            // If the user set a label in the manifest, use it for tier lookup.
+            const classifyFile = (
+              name: string,
+              index: number,
+              userLabel?: string,
+            ): { type: string; label: string; tier: ExtractionTier } => {
               const lower = name.toLowerCase();
-              if (/rfp|solicitation|request.for.(proposal|qualification)/i.test(lower)) return { type: "main_rfp", label: "Main RFP" };
-              if (/scope|sow|scope.of.work/i.test(lower)) return { type: "scope", label: "Scope of Work" };
-              if (/addendum|amendment/i.test(lower)) return { type: "addendum", label: "Addendum" };
-              if (/appendix/i.test(lower)) return { type: "appendix", label: "Appendix" };
-              if (/attachment/i.test(lower)) return { type: "attachment", label: "Attachment" };
-              if (/form|data.form/i.test(lower)) return { type: "form", label: "Form" };
-              if (/cover.letter|transmittal/i.test(lower)) return { type: "cover_letter", label: "Cover Letter" };
-              if (/insurance|certificate/i.test(lower)) return { type: "certificate", label: "Certificate" };
-              if (/pre-proposal|conference|instruction/i.test(lower)) return { type: "instructions", label: "Instructions" };
-              if (/rider|community|hiring/i.test(lower)) return { type: "rider", label: "Rider" };
-              if (/subcontract|utilization|mwbe|dbe/i.test(lower)) return { type: "compliance", label: "Compliance" };
-              if (index === 0) return { type: "main_rfp", label: "Main RFP" };
-              return { type: "supplemental", label: "Supplemental Document" };
+
+              // Determine the display label (prefer user choice, fall back to filename heuristic)
+              let displayLabel: string;
+              if (userLabel) {
+                displayLabel = userLabel;
+              } else if (/rfp|solicitation|request.for.(proposal|qualification)/i.test(lower)) {
+                displayLabel = "Main RFP";
+              } else if (/scope|sow|scope.of.work/i.test(lower)) {
+                displayLabel = "Scope of Work";
+              } else if (/addendum|amendment/i.test(lower)) {
+                displayLabel = "Addendum";
+              } else if (/appendix/i.test(lower)) {
+                displayLabel = "Appendix";
+              } else if (/form|data.form/i.test(lower)) {
+                displayLabel = "Forms";
+              } else if (/insurance|certificate/i.test(lower)) {
+                displayLabel = "Certificate";
+              } else if (/fee|cost|price/i.test(lower) && /\.xlsx?$/i.test(lower)) {
+                displayLabel = "Fee Schedule";
+              } else if (/ref|standard|guide/i.test(lower)) {
+                displayLabel = "Reference Doc";
+              } else if (index === 0) {
+                displayLabel = "Main RFP";
+              } else {
+                displayLabel = "Other";
+              }
+
+              // Map display label to internal docType
+              const labelToType: Record<string, string> = {
+                "Main RFP":      "main_rfp",
+                "Scope of Work": "scope",
+                "Addendum":      "addendum",
+                "Appendix":      "appendix",
+                "Forms":         "form",
+                "Certificate":   "certificate",
+                "Fee Schedule":  "fee_schedule",
+                "Reference Doc": "reference",
+                "Other":         "supplemental",
+              };
+              const type = labelToType[displayLabel] ?? "supplemental";
+
+              // Look up extraction tier from shared map
+              const tier: ExtractionTier =
+                LABEL_TIER_MAP[displayLabel as RfpFileLabel] ?? "metadata_only";
+
+              return { type, label: displayLabel, tier };
             }
 
             // Helper: write a sub-step message into workflowState so the UI can poll it
@@ -718,29 +759,53 @@ export const rfpSessionsRouter = router({
 
             // Shred each file sequentially with a 1.5s delay to avoid rate limits
             const documentFragments: string[] = [];
+            let fullExtractCount = 0;
+            let metadataOnlyCount = 0;
+            let sheetjsCount = 0;
+
             for (let i = 0; i < allFiles.length; i++) {
               if (i > 0) await new Promise((r) => setTimeout(r, 1500));
-              const { type: docType, label } = classifyFile(allFiles[i].name, i);
-              await writeSubStep(`Shredding file ${i + 1} of ${allFiles.length}: ${allFiles[i].name}`);
-              try {
-                const fragment = await shredSingleFile({
-                  fileName: allFiles[i].name,
-                  fileUrl: allFiles[i].url,
-                  mimeType: allFiles[i].mimeType,
-                  fileRole: docType === "main_rfp" ? "primary" : "attachment",
-                  asFragment: true,
-                });
-                // Wrap the shredded content in a <document> tag with metadata
+              const fileEntry = allFiles[i] as { name: string; url: string; mimeType: string; label?: string };
+              const { type: docType, label, tier } = classifyFile(fileEntry.name, i, fileEntry.label);
+
+              if (tier === "sheetjs") {
+                // Fee Schedule XLSX: SheetJS parse only, no LLM
+                sheetjsCount++;
+                await writeSubStep(`Parsing fee schedule ${i + 1}/${allFiles.length}: ${fileEntry.name} (SheetJS)`);
                 documentFragments.push(
-                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(allFiles[i].name)}">\n${fragment}\n  </document>`
+                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(fileEntry.name)}" tier="sheetjs" processing="skipped-sheetjs-parse-only">\n    <metadata>\n      <title>${escapeXml(fileEntry.name.replace(/\.[^.]+$/, ""))}</title>\n      <note>Fee schedule XLSX - SheetJS parse only, not submitted to LLM. Review manually.</note>\n    </metadata>\n  </document>`
                 );
-              } catch (err: any) {
-                // If one file fails, log it and continue
+              } else if (tier === "metadata_only") {
+                // Appendix, Forms, Certs, Reference Docs: metadata only, skip LLM
+                metadataOnlyCount++;
+                await writeSubStep(`Cataloguing ${i + 1}/${allFiles.length}: ${fileEntry.name} (metadata only)`);
                 documentFragments.push(
-                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(allFiles[i].name)}" status="error">\n    <error>${escapeXml(err.message ?? "Unknown error")}</error>\n  </document>`
+                  `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(fileEntry.name)}" tier="metadata_only" processing="skipped-metadata-only">\n    <metadata>\n      <title>${escapeXml(fileEntry.name.replace(/\.[^.]+$/, ""))}</title>\n      <url>${escapeXml(fileEntry.url)}</url>\n      <note>Catalogued without LLM extraction. File stored and available for reference.</note>\n    </metadata>\n  </document>`
                 );
+              } else {
+                // Full extract: Main RFP, Scope of Work, Addendum
+                fullExtractCount++;
+                await writeSubStep(`Shredding file ${i + 1}/${allFiles.length}: ${fileEntry.name} (full extract)`);
+                try {
+                  const fragment = await shredSingleFile({
+                    fileName: fileEntry.name,
+                    fileUrl: fileEntry.url,
+                    mimeType: fileEntry.mimeType,
+                    fileRole: docType === "main_rfp" ? "primary" : "attachment",
+                    asFragment: true,
+                  });
+                  documentFragments.push(
+                    `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(fileEntry.name)}" tier="full_extract">\n${fragment}\n  </document>`
+                  );
+                } catch (err: any) {
+                  documentFragments.push(
+                    `  <document type="${docType}" label="${escapeXml(label)}" filename="${escapeXml(fileEntry.name)}" tier="full_extract" status="error">\n    <error>${escapeXml(err.message ?? "Unknown error")}</error>\n  </document>`
+                  );
+                }
               }
             }
+
+            console.log(`[rfp_parser] tier summary: ${fullExtractCount} full-extract, ${metadataOnlyCount} metadata-only, ${sheetjsCount} sheetjs (of ${allFiles.length} total)`);
 
             // Combine into a single <rfp_package> XML document
             const combinedXml = [

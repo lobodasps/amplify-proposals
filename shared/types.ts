@@ -129,3 +129,42 @@ export const ALL_SERVICE_LINES: ServiceLine[] = [
   "landscape_streetscape",
   "environmental",
 ];
+
+// ─── RFP File Extraction Tiers ────────────────────────────────────────────────
+// Controls how deeply each labeled file is processed during rfp_parser execution.
+//
+//   full_extract   → full XML shred + LLM extraction (critical documents)
+//   metadata_only  → extract title, page count, file size; store file; skip LLM
+//   sheetjs        → SheetJS parse only (XLSX fee schedules); no LLM
+
+export type ExtractionTier = "full_extract" | "metadata_only" | "sheetjs";
+
+export type RfpFileLabel =
+  | "Main RFP"
+  | "Scope of Work"
+  | "Addendum"
+  | "Appendix"
+  | "Forms"
+  | "Certificate"
+  | "Reference Doc"
+  | "Fee Schedule"
+  | "Other";
+
+/** Maps each user-visible file label to its extraction tier. */
+export const LABEL_TIER_MAP: Record<RfpFileLabel, ExtractionTier> = {
+  "Main RFP":       "full_extract",
+  "Scope of Work":  "full_extract",
+  "Addendum":       "full_extract",
+  "Appendix":       "metadata_only",
+  "Forms":          "metadata_only",
+  "Certificate":    "metadata_only",
+  "Reference Doc":  "metadata_only",
+  "Fee Schedule":   "sheetjs",
+  "Other":          "metadata_only",
+};
+
+export const TIER_BADGE: Record<ExtractionTier, { label: string; className: string }> = {
+  full_extract:  { label: "Full Extract",   className: "bg-blue-100 text-blue-700 border-blue-200" },
+  metadata_only: { label: "Metadata Only",  className: "bg-gray-100 text-gray-600 border-gray-200" },
+  sheetjs:       { label: "SheetJS Parse",  className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+};
