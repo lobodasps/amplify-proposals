@@ -297,6 +297,7 @@ export default function ProposalLaunchpad() {
   const scoreGoNoGo = trpc.proposals.scoreGoNoGo.useMutation();
   const createPursuit = trpc.pursuits.create.useMutation();
   const createProposal = trpc.proposals.create.useMutation();
+  const linkSession = trpc.rfpSessions.linkToProposal.useMutation();
   const utils = trpc.useUtils();
 
   // ── Drag-and-drop handlers ────────────────────────────────────────────────
@@ -542,6 +543,15 @@ export default function ProposalLaunchpad() {
         clientName: rfpAgency || undefined,
         rfpNumber: rfpNumber || undefined,
       });
+
+      // Link the Launchpad rfpSession to the new proposal so the Workspace finds it
+      if (sessionId && proposalResult.proposalId) {
+        await linkSession.mutateAsync({
+          sessionId,
+          proposalId: proposalResult.proposalId,
+          pursuitId: newest?.id,
+        });
+      }
 
       toast.success("Pursuit created! Opening Proposal Workspace…");
       if (proposalResult.proposalId) {

@@ -445,6 +445,28 @@ export const rfpSessionsRouter = router({
         .where(eq(rfpSessions.proposalId, input.proposalId))
         .orderBy(rfpSessions.createdAt);
     }),
+  // ── Link an existing session to a proposal/pursuit ─────────────────────────
+  linkToProposal: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string().uuid(),
+        proposalId: z.string().uuid(),
+        pursuitId: z.string().uuid().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db
+        .update(rfpSessions)
+        .set({
+          proposalId: input.proposalId,
+          ...(input.pursuitId ? { pursuitId: input.pursuitId } : {}),
+        })
+        .where(eq(rfpSessions.id, input.sessionId));
+      return { success: true };
+    }),
+
   // ── Save RFP file metadata (after upload to storage) ─────────────────────
   saveRfpFile: protectedProcedure
     .input(

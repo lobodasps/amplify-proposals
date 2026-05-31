@@ -711,7 +711,7 @@ export default function ProposalWorkspace() {
   return (
     <TooltipProvider>
       <AppLayout title="Proposal Workspace">
-        <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
+        <div className="flex flex-col h-full overflow-x-hidden">
           {/* ── Top Bar ──────────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center justify-between px-4 py-2.5 border-b shrink-0 gap-2 bg-background">
             <div className="flex items-center gap-3 min-w-0">
@@ -800,7 +800,7 @@ export default function ProposalWorkspace() {
           </div>
 
           {/* ── Body ─────────────────────────────────────────────────────── */}
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 min-h-0">
             {/* ── Left Sidebar: Skill Pipeline ─────────────────────────── */}
             <div className="w-56 shrink-0 border-r flex flex-col overflow-hidden bg-muted/10">
               <div className="px-3 py-2 border-b">
@@ -869,7 +869,7 @@ export default function ProposalWorkspace() {
             </div>
 
             {/* ── Main Panel ───────────────────────────────────────────── */}
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto flex flex-col">
               {activeView === "overview" ? (
                 /* ── Overview Panel ──────────────────────────────────── */
                 <ScrollArea className="flex-1">
@@ -1007,7 +1007,7 @@ export default function ProposalWorkspace() {
                 </ScrollArea>
               ) : selectedSkill ? (
                 /* ── Skill Output Panel ──────────────────────────────── */
-                <div className="flex flex-col h-full overflow-hidden">
+                <div className="flex flex-col">
                   {/* Skill header */}
                   <div className="flex items-start justify-between px-6 py-4 border-b shrink-0 gap-4">
                     <div className="min-w-0">

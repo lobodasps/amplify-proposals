@@ -554,3 +554,7 @@
 - [x] Create damShredder.ts adapter: runs xml_shredder pipeline, converts XML → DAM JSON schema, returns extractedMeta/extractedText/tags/ownerName/firmRole identical to single-pass output
 - [x] Both paths write extractionMethod and pageCount to the DAM record
 - [x] Zero new tRPC routers added
+
+## Proposal Workspace — RFP Data Flow & Scroll Fix
+- [x] Link Launchpad rfpSession to the new proposal so Workspace uses existing parsed RFP data instead of creating a blank session
+- [x] Fix Proposal Workspace scroll clipping — content still cut off at viewport bottom
