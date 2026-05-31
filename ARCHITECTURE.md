@@ -459,3 +459,95 @@ The following major features are planned but not yet implemented. See `todo.md` 
 - SSO/SAML enterprise authentication
 - Mobile-responsive optimization pass
 - Live public agency portal scraping
+
+---
+
+## Architecture Changes — May 31, 2026 (Afternoon Session)
+
+### executeSkill: Synchronous → Fire-and-Forget
+
+The `executeSkill` mutation in `server/routers/rfpSessions.ts` was refactored to avoid 504 gateway timeouts on large RFP packages (15+ files).
+
+**Before:** Synchronous — shred all files, call LLM, return output in response body. Timed out at ~300s.
+
+**After:** Fire-and-forget pattern:
+1. Mark skill as `running` in DB (`workflowState[skillName].status = "running"`)
+2. Return `{ success: true, running: true, output: "" }` immediately
+3. Run actual work inside `setImmediate(async () => { ... })` — detached from HTTP request lifecycle
+4. On completion: write `status: "complete"`, `output`, `completedAt` to DB
+5. On error: write `status: "error"`, `errorMessage` to DB (no `throw` — avoids unhandled rejection)
+
+**Frontend polling pattern (`ProposalWorkspace.tsx` and `ProposalLaunchpad.tsx`):**
+- After `mutateAsync` returns `{ running: true }`, poll `getById` every 2 seconds
+- Watch `workflowState[skillName].status`, exit on `"complete"` or `"error"`
+- Read output from `session.skillOutputs[skillName]` (not from mutation response)
+- 15-minute safety timeout
+
+### Extraction Tier System
+
+New `ExtractionTier` type and `LABEL_TIER_MAP` in `shared/types.ts` control per-file processing depth:
+
+| Tier | Labels | Behavior |
+|------|--------|----------|
+| `full_extract` | Main RFP, Scope of Work, Addendum | XML shred + LLM extraction |
+| `metadata_only` | Appendix, Forms, Certificate, Cover Letter, Supplemental, Reference Doc, Other | Store URL/title/note only, no LLM |
+| `sheetjs` | Fee Schedule (XLSX) | SheetJS structured parse, no LLM |
+
+The shredding loop in `rfpSessions.ts` reads `file.label` from `uploadedFiles`, looks up the tier from `LABEL_TIER_MAP`, and branches accordingly. Logs a tier summary before processing. Reduces LLM calls on a 15-file package from 15 down to typically 3–4.
+
+### Two-Pass Pre-Classification Architecture
+
+New classification pipeline in `ProposalLaunchpad.tsx` that runs after files are dropped, before the user clicks Process.
+
+**Pass 1 — Client-side (synchronous, zero latency):**
+- `readPdfPageCount(file)`: reads PDF binary header (`/Count N`) client-side to extract page count
+- `guessClassification(file, pageCount)`: returns `{ label, confidence, keyEvidence }`
+  - XLSX → `fee_schedule` (high)
+  - Generic names (Doc1, Attachment_1, etc.) → `unclassified`
+  - 1-page PDF → `cover_letter` (medium); 1–3 pages → `form` (medium)
+  - 20+ pages + RFP keywords → `main_rfp` (high)
+  - Keyword match → label (high); no match → `supplemental` (medium)
+
+**Pass 2 — Gemini Flash skim (async, background):**
+- Fires only for `unclassified` or `medium` confidence files
+- Uploads file to temp storage, calls `trpc.rfpSessions.classifyFile`
+- Backend sends file URL to Gemini Flash with structured JSON prompt
+- Returns `{ documentType, confidence, keyEvidence, suggestedLabel, extractionDepth }`
+- Runs in parallel batches of 5 with 500ms inter-batch delay
+- Target: < 20s for 20 files, < $0.10 Gemini Flash cost
+
+**New tRPC procedure:** `rfpSessions.classifyFile` (protected) — accepts `{ fileUrl, fileName, mimeType }`, returns structured classification JSON.
+
+**New shared types in `shared/types.ts`:**
+- `ClassificationConfidence`: `"high" | "medium" | "low" | "unclassified"`
+- `ClassificationResult`: `{ label, confidence, keyEvidence }`
+- `CONFIDENCE_BADGE`: confidence → `{ icon, label, className }`
+
+**Extended `QueuedFile` interface:** `confidence`, `keyEvidence`, `pageCount`, `pass2Running`
+
+**Manifest UI additions:**
+- Confidence badge: ✅ High / 〰️ Medium / ⚠️ Review / ? Unclassified
+- Key evidence subtitle under filename in small gray text
+- Page count and file size shown inline
+- Low/unclassified rows highlighted amber
+- Global Pass 2 spinner while Gemini is running
+- Pre-process `AlertDialog` for low/unclassified files: Review Now | Process Anyway
+
+### File Label Vocabulary (Current — 12 labels)
+
+```
+main_rfp | scope | addendum | appendix | fee_schedule | certificate
+form | cover_letter | reference | supplemental | other
+```
+
+Default when no keywords match: `supplemental` (changed from `main_rfp` — forces explicit designation).
+Validation: Process blocked if no file labeled `main_rfp`.
+
+### Checkpoints This Session
+
+| Version | Description |
+|---------|-------------|
+| `ccfec7b4` | Fix blank RFP fields: frontend polls until rfp_parser completes |
+| `147a854c` | Extraction tier control: Full Extract / Metadata Only / SheetJS badges |
+| `175b925c` | File auto-classification fix: new keyword rules, Supplemental default |
+| `b3846c96` | Two-pass pre-classification: Pass 1 heuristics + Pass 2 Gemini Flash skim |

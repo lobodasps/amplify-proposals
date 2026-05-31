@@ -500,3 +500,101 @@ The `user_github` remote is confirmed working. Live data fetched from `lobodasps
 - 261 tracked files, 86 commits, TypeScript primary language (2.03 MB)
 - Repo is private, created May 29 2026, last push May 31 2026
 - 0 open issues, 0 open PRs
+
+---
+
+## Session Notes — May 31, 2026 (Afternoon)
+
+### 504 Timeout Fix: executeSkill Fire-and-Forget
+The `executeSkill` tRPC mutation in `server/routers/rfpSessions.ts` was refactored from synchronous to fire-and-forget to prevent 504 gateway timeouts on large RFP packages.
+
+**Pattern:**
+- Mutation marks skill as `running` in DB, then immediately returns `{ success: true, running: true }`
+- Actual LLM work (file shredding + Gemini call) runs inside a detached `setImmediate(async () => { ... })` callback
+- Error catch block inside `setImmediate` writes `status: "error"` + `errorMessage` to DB — does NOT throw (avoids unhandled promise rejection)
+- Frontend (`ProposalWorkspace.tsx`) polls `getById` every 2 seconds after receiving `running: true`, reads `workflowState[skillName].status`, exits on `complete` or `error`, 15-minute safety timeout
+
+**Fix for blank RFP fields (`ProposalLaunchpad.tsx`):**
+- Root cause: frontend was reading `result.output` from the mutation response (now always `""`)
+- Fix: after `executeSkill.mutateAsync`, frontend polls `getById` until `workflowState.rfp_parser.status === "complete"`, then reads actual output from `session.skillOutputs.rfp_parser`
+
+### Extraction Tier Control
+Per-file extraction depth control added to the Proposal Launchpad manifest.
+
+**Tier map (`shared/types.ts` → `LABEL_TIER_MAP`):**
+| Label | Tier | Behavior |
+|-------|------|----------|
+| Main RFP, Scope of Work, Addendum | `full_extract` | XML shred + LLM extraction |
+| Appendix, Forms, Certificate, Reference Doc, Cover Letter, Supplemental, Other | `metadata_only` | Title/URL/note stored, no LLM |
+| Fee Schedule (XLSX) | `sheetjs` | SheetJS structured parse, no LLM |
+
+**Backend (`rfpSessions.ts`):** Shredding loop reads `file.label` from `uploadedFiles`, looks up tier from `LABEL_TIER_MAP`, branches accordingly. Logs tier summary: `[rfp_parser] tier summary: 3 full-extract, 8 metadata-only, 1 sheetjs`.
+
+**Frontend:** Extraction tier badge shown next to label selector. `TIER_BADGE` map in `shared/types.ts` provides label + CSS class per tier.
+
+### File Auto-Classification Rules (Updated)
+`guessLabel()` in `ProposalLaunchpad.tsx` updated with corrected keyword priority order:
+
+| Keywords | Label |
+|----------|-------|
+| "cover letter", "cover sheet", "transmittal" | Cover Letter |
+| "rfp", "solicitation", "ifb", "invitation for bid", "request for proposal" | Main RFP |
+| "scope", "sow", "scope of work" | Scope of Work |
+| "addend", "add-", "amendment" | Addendum |
+| "append" or `attach[ment]_N` (regex) | Appendix |
+| "fee schedule" or fee/cost/price/budget + .xlsx | Fee Schedule |
+| "insurance", "coi", "certificate", "cert" | Certificate |
+| "form", "exhibit" | Forms |
+| "ref", "standard", "guide" | Reference Doc |
+| *(no match)* | Supplemental (new default — was Main RFP) |
+
+**Validation:** Clicking Process without any file labeled "Main RFP" shows toast error.
+
+### Two-Pass Pre-Classification System
+Full two-pass classification system added to the Proposal Launchpad file manifest.
+
+**Pass 1 — Instant client-side (no API call):**
+- `readPdfPageCount(file)` reads PDF binary header client-side to extract page count
+- `guessClassification(file, pageCount)` returns `{ label, confidence, keyEvidence }`
+- XLSX → `fee_schedule` (high); generic names → `unclassified`; page count heuristics for PDFs; keyword rules for all others
+- Runs synchronously on file drop, zero latency
+
+**Pass 2 — Gemini Flash skim (async, background):**
+- Fires for `unclassified` or `medium` confidence files only
+- Uploads file to temp storage, calls `trpc.rfpSessions.classifyFile` (new protected procedure)
+- Backend sends file URL to Gemini Flash with structured JSON prompt: returns `documentType`, `confidence`, `keyEvidence`, `suggestedLabel`, `extractionDepth`
+- Runs in parallel batches of 5 with 500ms inter-batch delay
+- Updates label + confidence in manifest row in real time
+
+**New backend procedure:** `rfpSessions.classifyFile` — protected procedure, accepts `{ fileUrl, fileName, mimeType }`, returns `{ documentType, confidence, keyEvidence, suggestedLabel, extractionDepth }`.
+
+**Manifest UI updates:**
+- Confidence badge: ✅ High (green) / 〰️ Medium (yellow) / ⚠️ Review (amber) / ? Unclassified (gray)
+- Key evidence subtitle under filename in small gray text
+- Page count (e.g., `12pp`) and file size shown inline
+- Low/unclassified rows highlighted with amber border + background
+- Global "Gemini reviewing N files…" spinner while Pass 2 runs
+- Per-row "Analyzing with Gemini…" spinner during Pass 2
+
+**Pre-process warning dialog (`AlertDialog`):**
+- Shown when user clicks Process with any low/unclassified files
+- Lists each flagged file with key evidence
+- Options: **Review Now** (closes dialog) | **Process Anyway** (calls `doProcess()`)
+
+**New types in `shared/types.ts`:**
+- `ClassificationConfidence`: `"high" | "medium" | "low" | "unclassified"`
+- `ClassificationResult`: `{ label, confidence, keyEvidence }`
+- `CONFIDENCE_BADGE`: map of confidence → `{ icon, label, className }`
+
+**New `QueuedFile` fields:** `confidence`, `keyEvidence`, `pageCount`, `pass2Running`
+
+### Schema Changes
+No new schema migrations in this session. All changes were router/frontend only.
+
+### Checkpoints This Session
+| Version | Description |
+|---------|-------------|
+| `ccfec7b4` | Fix blank RFP fields: frontend polls until rfp_parser completes |
+| `147a854c` | Extraction tier control: Full Extract / Metadata Only / SheetJS badges |
+| `175b925c` | File auto-classification fix: new keyword rules, Supplemental default, Main RFP validation |
+| `b3846c96` | Two-pass pre-classification: Pass 1 heuristics + Pass 2 Gemini Flash skim |
