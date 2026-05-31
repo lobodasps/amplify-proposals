@@ -569,3 +569,22 @@
 - [x] Add delete button (trash icon) to proposal cards on hover
 - [x] Add delete mutation to pursuits router (cascade-deletes linked proposals, sessions, tasks)
 - [x] Add delete button to pursuit cards
+
+## LLM Configuration System — Multi-Provider Routing (v3.3)
+- [x] Refactor llmSkill.ts DEFAULT_SKILLS: add new skill types (autoExtract, triggerExtract, dam_image_caption, conflict_detector, tailored_resume) with correct provider/model defaults
+- [x] Update DEFAULT_SKILLS model assignments: rfp_parser→Gemini 2.5 Flash, autoExtract→Gemini 2.5 Flash, triggerExtract→Gemini 2.5 Pro, dam_image_caption→Gemini 2.5 Flash, go_no_go_advisor→Claude Sonnet 4, proposal_writer→Claude Sonnet 4, proposal_scorer→Claude Sonnet 4, conflict_detector→Claude Sonnet 4, contract_analyzer→Claude Sonnet 4, tailored_resume→Claude Sonnet 4
+- [x] Update resolveApiKey: fall back to ENV.openaiApiKey for openai provider, ENV.googleAiApiKey for google_gemini provider (no per-skill key required if ENV key exists)
+- [x] Fix callOpenAICompat: strip file_url content parts for non-Gemini providers, convert to text extraction fallback
+- [x] Fix callGemini: use Google Generative AI OpenAI-compat endpoint with file_url support (generativelanguage.googleapis.com)
+- [x] Fix shredSingleFile: detect provider from ai_skills config, use text extraction for non-Gemini providers instead of file_url
+- [x] Fix max_tokens hardcoding in llm.ts: respect caller-specified maxTokens param
+- [x] Update Settings AI Skills UI: show provider API key fields with ENV fallback indicator, update PROVIDER_MODELS with correct model names
+- [x] Run TypeScript check and fix all errors
+- [x] Run tests and ensure all pass
+
+## Token Usage Logging & Visibility (v3.3)
+- [x] Schema: add llm_usage_logs table (id, skillType, provider, model, tokensIn, tokensOut, estimatedCost, durationMs, userId, createdAt)
+- [x] Log every invokeLLMWithSkill call to llm_usage_logs with token counts from API response
+- [x] Add aiSkills.usage query: monthly aggregation by skill type (total tokens, total cost, call count)
+- [x] Settings AI Skills UI: add Usage tab showing monthly token consumption table and estimated cost per skill
+- [x] Cost estimation: use per-model pricing table (Gemini Flash $0.15/1M in, Claude Sonnet $3/1M in, GPT-4o-mini $0.15/1M in, etc.)

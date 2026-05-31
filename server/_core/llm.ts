@@ -66,6 +66,8 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** Optional model override (defaults to resolveModel()) */
+  model?: string;
 };
 
 export type ToolCall = {
@@ -209,14 +211,30 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+const useOpenAI = () => ENV.openaiApiKey && ENV.openaiApiKey.trim().length > 0;
+
+const resolveApiUrl = () => {
+  if (useOpenAI()) {
+    return "https://api.openai.com/v1/chat/completions";
+  }
+  return ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
+};
+
+const resolveApiKey = () => {
+  if (useOpenAI()) return ENV.openaiApiKey;
+  return ENV.forgeApiKey;
+};
+
+const resolveModel = () => {
+  if (useOpenAI()) return "gpt-4o-mini";
+  return "gemini-2.5-flash";
+};
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!resolveApiKey()) {
+    throw new Error("No LLM API key configured (OPENAI_API_KEY or BUILT_IN_FORGE_API_KEY)");
   }
 };
 
@@ -277,10 +295,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
     responseFormat,
     response_format,
+    model,
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: model || resolveModel(),
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,10 +315,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
+  payload.max_tokens = params.maxTokens ?? params.max_tokens ?? 16384;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -316,7 +332,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${resolveApiKey()}`,
     },
     body: JSON.stringify(payload),
   });

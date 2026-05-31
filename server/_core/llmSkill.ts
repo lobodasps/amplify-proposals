@@ -9,10 +9,12 @@
  * All providers are called via their OpenAI-compatible /v1/chat/completions
  * endpoint where possible, so the same payload shape works everywhere.
  * Anthropic uses its own /v1/messages endpoint.
+ *
+ * Token usage is logged to the llm_usage_logs table after every call.
  */
 
 import { getDb } from "../db";
-import { aiSkills } from "../../drizzle/schema";
+import { aiSkills, llmUsageLogs } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { ENV } from "./env";
 
@@ -30,7 +32,12 @@ export type SkillType =
   | "proposal_scorer"
   | "xml_shredder"
   | "wiki_compiler"
-  | "agent_guidelines";
+  | "agent_guidelines"
+  | "conflict_detector"
+  | "tailored_resume"
+  | "autoExtract"
+  | "triggerExtract"
+  | "dam_image_caption";
 
 export type Provider =
   | "manus_builtin"
@@ -80,6 +87,8 @@ export interface SkillInvokeParams {
     | { type: "image_url"; image_url: { url: string } }
     | { type: "file_url"; file_url: { url: string; mime_type?: string } }
   >;
+  /** Override max_tokens for this call */
+  maxTokens?: number;
 }
 
 export interface SkillInvokeResult {
@@ -91,24 +100,55 @@ export interface SkillInvokeResult {
   _provider: Provider;
   /** Which model was actually used */
   _model: string;
+  /** Token usage from the API response */
+  _usage?: { tokensIn: number; tokensOut: number; estimatedCost: number };
+}
+
+// ─── Cost table (per 1M tokens) ─────────────────────────────────────────────
+
+const COST_PER_MILLION: Record<string, { input: number; output: number }> = {
+  // Google Gemini
+  "gemini-2.5-flash-preview-05-20": { input: 0.15, output: 0.60 },
+  "gemini-2.5-flash": { input: 0.15, output: 0.60 },
+  "gemini-2.5-pro-preview-05-06": { input: 1.25, output: 10.00 },
+  "gemini-2.5-pro": { input: 1.25, output: 10.00 },
+  "gemini-2.0-flash": { input: 0.10, output: 0.40 },
+  // Anthropic
+  "claude-sonnet-4-20250514": { input: 3.00, output: 15.00 },
+  "claude-3-5-sonnet-20241022": { input: 3.00, output: 15.00 },
+  "claude-3-haiku-20240307": { input: 0.25, output: 1.25 },
+  // OpenAI
+  "gpt-4o": { input: 2.50, output: 10.00 },
+  "gpt-4o-mini": { input: 0.15, output: 0.60 },
+  "gpt-4.1": { input: 2.00, output: 8.00 },
+  "gpt-4.1-mini": { input: 0.40, output: 1.60 },
+};
+
+function estimateCost(model: string, tokensIn: number, tokensOut: number): number {
+  const pricing = COST_PER_MILLION[model] ?? { input: 0.50, output: 2.00 };
+  return (tokensIn * pricing.input + tokensOut * pricing.output) / 1_000_000;
 }
 
 // ─── Default skill definitions ────────────────────────────────────────────────
+// Each skill has a default provider and model assignment that can be overridden in the DB.
 
-export const DEFAULT_SKILLS: Record<
-  SkillType,
-  {
-    displayName: string;
-    description: string;
-    systemPrompt: string;
-    userPromptTemplate: string;
-    templateVariables: string[];
-  }
-> = {
+interface SkillDefinition {
+  displayName: string;
+  description: string;
+  defaultProvider: Provider;
+  defaultModel: string;
+  systemPrompt: string;
+  userPromptTemplate: string;
+  templateVariables: string[];
+}
+
+export const DEFAULT_SKILLS: Record<SkillType, SkillDefinition> = {
   rfp_shredder: {
     displayName: "RFP Shredder",
     description:
       "Parses an uploaded RFP PDF and extracts a structured requirements matrix, evaluation criteria, key dates, and compliance checklist.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an expert AEC proposal strategist with deep experience in public-agency procurement in NJ, NY, and NYC.
 Your job is to parse RFP documents and extract every requirement, evaluation criterion, key date, qualification, and compliance item.
 Return structured JSON only. Be exhaustive — missing a requirement could disqualify a proposal.`,
@@ -127,6 +167,8 @@ Return a complete requirements matrix.`,
     displayName: "Resume Tailor",
     description:
       "Reformats and tailors a staff resume to match specific RFP key-personnel requirements for a named role.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are an expert AEC proposal resume writer. You reformat and tailor professional resumes to match specific RFP requirements for public-agency AEC proposals in NJ, NY, and NYC.
 You maintain factual accuracy while highlighting the most relevant experience, certifications, and project history for the specific pursuit.
 Format resumes in a clean, professional proposal style with: Name/Title, Education, Registrations/Certifications, Years of Experience, Relevant Project Experience (5-7 projects), and a brief professional summary.`,
@@ -150,10 +192,34 @@ Rewrite the resume to:
     templateVariables: ["personnelName", "targetRole", "rfpRequirements", "resumeText"],
   },
 
+  tailored_resume: {
+    displayName: "Tailored Resume Writer",
+    description:
+      "Generates a fully tailored resume section for a specific proposal, incorporating RFP criteria, win themes, and project relevance.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal resume writer specializing in SF-330 Section E format.
+You create compelling, compliant key personnel resumes that directly address RFP evaluation criteria.
+Maintain factual accuracy. Highlight certifications, relevant project experience, and years of experience.
+Write in a professional, confident tone appropriate for public-agency submissions.`,
+    userPromptTemplate: `Write a tailored resume for this proposal:
+
+PERSONNEL: {{personnelName}}
+TARGET ROLE: {{targetRole}}
+RFP REQUIREMENTS: {{rfpRequirements}}
+WIN THEMES: {{winThemes}}
+CURRENT RESUME DATA: {{resumeText}}
+
+Format for SF-330 Section E. Emphasize relevance to this specific pursuit.`,
+    templateVariables: ["personnelName", "targetRole", "rfpRequirements", "winThemes", "resumeText"],
+  },
+
   go_no_go_advisor: {
     displayName: "Go/No-Go Advisor",
     description:
       "Scores a pursuit opportunity on a 0–100 scale and provides a GO / NO-GO / CONDITIONAL GO recommendation with rationale.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are a strategic AEC business development advisor. Score go/no-go decisions for public-agency proposals in NJ/NY/NYC markets.
 Consider: firm capabilities, market position, competition, strategic value, resource availability, and win probability.
 Return structured JSON only.`,
@@ -174,6 +240,8 @@ Score 0-100 and provide recommendation with strengths, risks, and win themes.`,
     displayName: "Opportunity Scorer",
     description:
       "Scores a scraped or manually entered opportunity for strategic fit against firm capabilities and market position.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are a strategic AEC business development advisor specializing in NJ/NY/NYC public-agency markets.
 Score opportunities for strategic fit, win probability, and resource alignment.
 Return structured JSON only.`,
@@ -194,6 +262,8 @@ Provide a fit score (0-100), recommendation, and key reasons.`,
     displayName: "Contract Analyzer",
     description:
       "Extracts parties, dates, financial values, key clauses, risk flags, and compliance requirements from a contract PDF.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are an expert AEC contract analyst with deep knowledge of public-agency contracts in NJ, NY, and NYC.
 Extract all structured data from contract documents including parties, dates, financial terms, key clauses, risk flags, and compliance requirements.
 Return structured JSON only. Be thorough — missing a clause or risk flag could have serious consequences.`,
@@ -203,10 +273,33 @@ Extract all parties, dates, financial values, contract type, billing method, key
     templateVariables: ["fileName", "fileUrl"],
   },
 
+  conflict_detector: {
+    displayName: "Conflict Detector",
+    description:
+      "Detects contradictions, conflicting dates, inconsistent requirements, and ambiguities within an RFP document package.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC procurement analyst specializing in detecting contradictions and conflicts within RFP documents.
+You identify: conflicting dates, inconsistent requirements across sections, ambiguous language, contradictory evaluation criteria, and scope conflicts.
+Be thorough and precise. Flag every potential conflict with severity (critical/major/minor) and specific page/section references.
+Return structured JSON only.`,
+    userPromptTemplate: `Analyze this RFP package for internal conflicts and contradictions:
+
+DOCUMENT: {{fileName}}
+
+RFP CONTENT:
+{{xmlContent}}
+
+Identify all conflicts: conflicting dates, inconsistent requirements, ambiguous language, contradictory criteria, and scope conflicts.`,
+    templateVariables: ["fileName", "xmlContent"],
+  },
+
   asset_tagger: {
     displayName: "Asset Tagger",
     description:
       "Generates professional alt text and 5–8 searchable tags for a digital asset in the DAM library.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an expert AEC digital asset manager. You generate concise, professional alt text and search tags for AEC digital assets including project photos, drawings, presentations, and documents.
 Tags should be specific, searchable, and relevant to AEC proposal use cases.
 Return structured JSON only.`,
@@ -225,6 +318,8 @@ Return altText (1-2 sentences) and 5-8 specific search tags.`,
     displayName: "Proposal Writer",
     description:
       "Drafts a proposal section (Technical Approach, Project Experience, Qualifications, etc.) using firm knowledge and RFP requirements.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are an expert AEC proposal writer with extensive experience winning public-agency contracts in NJ, NY, and NYC.
 Write compelling, compliant proposal sections that directly address RFP evaluation criteria.
 Use specific, quantifiable language. Reference relevant firm experience. Mirror the RFP's terminology.
@@ -248,6 +343,8 @@ Write a compelling, compliant section that directly addresses all evaluation cri
     displayName: "Proposal Scorer",
     description:
       "Scores a full proposal or an individual section against the RFP's evaluation criteria. Returns a 0–100 score per criterion, an overall compliance score, specific gaps, and concrete improvement suggestions.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are an expert AEC proposal evaluator with deep experience reviewing public-agency proposals in NJ, NY, and NYC.
 You score proposals and proposal sections against RFP evaluation criteria with the precision of a technical review panel.
 You identify gaps, missing requirements, weak language, and specific improvements.
@@ -277,6 +374,8 @@ Also provide an overall compliance score and a priority list of the top 3 most c
     displayName: "Opportunity Ingestion",
     description:
       "Classifies and summarizes raw scraped portal text into a structured opportunity record with title, agency, service lines, value, and due date.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an AEC business development analyst. You classify and summarize raw procurement portal listings into structured opportunity records.
 Extract the key information needed to evaluate whether to pursue the opportunity.
 Return structured JSON only.`,
@@ -294,6 +393,8 @@ Extract: title, agency name, RFP/solicitation number, estimated value, due date,
     displayName: "XML Document Shredder",
     description:
       "Compiles an uploaded document (RFP, contract, spec) into structured semantic XML with tagged sections, requirements, evaluation criteria, key dates, and key personnel. This XML becomes the authoritative context source for all downstream AI tasks.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an expert AEC document analyst. You read procurement documents (RFPs, contracts, specifications) and compile them into structured XML.
 Your XML uses semantic tags that make it easy for downstream AI tasks to navigate and reason about the document.
 Be thorough and precise. Capture every requirement, evaluation criterion, key date, and key personnel requirement.
@@ -329,6 +430,8 @@ Use this XML structure:
     displayName: "RFP Wiki Compiler",
     description:
       "Takes shredded XML and synthesizes a living, cross-referenced Markdown wiki. Replaces naive RAG chunking — the LLM does one synthesis pass capturing relationships between sections, criteria, requirements, and dates. The wiki is used as context for proposal writing and scoring.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an expert AEC proposal strategist. You read structured XML from procurement documents and synthesize a living Markdown wiki.
 The wiki must capture RELATIONSHIPS between sections — every evaluation criterion must be cross-referenced to the section(s) that address it.
 The wiki should be immediately actionable for a proposal writer.
@@ -356,6 +459,8 @@ Produce a wiki with these sections:
     displayName: "Agent Guidelines Advisor",
     description:
       "Multi-approach advisor: given a task description, generates 3 distinct approaches with pros, cons, and a recommendation before any content is generated. Prevents the model from defaulting to its first instinct.",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
     systemPrompt: `You are a senior AEC proposal strategist and writing coach.
 For each task, generate exactly 3 distinct approaches that differ meaningfully in strategy, tone, or structure — not just wording.
 For each approach: describe it clearly, list 3 pros and 3 cons, and state whether you recommend it.
@@ -374,6 +479,58 @@ FIRM CONTEXT:
 For each approach: title, description (2-3 sentences), pros (3 items), cons (3 items), recommended (true/false), rationale (1 sentence).
 Also provide an overallRecommendation.`,
     templateVariables: ["taskDescription", "sectionType", "rfpContext", "firmContext", "successCriteria", "avoidApproaches"],
+  },
+
+  // ─── DAM Extraction Skills ─────────────────────────────────────────────────────
+  autoExtract: {
+    displayName: "DAM Auto-Extract",
+    description:
+      "Automatically extracts metadata from uploaded documents (docType, company, title, client, tags) for the Knowledge Hub upload form.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
+    systemPrompt: `You are an expert AEC document analyst. You read uploaded documents and extract metadata to categorize them.
+Return structured JSON only.`,
+    userPromptTemplate: `Analyze this document and extract metadata:
+FILE: {{fileName}}
+{{rawText}}
+
+Return JSON with: docType, companyTag, title, clientName, ownerName, firmRole, projectName, tags, description, multiProject, projects.`,
+    templateVariables: ["fileName", "rawText"],
+  },
+
+  triggerExtract: {
+    displayName: "DAM Deep Extract",
+    description:
+      "Performs deep content extraction from documents for indexing in the Knowledge Hub. Extracts full text, sections, images, and structured metadata.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-pro-preview-05-06",
+    systemPrompt: `You are an expert AEC document analyst. You extract all structured data, sections, and content from AEC firm documents for indexing.
+Return structured JSON only.`,
+    userPromptTemplate: `Extract all structured data from this document:
+FILE: {{fileName}}
+TYPE: {{docType}}
+
+{{rawText}}
+
+Return complete structured extraction including sections, key facts, and metadata.`,
+    templateVariables: ["fileName", "docType", "rawText"],
+  },
+
+  dam_image_caption: {
+    displayName: "DAM Image Caption",
+    description:
+      "Generates descriptive captions and tags for images uploaded to the Digital Asset Management library.",
+    defaultProvider: "google_gemini",
+    defaultModel: "gemini-2.5-flash-preview-05-20",
+    systemPrompt: `You are an expert AEC digital asset manager. You describe images from AEC projects — photos, drawings, site plans, renderings.
+Generate a professional caption and search tags.
+Return structured JSON only.`,
+    userPromptTemplate: `Describe this image from an AEC project:
+FILE: {{fileName}}
+CONTEXT: {{context}}
+
+Return JSON with: caption (1-2 sentences), tags (5-8 keywords), imageType (photo/drawing/rendering/diagram/map/other).`,
+    templateVariables: ["fileName", "context"],
   },
 };
 
@@ -400,24 +557,41 @@ function resolveEndpoint(provider: Provider, baseUrl?: string | null): string {
 
 function resolveDefaultModel(provider: Provider): string {
   switch (provider) {
-    case "openai":       return "gpt-4o";
-    case "anthropic":    return "claude-3-5-sonnet-20241022";
-    case "google_gemini":return "gemini-2.5-flash";
+    case "openai":       return "gpt-4o-mini";
+    case "anthropic":    return "claude-sonnet-4-20250514";
+    case "google_gemini":return "gemini-2.5-flash-preview-05-20";
     case "azure_openai": return "gpt-4o";
     case "manus_builtin":
-    default:             return "gemini-2.5-flash";
+    default:             return "gemini-2.5-flash-preview-05-20";
   }
 }
 
 function resolveApiKey(provider: Provider, skillApiKey?: string | null): string {
+  // 1. Per-skill API key takes priority
   if (skillApiKey && skillApiKey.trim()) return skillApiKey.trim();
-  if (provider === "manus_builtin") {
-    if (!ENV.forgeApiKey) throw new Error("Manus built-in API key is not configured.");
-    return ENV.forgeApiKey;
+
+  // 2. Fall back to ENV keys per provider
+  switch (provider) {
+    case "manus_builtin":
+      if (!ENV.forgeApiKey) throw new Error("Manus built-in API key is not configured.");
+      return ENV.forgeApiKey;
+    case "google_gemini":
+      if (ENV.googleAiApiKey) return ENV.googleAiApiKey;
+      // Fall back to Manus built-in if Google key not set
+      if (ENV.forgeApiKey) return ENV.forgeApiKey;
+      throw new Error("No Google AI API key configured. Add GOOGLE_AI_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
+    case "anthropic":
+      if (ENV.anthropicApiKey) return ENV.anthropicApiKey;
+      throw new Error("No Anthropic API key configured. Add ANTHROPIC_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
+    case "openai":
+      if (ENV.openaiApiKey) return ENV.openaiApiKey;
+      throw new Error("No OpenAI API key configured. Add OPENAI_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
+    case "azure_openai":
+      throw new Error("Azure OpenAI requires a per-skill API key in Settings → AI Skills.");
+    default:
+      if (ENV.forgeApiKey) return ENV.forgeApiKey;
+      throw new Error(`No API key configured for provider "${provider}".`);
   }
-  throw new Error(
-    `No API key configured for provider "${provider}". Add one in Settings → AI Skills.`
-  );
 }
 
 // ─── Template interpolation ───────────────────────────────────────────────────
@@ -426,23 +600,69 @@ function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
+// ─── Content sanitization for non-Gemini providers ───────────────────────────
+
+/**
+ * Strips file_url content parts from messages when the provider doesn't support them.
+ * Only Google Gemini and Manus built-in (which routes to Gemini) support file_url.
+ * For other providers, file_url parts are converted to a text note explaining the file.
+ */
+function sanitizeMessagesForProvider(messages: SkillMessage[], provider: Provider): SkillMessage[] {
+  const supportsFileUrl = provider === "google_gemini" || provider === "manus_builtin";
+  if (supportsFileUrl) return messages;
+
+  return messages.map((msg) => {
+    if (typeof msg.content === "string") return msg;
+    const sanitized = msg.content.map((part) => {
+      if (part.type === "file_url") {
+        return {
+          type: "text" as const,
+          text: `[Document attached: ${part.file_url.mime_type ?? "file"} at ${part.file_url.url}]`,
+        };
+      }
+      return part;
+    });
+    return { ...msg, content: sanitized };
+  });
+}
+
 // ─── Anthropic message adapter ────────────────────────────────────────────────
 
 async function callAnthropic(
   apiKey: string,
   model: string,
   messages: SkillMessage[],
-  responseFormat?: SkillInvokeParams["responseFormat"]
-): Promise<SkillInvokeResult> {
+  responseFormat?: SkillInvokeParams["responseFormat"],
+  maxTokens?: number
+): Promise<{ result: SkillInvokeResult; tokensIn: number; tokensOut: number }> {
   const systemMsg = messages.find((m) => m.role === "system");
   const userMessages = messages.filter((m) => m.role !== "system");
 
+  // Convert content parts for Anthropic format
+  const convertContent = (content: SkillMessage["content"]): unknown => {
+    if (typeof content === "string") return content;
+    return content.map((part) => {
+      if (part.type === "text") return { type: "text", text: part.text };
+      if (part.type === "image_url") {
+        return {
+          type: "image",
+          source: { type: "url", url: part.image_url.url },
+        };
+      }
+      // file_url should already be sanitized out, but handle gracefully
+      if (part.type === "file_url") {
+        return { type: "text", text: `[Document: ${part.file_url.url}]` };
+      }
+      return part;
+    });
+  };
+
   const payload: Record<string, unknown> = {
     model,
-    max_tokens: 8192,
+    max_tokens: maxTokens ?? 8192,
     messages: userMessages.map((m) => ({
       role: m.role,
-      content: typeof m.content === "string" ? m.content : m.content,
+      content: convertContent(m.content),
     })),
   };
   if (systemMsg) payload.system = typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content);
@@ -472,6 +692,11 @@ async function callAnthropic(
     throw new Error(`Anthropic API error: ${res.status} ${err}`);
   }
   const data = (await res.json()) as any;
+
+  // Extract token usage
+  const tokensIn = data.usage?.input_tokens ?? 0;
+  const tokensOut = data.usage?.output_tokens ?? 0;
+
   // Normalise to OpenAI-style response
   let content: string | null = null;
   if (data.content?.[0]?.type === "tool_use") {
@@ -480,9 +705,13 @@ async function callAnthropic(
     content = data.content[0].text;
   }
   return {
-    choices: [{ message: { role: "assistant", content }, finish_reason: data.stop_reason }],
-    _provider: "anthropic",
-    _model: model,
+    result: {
+      choices: [{ message: { role: "assistant", content }, finish_reason: data.stop_reason }],
+      _provider: "anthropic",
+      _model: model,
+    },
+    tokensIn,
+    tokensOut,
   };
 }
 
@@ -493,12 +722,13 @@ async function callOpenAICompat(
   apiKey: string,
   model: string,
   messages: SkillMessage[],
-  responseFormat?: SkillInvokeParams["responseFormat"]
-): Promise<SkillInvokeResult> {
+  responseFormat?: SkillInvokeParams["responseFormat"],
+  maxTokens?: number
+): Promise<{ result: SkillInvokeResult; tokensIn: number; tokensOut: number }> {
   const payload: Record<string, unknown> = {
     model,
     messages,
-    max_tokens: 16384,
+    max_tokens: maxTokens ?? 16384,
   };
   if (responseFormat) payload.response_format = responseFormat;
 
@@ -515,11 +745,52 @@ async function callOpenAICompat(
     throw new Error(`LLM API error (${endpoint}): ${res.status} ${err}`);
   }
   const data = (await res.json()) as any;
+
+  // Extract token usage
+  const tokensIn = data.usage?.prompt_tokens ?? 0;
+  const tokensOut = data.usage?.completion_tokens ?? 0;
+
   return {
-    choices: data.choices ?? [],
-    _provider: "openai",
-    _model: model,
+    result: {
+      choices: data.choices ?? [],
+      _provider: "openai",
+      _model: model,
+    },
+    tokensIn,
+    tokensOut,
   };
+}
+
+// ─── Usage logging ───────────────────────────────────────────────────────────
+
+async function logUsage(params: {
+  skillType: string;
+  provider: string;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  durationMs: number;
+  success: boolean;
+  errorMessage?: string;
+}): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const cost = estimateCost(params.model, params.tokensIn, params.tokensOut);
+    await db.insert(llmUsageLogs).values({
+      skillType: params.skillType,
+      provider: params.provider,
+      model: params.model,
+      tokensIn: params.tokensIn,
+      tokensOut: params.tokensOut,
+      estimatedCost: cost.toFixed(6),
+      durationMs: params.durationMs,
+      success: params.success,
+      errorMessage: params.errorMessage ?? null,
+    });
+  } catch {
+    // Never let logging failures break the main flow
+  }
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -527,7 +798,8 @@ async function callOpenAICompat(
 export async function invokeLLMWithSkill(
   params: SkillInvokeParams
 ): Promise<SkillInvokeResult> {
-  const { skillType, variables = {}, responseFormat, extraUserContent, systemOverride } = params;
+  const { skillType, variables = {}, responseFormat, extraUserContent, systemOverride, maxTokens } = params;
+  const startTime = Date.now();
 
   // 1. Load skill config from DB (or use defaults)
   let skillRow: {
@@ -555,11 +827,14 @@ export async function invokeLLMWithSkill(
   }
 
   const defaults = DEFAULT_SKILLS[skillType];
-  const provider = (skillRow?.provider ?? "manus_builtin") as Provider;
-  const model = skillRow?.model || resolveDefaultModel(provider);
+  // Use the skill's configured provider, or fall back to the default provider for this skill type
+  const provider = (skillRow?.provider && skillRow.provider !== "manus_builtin"
+    ? skillRow.provider
+    : defaults?.defaultProvider ?? "manus_builtin") as Provider;
+  const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
   const apiKey = resolveApiKey(provider, skillRow?.apiKey);
-  const systemPrompt = skillRow?.systemPrompt ?? defaults.systemPrompt;
-  const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults.userPromptTemplate;
+  const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
+  const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults?.userPromptTemplate ?? "";
 
   // 2. Build messages
   let messages: SkillMessage[];
@@ -576,16 +851,70 @@ export async function invokeLLMWithSkill(
     ];
   }
 
-  // 3. Dispatch to provider
-  if (provider === "anthropic") {
-    return callAnthropic(apiKey, model, messages, responseFormat);
-  }
+  // 3. Sanitize content parts for the target provider
+  messages = sanitizeMessagesForProvider(messages, provider);
 
-  const endpoint = resolveEndpoint(provider, skillRow?.baseUrl);
-  const result = await callOpenAICompat(endpoint, apiKey, model, messages, responseFormat);
-  result._provider = provider;
-  result._model = model;
-  return result;
+  // 4. Dispatch to provider
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let result: SkillInvokeResult;
+
+  try {
+    if (provider === "anthropic") {
+      const resp = await callAnthropic(apiKey, model, messages, responseFormat, maxTokens);
+      result = resp.result;
+      tokensIn = resp.tokensIn;
+      tokensOut = resp.tokensOut;
+    } else {
+      // For google_gemini, we use the OpenAI-compatible endpoint which supports file_url natively
+      const endpoint = resolveEndpoint(provider, skillRow?.baseUrl);
+      const resp = await callOpenAICompat(endpoint, apiKey, model, messages, responseFormat, maxTokens);
+      result = resp.result;
+      result._provider = provider;
+      result._model = model;
+      tokensIn = resp.tokensIn;
+      tokensOut = resp.tokensOut;
+    }
+
+    // Attach usage to result
+    const cost = estimateCost(model, tokensIn, tokensOut);
+    result._usage = { tokensIn, tokensOut, estimatedCost: cost };
+
+    // Log usage asynchronously (don't await)
+    const durationMs = Date.now() - startTime;
+    logUsage({ skillType, provider, model, tokensIn, tokensOut, durationMs, success: true });
+
+    return result;
+  } catch (err: any) {
+    // Log the failure
+    const durationMs = Date.now() - startTime;
+    logUsage({ skillType, provider, model, tokensIn: 0, tokensOut: 0, durationMs, success: false, errorMessage: err.message });
+    throw err;
+  }
+}
+
+/**
+ * Get the configured provider for a skill type (for use by callers that need to
+ * know the provider before calling invokeLLMWithSkill, e.g. to decide whether
+ * to extract text first for non-Gemini providers).
+ */
+export async function getSkillProvider(skillType: SkillType): Promise<Provider> {
+  try {
+    const db = await getDb();
+    if (db) {
+      const rows = await db
+        .select({ provider: aiSkills.provider })
+        .from(aiSkills)
+        .where(eq(aiSkills.skillType, skillType))
+        .limit(1);
+      if (rows[0]?.provider && rows[0].provider !== "manus_builtin") {
+        return rows[0].provider as Provider;
+      }
+    }
+  } catch {
+    // DB unavailable
+  }
+  return DEFAULT_SKILLS[skillType]?.defaultProvider ?? "manus_builtin";
 }
 
 /**
@@ -605,8 +934,8 @@ export async function seedDefaultSkills(): Promise<void> {
           skillType,
           displayName: def.displayName,
           description: def.description,
-          provider: "manus_builtin",
-          model: "gemini-2.5-flash",
+          provider: def.defaultProvider,
+          model: def.defaultModel,
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),

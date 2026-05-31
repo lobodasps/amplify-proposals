@@ -1051,3 +1051,23 @@ export const damDocuments = pgTable("dam_documents", {
 
 export type DamDocument = typeof damDocuments.$inferSelect;
 export type InsertDamDocument = typeof damDocuments.$inferInsert;
+
+// ─── LLM Usage Logs ─────────────────────────────────────────────────────────
+
+export const llmUsageLogs = pgTable("llm_usage_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  skillType: text("skillType").notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  tokensIn: integer("tokensIn").notNull().default(0),
+  tokensOut: integer("tokensOut").notNull().default(0),
+  estimatedCost: numeric("estimatedCost", { precision: 10, scale: 6 }),
+  durationMs: integer("durationMs"),
+  success: boolean("success").notNull().default(true),
+  errorMessage: text("errorMessage"),
+  userId: uuid("userId"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type LlmUsageLog = typeof llmUsageLogs.$inferSelect;
+export type InsertLlmUsageLog = typeof llmUsageLogs.$inferInsert;

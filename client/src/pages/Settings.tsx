@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -543,16 +543,17 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const PROVIDER_MODELS: Record<string, string[]> = {
-  manus_builtin: ["gemini-2.5-flash", "gemini-2.5-pro"],
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3", "o4-mini"],
-  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
-  google_gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"],
+  manus_builtin: ["gemini-2.5-flash-preview-05-20", "gemini-2.5-pro-preview-05-06"],
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini"],
+  anthropic: ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+  google_gemini: ["gemini-2.5-flash-preview-05-20", "gemini-2.5-pro-preview-05-06", "gemini-2.0-flash"],
   azure_openai: ["gpt-4o", "gpt-4-turbo"],
 };
 
 const SKILL_ICONS: Record<string, string> = {
   rfp_shredder: "📄",
   resume_tailor: "👤",
+  tailored_resume: "👤",
   go_no_go_advisor: "🎯",
   opportunity_scorer: "⭐",
   contract_analyzer: "📋",
@@ -560,6 +561,13 @@ const SKILL_ICONS: Record<string, string> = {
   proposal_writer: "✍️",
   proposal_scorer: "📊",
   opportunity_ingestion: "🔍",
+  xml_shredder: "🔧",
+  wiki_compiler: "📖",
+  agent_guidelines: "🧭",
+  conflict_detector: "⚠️",
+  autoExtract: "⚡",
+  triggerExtract: "🔬",
+  dam_image_caption: "🖼️",
 };
 
 function SkillCard({ skill }: { skill: any }) {
@@ -704,7 +712,17 @@ function SkillCard({ skill }: { skill: any }) {
                   {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Stored encrypted. Leave blank to keep the existing key.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {skill.apiKey
+                  ? "Key stored. Leave blank to keep existing."
+                  : form.provider === "google_gemini"
+                    ? "Falls back to GOOGLE_AI_API_KEY env if blank."
+                    : form.provider === "anthropic"
+                      ? "Falls back to ANTHROPIC_API_KEY env if blank."
+                      : form.provider === "openai"
+                        ? "Falls back to OPENAI_API_KEY env if blank."
+                        : "Enter your API key."}
+              </p>
             </div>
           )}
 
@@ -809,44 +827,201 @@ function SkillCard({ skill }: { skill: any }) {
 }
 
 function AiSkillsTab() {
+  const [subTab, setSubTab] = useState<"config" | "usage">("config");
   const { data: skills = [], isLoading } = trpc.aiSkills.list.useQuery();
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="p-2 rounded-lg bg-primary/10">
-          <Brain className="h-5 w-5 text-primary" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Brain className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-base">AI Skills Configuration</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Each skill is an AI task with its own provider, model, API key, and editable prompts.
+              Choose from OpenAI, Anthropic, or Google Gemini for each task independently.
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-semibold text-base">AI Skills Configuration</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Each skill is an AI task with its own provider, model, API key, and editable prompts.
-            Choose from Manus Built-in (no key needed), OpenAI, Anthropic, or Google Gemini for each task independently.
-          </p>
+        <div className="flex gap-1 border rounded-lg p-0.5">
+          <Button size="sm" variant={subTab === "config" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("config")}>Configuration</Button>
+          <Button size="sm" variant={subTab === "usage" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("usage")}>Usage</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 text-xs text-muted-foreground bg-muted/40 rounded-lg p-3 border">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {Object.entries(PROVIDER_LABELS).map(([k, v]) => (
-            <div key={k} className="flex items-center gap-1.5">
-              <div className={`h-2 w-2 rounded-full ${k === "manus_builtin" ? "bg-blue-500" : k === "openai" ? "bg-green-500" : k === "anthropic" ? "bg-orange-500" : k === "google_gemini" ? "bg-purple-500" : "bg-slate-500"}`} />
-              <span>{v}</span>
+      {subTab === "config" && (
+        <>
+          <div className="grid grid-cols-1 gap-3 text-xs text-muted-foreground bg-muted/40 rounded-lg p-3 border">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {Object.entries(PROVIDER_LABELS).filter(([k]) => k !== "azure_openai").map(([k, v]) => (
+                <div key={k} className="flex items-center gap-1.5">
+                  <div className={`h-2 w-2 rounded-full ${k === "manus_builtin" ? "bg-blue-500" : k === "openai" ? "bg-green-500" : k === "anthropic" ? "bg-orange-500" : k === "google_gemini" ? "bg-purple-500" : "bg-slate-500"}`} />
+                  <span>{v}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <p>Manus Built-in requires no API key. All other providers require you to enter your own key — stored encrypted per skill.</p>
+            <p>Google Gemini falls back to GOOGLE_AI_API_KEY env. Anthropic falls back to ANTHROPIC_API_KEY env. OpenAI falls back to OPENAI_API_KEY env. Per-skill keys override env.</p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(skills as any[]).map((skill: any) => (
+                <SkillCard key={skill.skillType} skill={skill} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {subTab === "usage" && <UsageTab />}
+    </div>
+  );
+}
+
+// ─── Usage Tab ────────────────────────────────────────────────────────────────
+
+function UsageTab() {
+  const [monthOffset, setMonthOffset] = useState(0);
+  const monthStart = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - monthOffset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, [monthOffset]);
+
+  const { data: stats, isLoading } = trpc.aiSkills.usageStats.useQuery({ monthStart });
+
+  const monthLabel = useMemo(() => {
+    const d = new Date(monthStart);
+    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }, [monthStart]);
+
+  const fmtCost = (v: number) => v < 0.01 ? "<$0.01" : `$${v.toFixed(2)}`;
+  const fmtTokens = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(1)}K` : String(v);
+
+  if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const totals = stats?.totals ?? { calls: 0, tokensIn: 0, tokensOut: 0, estimatedCost: 0 };
+  const bySkill = stats?.bySkill ?? [];
+  const byProvider = stats?.byProvider ?? [];
+
+  return (
+    <div className="space-y-5">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <Button size="sm" variant="outline" onClick={() => setMonthOffset(o => o + 1)} className="h-7 text-xs">← Previous</Button>
+        <span className="text-sm font-medium">{monthLabel}</span>
+        <Button size="sm" variant="outline" disabled={monthOffset === 0} onClick={() => setMonthOffset(o => Math.max(0, o - 1))} className="h-7 text-xs">Next →</Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {(skills as any[]).map((skill: any) => (
-            <SkillCard key={skill.skillType} skill={skill} />
-          ))}
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="p-3">
+          <p className="text-xs text-muted-foreground">Total Calls</p>
+          <p className="text-xl font-bold mt-1">{totals.calls.toLocaleString()}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-xs text-muted-foreground">Tokens In</p>
+          <p className="text-xl font-bold mt-1">{fmtTokens(totals.tokensIn)}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-xs text-muted-foreground">Tokens Out</p>
+          <p className="text-xl font-bold mt-1">{fmtTokens(totals.tokensOut)}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-xs text-muted-foreground">Est. Cost</p>
+          <p className="text-xl font-bold mt-1">{fmtCost(totals.estimatedCost)}</p>
+        </Card>
+      </div>
+
+      {/* By Skill table */}
+      {bySkill.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Usage by Skill</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left p-2 pl-4 font-medium">Skill</th>
+                    <th className="text-right p-2 font-medium">Calls</th>
+                    <th className="text-right p-2 font-medium">Tokens In</th>
+                    <th className="text-right p-2 font-medium">Tokens Out</th>
+                    <th className="text-right p-2 font-medium">Avg ms</th>
+                    <th className="text-right p-2 pr-4 font-medium">Est. Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bySkill.map((row: any) => (
+                    <tr key={row.skillType} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="p-2 pl-4 font-medium">
+                        <span className="mr-1.5">{SKILL_ICONS[row.skillType] ?? "🤖"}</span>
+                        {row.displayName}
+                      </td>
+                      <td className="text-right p-2 tabular-nums">{row.calls}</td>
+                      <td className="text-right p-2 tabular-nums">{fmtTokens(row.tokensIn)}</td>
+                      <td className="text-right p-2 tabular-nums">{fmtTokens(row.tokensOut)}</td>
+                      <td className="text-right p-2 tabular-nums">{Math.round(row.avgDurationMs)}ms</td>
+                      <td className="text-right p-2 pr-4 tabular-nums font-medium">{fmtCost(row.estimatedCost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* By Provider/Model table */}
+      {byProvider.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Usage by Provider / Model</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left p-2 pl-4 font-medium">Provider</th>
+                    <th className="text-left p-2 font-medium">Model</th>
+                    <th className="text-right p-2 font-medium">Calls</th>
+                    <th className="text-right p-2 font-medium">Tokens In</th>
+                    <th className="text-right p-2 font-medium">Tokens Out</th>
+                    <th className="text-right p-2 pr-4 font-medium">Est. Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byProvider.map((row: any, i: number) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="p-2 pl-4">
+                        <Badge variant="secondary" className="text-xs">{PROVIDER_LABELS[row.provider] ?? row.provider}</Badge>
+                      </td>
+                      <td className="p-2 font-mono text-xs">{row.model}</td>
+                      <td className="text-right p-2 tabular-nums">{row.calls}</td>
+                      <td className="text-right p-2 tabular-nums">{fmtTokens(row.tokensIn)}</td>
+                      <td className="text-right p-2 tabular-nums">{fmtTokens(row.tokensOut)}</td>
+                      <td className="text-right p-2 pr-4 tabular-nums font-medium">{fmtCost(row.estimatedCost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {totals.calls === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <p className="text-sm">No AI usage recorded for {monthLabel}.</p>
+          <p className="text-xs mt-1">Usage is logged automatically when AI skills are invoked.</p>
         </div>
       )}
     </div>

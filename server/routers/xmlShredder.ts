@@ -20,7 +20,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { documentShreds } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
-import { invokeLLMWithSkill } from "../_core/llmSkill";
+import { invokeLLMWithSkill, getSkillProvider } from "../_core/llmSkill";
 import {
   extractFile,
   buildFileXmlFragment,
@@ -326,10 +326,14 @@ export async function shredSingleFile(params: {
   const isImage = detectedType === "image";
   const isSpreadsheet = detectedType === "xlsx" || detectedType === "csv";
 
+  // Check the configured provider — only Gemini/Manus supports file_url natively
+  const provider = await getSkillProvider("xml_shredder");
+  const supportsFileUrl = provider === "google_gemini" || provider === "manus_builtin";
+
   let result: Awaited<ReturnType<typeof invokeLLMWithSkill>>;
 
-  if (isPdf || isWord) {
-    // Pass file URL directly — LLM reads natively
+  if ((isPdf || isWord) && supportsFileUrl) {
+    // Pass file URL directly — Gemini reads natively
     result = await invokeLLMWithSkill({
       skillType: "xml_shredder",
       variables: {
@@ -337,6 +341,7 @@ export async function shredSingleFile(params: {
         fileUrl,
         fileRole,
         documentType: isPdf ? "PDF document" : "Word document",
+        rawText: "",
       },
       extraUserContent: [
         {
@@ -348,8 +353,35 @@ export async function shredSingleFile(params: {
         },
       ],
     });
+  } else if ((isPdf || isWord) && !supportsFileUrl) {
+    // Non-Gemini provider: extract text first, then pass as rawText
+    let rawText = "";
+    try {
+      // Fetch the file buffer, then use extractFile to parse PDF/DOCX
+      const fileRes = await fetch(fileUrl);
+      const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+      const extracted = await extractFile({ buffer: fileBuffer, fileName, mimeType, fileUrl });
+      rawText = extracted.textContent || "(extraction failed)";
+    } catch {
+      try {
+        const res = await fetch(fileUrl);
+        rawText = await res.text();
+      } catch {
+        rawText = "(could not fetch file content)";
+      }
+    }
+    result = await invokeLLMWithSkill({
+      skillType: "xml_shredder",
+      variables: {
+        fileName,
+        fileUrl,
+        fileRole,
+        documentType: isPdf ? "PDF document" : "Word document",
+        rawText: rawText.slice(0, 100000),
+      },
+    });
   } else if (isImage) {
-    // Vision model for images
+    // Vision model for images (image_url works on all providers)
     result = await invokeLLMWithSkill({
       skillType: "xml_shredder",
       variables: {
@@ -357,6 +389,7 @@ export async function shredSingleFile(params: {
         fileUrl,
         fileRole,
         documentType: "image file",
+        rawText: "",
       },
       extraUserContent: [
         {

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { aiSkills } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { aiSkills, llmUsageLogs } from "../../drizzle/schema";
+import { eq, sql, and, gte } from "drizzle-orm";
 import { DEFAULT_SKILLS, invokeLLMWithSkill, type SkillType } from "../_core/llmSkill";
 
 export const aiSkillsRouter = router({
@@ -14,8 +14,8 @@ export const aiSkillsRouter = router({
       skillType,
       displayName: def.displayName,
       description: def.description,
-      provider: "manus_builtin",
-      model: "gemini-2.5-flash",
+      provider: def.defaultProvider,
+      model: def.defaultModel,
       apiKey: null,
       baseUrl: null,
       systemPrompt: def.systemPrompt,
@@ -34,8 +34,8 @@ export const aiSkillsRouter = router({
         skillType,
         displayName: def.displayName,
         description: def.description,
-        provider: "manus_builtin",
-        model: "gemini-2.5-flash",
+        provider: def.defaultProvider,
+        model: def.defaultModel,
         systemPrompt: def.systemPrompt,
         userPromptTemplate: def.userPromptTemplate,
         templateVariables: JSON.stringify(def.templateVariables),
@@ -53,8 +53,8 @@ export const aiSkillsRouter = router({
           skillType,
           displayName: def.displayName,
           description: def.description,
-          provider: "manus_builtin",
-          model: "gemini-2.5-flash",
+          provider: def.defaultProvider,
+          model: def.defaultModel,
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),
@@ -197,5 +197,125 @@ export const aiSkillsRouter = router({
           response: err.message ?? "Unknown error",
         };
       }
+    }),
+
+  // ─── Token Usage Stats ──────────────────────────────────────────────────────
+
+  /** Get usage stats for the current month (or a specified month) */
+  usageStats: protectedProcedure
+    .input(
+      z.object({
+        /** ISO date string for the start of the month, e.g. "2026-05-01" */
+        monthStart: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { bySkill: [], byProvider: [], totals: { calls: 0, tokensIn: 0, tokensOut: 0, estimatedCost: 0 } };
+
+      // Default to current month start
+      const now = new Date();
+      const monthStartStr = input?.monthStart ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const monthStart = new Date(monthStartStr);
+
+      const rows = await db
+        .select({
+          skillType: llmUsageLogs.skillType,
+          provider: llmUsageLogs.provider,
+          model: llmUsageLogs.model,
+          calls: sql<number>`count(*)`,
+          tokensIn: sql<number>`COALESCE(sum(${llmUsageLogs.tokensIn}), 0)`,
+          tokensOut: sql<number>`COALESCE(sum(${llmUsageLogs.tokensOut}), 0)`,
+          estimatedCost: sql<string>`COALESCE(sum(CAST(${llmUsageLogs.estimatedCost} AS DECIMAL(10,6))), 0)`,
+          avgDurationMs: sql<number>`COALESCE(avg(${llmUsageLogs.durationMs}), 0)`,
+          successCount: sql<number>`sum(CASE WHEN ${llmUsageLogs.success} = true THEN 1 ELSE 0 END)`,
+          failCount: sql<number>`sum(CASE WHEN ${llmUsageLogs.success} = false THEN 1 ELSE 0 END)`,
+        })
+        .from(llmUsageLogs)
+        .where(gte(llmUsageLogs.createdAt, monthStart))
+        .groupBy(llmUsageLogs.skillType, llmUsageLogs.provider, llmUsageLogs.model);
+
+      // Aggregate by skill
+      const bySkillMap = new Map<string, { calls: number; tokensIn: number; tokensOut: number; estimatedCost: number; avgDurationMs: number; successRate: number }>();
+      const byProviderMap = new Map<string, { calls: number; tokensIn: number; tokensOut: number; estimatedCost: number }>();
+      let totalCalls = 0, totalTokensIn = 0, totalTokensOut = 0, totalCost = 0;
+
+      for (const row of rows) {
+        const calls = Number(row.calls);
+        const tokensIn = Number(row.tokensIn);
+        const tokensOut = Number(row.tokensOut);
+        const cost = Number(row.estimatedCost);
+        const avgMs = Number(row.avgDurationMs);
+        const successCount = Number(row.successCount);
+
+        totalCalls += calls;
+        totalTokensIn += tokensIn;
+        totalTokensOut += tokensOut;
+        totalCost += cost;
+
+        // By skill
+        const existing = bySkillMap.get(row.skillType) ?? { calls: 0, tokensIn: 0, tokensOut: 0, estimatedCost: 0, avgDurationMs: 0, successRate: 0 };
+        existing.calls += calls;
+        existing.tokensIn += tokensIn;
+        existing.tokensOut += tokensOut;
+        existing.estimatedCost += cost;
+        existing.avgDurationMs = avgMs; // last wins is fine for display
+        existing.successRate = calls > 0 ? (successCount / calls) * 100 : 100;
+        bySkillMap.set(row.skillType, existing);
+
+        // By provider
+        const provKey = `${row.provider}/${row.model}`;
+        const existingProv = byProviderMap.get(provKey) ?? { calls: 0, tokensIn: 0, tokensOut: 0, estimatedCost: 0 };
+        existingProv.calls += calls;
+        existingProv.tokensIn += tokensIn;
+        existingProv.tokensOut += tokensOut;
+        existingProv.estimatedCost += cost;
+        byProviderMap.set(provKey, existingProv);
+      }
+
+      const bySkill = Array.from(bySkillMap.entries()).map(([skillType, stats]) => ({
+        skillType,
+        displayName: DEFAULT_SKILLS[skillType as SkillType]?.displayName ?? skillType,
+        ...stats,
+      })).sort((a, b) => b.estimatedCost - a.estimatedCost);
+
+      const byProvider = Array.from(byProviderMap.entries()).map(([key, stats]) => {
+        const [provider, model] = key.split("/");
+        return { provider, model, ...stats };
+      }).sort((a, b) => b.estimatedCost - a.estimatedCost);
+
+      return {
+        bySkill,
+        byProvider,
+        totals: { calls: totalCalls, tokensIn: totalTokensIn, tokensOut: totalTokensOut, estimatedCost: totalCost },
+      };
+    }),
+
+  /** Get recent usage log entries (for debugging / detail view) */
+  usageLogs: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(200).default(50),
+        skillType: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      const limit = input?.limit ?? 50;
+      const conditions = [];
+      if (input?.skillType) {
+        conditions.push(eq(llmUsageLogs.skillType, input.skillType));
+      }
+
+      const rows = await db
+        .select()
+        .from(llmUsageLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(sql`${llmUsageLogs.createdAt} DESC`)
+        .limit(limit);
+
+      return rows;
     }),
 });
