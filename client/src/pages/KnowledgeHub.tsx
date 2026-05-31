@@ -10,6 +10,7 @@
  */
 
 import AppLayout from "@/components/AppLayout";
+import { BulkImageImport } from "./BulkImageImport";
 import { useState, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -37,7 +38,7 @@ import {
   MoreVertical, Trash2, Eye, Sparkles, CheckCircle2, Clock,
   AlertCircle, Loader2, CloudUpload, X, Filter,
   BookOpen, FolderOpen, ImageIcon, Layers, ChevronDown, ChevronUp,
-  AlertTriangle, RefreshCw, ListChecks, Square, SquareCheck,
+  AlertTriangle, RefreshCw, ListChecks, Square, SquareCheck, Images,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -155,8 +156,12 @@ export default function KnowledgeHub() {
   const [filterDocType, setFilterDocType] = useState<DocType | "all">("all");
   const [filterCompany, setFilterCompany] = useState<CompanyTag | "all">("all");
   const [filterStatus, setFilterStatus] = useState<ProcessingStatus | "all">("all");
+  const [filterQuality, setFilterQuality] = useState<"all" | "high" | "medium" | "low">("all");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+
+  // ── Bulk import state ──────────────────────────────────────────────────────
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   // ── Upload state ────────────────────────────────────────────────────────────
   const [isDragging, setIsDragging] = useState(false);
@@ -653,7 +658,14 @@ export default function KnowledgeHub() {
     }
   }
 
-  const docs = listData?.docs ?? [];
+  const allDocs = listData?.docs ?? [];
+  const docs = filterQuality === "all"
+    ? allDocs
+    : allDocs.filter((d) => {
+        const meta = d.extractedMeta as Record<string, unknown> | null;
+        const q = (d as any).imageQuality ?? meta?.qualityRating;
+        return q === filterQuality;
+      });
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -668,10 +680,20 @@ export default function KnowledgeHub() {
               Upload and manage past proposals, project sheets, resumes, and certifications
             </p>
           </div>
-          <Button onClick={() => fileInputRef.current?.click()} className="gap-2">
-            <Upload className="w-4 h-4" />
-            Upload Document
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkImportOpen(true)}
+              className="gap-2 border-violet-300 text-violet-700 hover:bg-violet-50"
+            >
+              <Images className="w-4 h-4" />
+              Bulk Import Images
+            </Button>
+            <Button onClick={() => fileInputRef.current?.click()} className="gap-2">
+              <Upload className="w-4 h-4" />
+              Upload Document
+            </Button>
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -1402,7 +1424,25 @@ export default function KnowledgeHub() {
               </SelectContent>
             </Select>
 
-            {(filterDocType !== "all" || filterCompany !== "all" || filterStatus !== "all" || search) && (
+            {/* Quality filter — only shown when image docType is selected */}
+            {filterDocType === "image" && (
+              <Select
+                value={filterQuality}
+                onValueChange={(v) => setFilterQuality(v as "all" | "high" | "medium" | "low")}
+              >
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="All quality" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All quality</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
+            {(filterDocType !== "all" || filterCompany !== "all" || filterStatus !== "all" || filterQuality !== "all" || search) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -1410,6 +1450,7 @@ export default function KnowledgeHub() {
                   setFilterDocType("all");
                   setFilterCompany("all");
                   setFilterStatus("all");
+                  setFilterQuality("all");
                   setSearch("");
                   setSearchInput("");
                 }}
@@ -2152,6 +2193,17 @@ export default function KnowledgeHub() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Bulk Image Import Modal ─────────────────────────────────────────── */}
+      <BulkImageImport
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        onComplete={() => {
+          utils.dam.list.invalidate();
+          utils.dam.getStats.invalidate();
+          setFilterDocType("image");
+        }}
+      />
     </AppLayout>
   );
 }

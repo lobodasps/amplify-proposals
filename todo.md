@@ -660,3 +660,17 @@
 - [ ] KnowledgeHub.tsx: Add "Images" docType filter tab
 - [ ] KnowledgeHub.tsx: Image grid view — larger thumbnails when filtered to images only
 - [ ] KnowledgeHub.tsx: Quality filter (high/medium/low) in toolbar when images filter active
+
+## Bulk Image Import — Parts 1-9 (Phase 2)
+- [x] BulkImageImport.tsx component created (Parts 1-9)
+- [x] Part 1: Bulk Import Images button in KnowledgeHub toolbar (violet outline button)
+- [x] Part 2: Drop zone — multi-file drag-and-drop, thumbnail grid preview, file count + size, rejected file toast
+- [x] Part 3: Folder name parsing — project name hint from last folder, constructionPhase/setting hints from folder names
+- [x] Part 4: Upload stage — parallel batches of 10, per-file status icons (waiting/uploading/uploaded/error), upload progress bar
+- [x] Part 5: Gemini Vision captioning queue — batches of 5 with 500ms delay, caption progress bar, low-quality flagging
+- [x] Part 6: Smart grouping UI — groups by structureType with icons, collapsible, ordered by count, special groups last
+- [x] Part 7: Group-level metadata sheet — project, company, usage rights, year range, additional tags, phase override
+- [x] Part 8: Review panel for flagged images — larger thumbnail, Gemini output, manual caption, move-to-group, discard
+- [x] Part 9: Confirm and create — sticky footer, ready/needs-review counts, skip unresolved checkbox, create progress bar, done summary card
+- [x] Part 10: Quality filter (All/High/Medium/Low) in KnowledgeHub toolbar (shown only when Images filter active)
+- [x] TypeScript: zero errors
