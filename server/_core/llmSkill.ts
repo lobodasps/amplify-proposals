@@ -33,7 +33,6 @@ export type SkillType =
   | "wiki_compiler"
   | "agent_guidelines"
   | "conflict_detector"
-  | "tailored_resume"
   | "autoExtract"
   | "triggerExtract"
   | "dam_image_caption";
@@ -165,12 +164,14 @@ Return a complete requirements matrix.`,
   resume_tailor: {
     displayName: "Resume Tailor",
     description:
-      "Reformats and tailors a staff resume to match specific RFP key-personnel requirements for a named role.",
+      "Reformats and tailors a staff resume to match specific RFP key-personnel requirements, incorporating win themes and SF-330 Section E format.",
     defaultProvider: "anthropic",
     defaultModel: "claude-sonnet-4-20250514",
-    systemPrompt: `You are an expert AEC proposal resume writer. You reformat and tailor professional resumes to match specific RFP requirements for public-agency AEC proposals in NJ, NY, and NYC.
-You maintain factual accuracy while highlighting the most relevant experience, certifications, and project history for the specific pursuit.
-Format resumes in a clean, professional proposal style with: Name/Title, Education, Registrations/Certifications, Years of Experience, Relevant Project Experience (5-7 projects), and a brief professional summary.`,
+    systemPrompt: `You are an expert AEC proposal resume writer specializing in SF-330 Section E format for public-agency AEC proposals in NJ, NY, and NYC.
+You create compelling, compliant key personnel resumes that directly address RFP evaluation criteria.
+Maintain factual accuracy while highlighting the most relevant experience, certifications, and project history for the specific pursuit.
+Format resumes in a clean, professional proposal style with: Name/Title, Education, Registrations/Certifications, Years of Experience, Relevant Project Experience (5-7 projects), and a brief professional summary.
+Write in a professional, confident tone appropriate for public-agency submissions.`,
     userPromptTemplate: `Tailor this resume for the following RFP:
 
 PERSONNEL: {{personnelName}}
@@ -179,6 +180,9 @@ TARGET ROLE IN PROPOSAL: {{targetRole}}
 RFP REQUIREMENTS:
 {{rfpRequirements}}
 
+WIN THEMES:
+{{winThemes}}
+
 CURRENT RESUME:
 {{resumeText}}
 
@@ -186,30 +190,9 @@ Rewrite the resume to:
 1. Lead with the most relevant experience for this specific pursuit
 2. Highlight certifications and licenses required by the RFP
 3. Select and reorder project experience to best match the scope
-4. Use language that mirrors the RFP's evaluation criteria
-5. Format for a professional AEC proposal submission`,
-    templateVariables: ["personnelName", "targetRole", "rfpRequirements", "resumeText"],
-  },
-
-  tailored_resume: {
-    displayName: "Tailored Resume Writer",
-    description:
-      "Generates a fully tailored resume section for a specific proposal, incorporating RFP criteria, win themes, and project relevance.",
-    defaultProvider: "anthropic",
-    defaultModel: "claude-sonnet-4-20250514",
-    systemPrompt: `You are an expert AEC proposal resume writer specializing in SF-330 Section E format.
-You create compelling, compliant key personnel resumes that directly address RFP evaluation criteria.
-Maintain factual accuracy. Highlight certifications, relevant project experience, and years of experience.
-Write in a professional, confident tone appropriate for public-agency submissions.`,
-    userPromptTemplate: `Write a tailored resume for this proposal:
-
-PERSONNEL: {{personnelName}}
-TARGET ROLE: {{targetRole}}
-RFP REQUIREMENTS: {{rfpRequirements}}
-WIN THEMES: {{winThemes}}
-CURRENT RESUME DATA: {{resumeText}}
-
-Format for SF-330 Section E. Emphasize relevance to this specific pursuit.`,
+4. Use language that mirrors the RFP's evaluation criteria and win themes
+5. Format for SF-330 Section E (professional AEC proposal submission)
+6. Emphasize relevance to this specific pursuit`,
     templateVariables: ["personnelName", "targetRole", "rfpRequirements", "winThemes", "resumeText"],
   },
 
