@@ -376,7 +376,8 @@ export const damRouter = router({
   // ── List ──────────────────────────────────────────────────────────────────
   list: protectedProcedure.input(listInput).query(async ({ input }) => {
     const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
     const conditions = [];
 
     if (input.docType) {
@@ -395,19 +396,27 @@ export const damRouter = router({
       );
     }
 
-    const rows = await db
-      .select()
-      .from(damDocuments)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(damDocuments.createdAt))
-      .limit(input.limit)
-      .offset(input.offset);
+    // 10-second timeout guard — prevents 300-second gateway hangs on slow DB
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new TRPCError({ code: "TIMEOUT", message: "dam.list timed out after 10s" })), 10_000)
+    );
 
-    // Count total (for pagination)
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(damDocuments)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    const [rows, countResult] = await Promise.race([
+      Promise.all([
+        db
+          .select()
+          .from(damDocuments)
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(damDocuments.createdAt))
+          .limit(input.limit)
+          .offset(input.offset),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(damDocuments)
+          .where(conditions.length > 0 ? and(...conditions) : undefined),
+      ]),
+      timeout,
+    ]);
 
     const total = Number(countResult[0]?.count ?? 0);
 

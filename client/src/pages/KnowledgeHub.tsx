@@ -197,7 +197,10 @@ export default function KnowledgeHub() {
   // ── tRPC ────────────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
 
-  const { data: stats, isLoading: statsLoading } = trpc.dam.getStats.useQuery();
+  const { data: stats, isLoading: statsLoading } = trpc.dam.getStats.useQuery(undefined, {
+    staleTime: 30_000,   // 30 s — prevents duplicate in-flight requests on remount
+    refetchOnWindowFocus: false,
+  });
 
   const { data: listData, isLoading: listLoading } = trpc.dam.list.useQuery({
     docType: filterDocType !== "all" ? filterDocType : undefined,
@@ -206,6 +209,9 @@ export default function KnowledgeHub() {
     search: search || undefined,
     limit: 100,
     offset: 0,
+  }, {
+    staleTime: 30_000,   // 30 s — prevents duplicate in-flight requests on remount
+    refetchOnWindowFocus: false,
   });
 
   const { data: previewDoc } = trpc.dam.getById.useQuery(
