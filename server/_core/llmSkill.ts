@@ -2,13 +2,10 @@
  * invokeLLMWithSkill
  * ------------------
  * Looks up the ai_skills row for the given skillType, then dispatches the
- * request to the configured provider (OpenAI-compatible endpoint, Anthropic,
- * Google Gemini, or the Manus built-in forge).  Falls back to the Manus
- * built-in if no skill is configured or the skill is disabled.
- *
- * All providers are called via their OpenAI-compatible /v1/chat/completions
- * endpoint where possible, so the same payload shape works everywhere.
- * Anthropic uses its own /v1/messages endpoint.
+ * request to the configured provider:
+ *   - Google Gemini → native @google/generative-ai SDK (supports fileUri for PDFs)
+ *   - Anthropic → native /v1/messages endpoint
+ *   - OpenAI / Azure / Manus built-in → OpenAI-compatible /v1/chat/completions
  *
  * Token usage is logged to the llm_usage_logs table after every call.
  */
@@ -17,6 +14,8 @@ import { getDb } from "../db";
 import { aiSkills, llmUsageLogs } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { ENV } from "./env";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import type { Content, Part, GenerationConfig } from "@google/generative-ai";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -534,7 +533,7 @@ Return JSON with: caption (1-2 sentences), tags (5-8 keywords), imageType (photo
   },
 };
 
-// ─── Provider endpoint resolution ─────────────────────────────────────────────
+// ─── Provider endpoint resolution (OpenAI-compat only — Gemini uses native SDK) ─
 
 function resolveEndpoint(provider: Provider, baseUrl?: string | null): string {
   if (baseUrl && baseUrl.trim()) return baseUrl.trim().replace(/\/$/, "") + "/v1/chat/completions";
@@ -543,8 +542,6 @@ function resolveEndpoint(provider: Provider, baseUrl?: string | null): string {
       return "https://api.openai.com/v1/chat/completions";
     case "anthropic":
       return "https://api.anthropic.com/v1/messages";
-    case "google_gemini":
-      return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     case "azure_openai":
       throw new Error("Azure OpenAI requires a baseUrl to be configured in the skill settings.");
     case "manus_builtin":
@@ -566,28 +563,74 @@ function resolveDefaultModel(provider: Provider): string {
   }
 }
 
-function resolveApiKey(provider: Provider, skillApiKey?: string | null): string {
-  // 1. Per-skill API key takes priority
-  if (skillApiKey && skillApiKey.trim()) return skillApiKey.trim();
+/**
+ * Resolves the API key for a provider. Priority order:
+ * 1. Global provider key from app_settings table (ai_key_google_gemini, ai_key_anthropic, ai_key_openai)
+ * 2. ENV-level key (GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY)
+ * 3. Manus built-in forge key as final fallback for google_gemini
+ */
+let _cachedProviderKeys: Record<string, string> | null = null;
+let _cacheTimestamp = 0;
+const CACHE_TTL_MS = 30_000; // 30s cache for DB lookups
 
-  // 2. Fall back to ENV keys per provider
+async function loadProviderKeysFromDb(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (_cachedProviderKeys && now - _cacheTimestamp < CACHE_TTL_MS) {
+    return _cachedProviderKeys;
+  }
+  try {
+    const { appSettings } = await import("../../drizzle/schema");
+    const db = await getDb();
+    if (db) {
+      const rows = await db.select().from(appSettings);
+      const map: Record<string, string> = {};
+      for (const row of rows) {
+        if (row.key.startsWith("ai_key_") && row.value) {
+          map[row.key] = row.value;
+        }
+      }
+      _cachedProviderKeys = map;
+      _cacheTimestamp = now;
+      return map;
+    }
+  } catch {
+    // DB unavailable
+  }
+  return _cachedProviderKeys ?? {};
+}
+
+async function resolveApiKey(provider: Provider): Promise<string> {
+  // Load global provider keys from app_settings
+  const globalKeys = await loadProviderKeysFromDb();
+
   switch (provider) {
     case "manus_builtin":
       if (!ENV.forgeApiKey) throw new Error("Manus built-in API key is not configured.");
       return ENV.forgeApiKey;
-    case "google_gemini":
+    case "google_gemini": {
+      // 1. Global key from Settings UI
+      const dbKey = globalKeys["ai_key_google_gemini"];
+      if (dbKey) return dbKey;
+      // 2. ENV key
       if (ENV.googleAiApiKey) return ENV.googleAiApiKey;
-      // Fall back to Manus built-in if Google key not set
+      // 3. Manus built-in fallback
       if (ENV.forgeApiKey) return ENV.forgeApiKey;
-      throw new Error("No Google AI API key configured. Add GOOGLE_AI_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
-    case "anthropic":
+      throw new Error("No Google AI API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
+    }
+    case "anthropic": {
+      const dbKey = globalKeys["ai_key_anthropic"];
+      if (dbKey) return dbKey;
       if (ENV.anthropicApiKey) return ENV.anthropicApiKey;
-      throw new Error("No Anthropic API key configured. Add ANTHROPIC_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
-    case "openai":
+      throw new Error("No Anthropic API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
+    }
+    case "openai": {
+      const dbKey = globalKeys["ai_key_openai"];
+      if (dbKey) return dbKey;
       if (ENV.openaiApiKey) return ENV.openaiApiKey;
-      throw new Error("No OpenAI API key configured. Add OPENAI_API_KEY in Settings → Secrets, or set a per-skill key in AI Skills.");
+      throw new Error("No OpenAI API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
+    }
     case "azure_openai":
-      throw new Error("Azure OpenAI requires a per-skill API key in Settings → AI Skills.");
+      throw new Error("Azure OpenAI requires configuration in Settings → AI Skills.");
     default:
       if (ENV.forgeApiKey) return ENV.forgeApiKey;
       throw new Error(`No API key configured for provider "${provider}".`);
@@ -600,14 +643,17 @@ function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
-// ─── Content sanitization for non-Gemini providers ───────────────────────────
+// ─── Content sanitization for non-Gemini/non-native providers ────────────────
 
 /**
  * Strips file_url content parts from messages when the provider doesn't support them.
- * Only Google Gemini and Manus built-in (which routes to Gemini) support file_url.
+ * Google Gemini uses the native SDK which handles file_url → fileData conversion separately.
+ * Manus built-in (which routes to Gemini via OpenAI-compat) also supports file_url.
  * For other providers, file_url parts are converted to a text note explaining the file.
  */
 function sanitizeMessagesForProvider(messages: SkillMessage[], provider: Provider): SkillMessage[] {
+  // google_gemini is handled by callGeminiNative which does its own conversion
+  // manus_builtin routes to Gemini via OpenAI-compat which supports file_url
   const supportsFileUrl = provider === "google_gemini" || provider === "manus_builtin";
   if (supportsFileUrl) return messages;
 
@@ -708,6 +754,180 @@ async function callAnthropic(
     result: {
       choices: [{ message: { role: "assistant", content }, finish_reason: data.stop_reason }],
       _provider: "anthropic",
+      _model: model,
+    },
+    tokensIn,
+    tokensOut,
+  };
+}
+
+// ─── Google Gemini native SDK call ──────────────────────────────────────────
+
+/**
+ * Converts our SkillMessage[] into Gemini's Content[] format.
+ * - file_url parts → FileDataPart { fileData: { fileUri, mimeType } }
+ * - image_url parts → FileDataPart (images via URL) or InlineDataPart (base64)
+ * - text parts → TextPart { text }
+ * - System messages are extracted separately for systemInstruction.
+ */
+function convertToGeminiContents(messages: SkillMessage[]): { contents: Content[]; systemInstruction?: string } {
+  let systemInstruction: string | undefined;
+  const contents: Content[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      systemInstruction = typeof msg.content === "string" ? msg.content : msg.content.map(p => p.type === "text" ? p.text : "").join("\n");
+      continue;
+    }
+
+    const parts: Part[] = [];
+    if (typeof msg.content === "string") {
+      parts.push({ text: msg.content });
+    } else {
+      for (const part of msg.content) {
+        if (part.type === "text") {
+          parts.push({ text: part.text });
+        } else if (part.type === "file_url") {
+          // Native Gemini FileDataPart — uses fileUri for remote URLs
+          parts.push({
+            fileData: {
+              fileUri: part.file_url.url,
+              mimeType: part.file_url.mime_type ?? "application/octet-stream",
+            },
+          } as Part);
+        } else if (part.type === "image_url") {
+          // Images via URL → use fileData with image mime type
+          const url = part.image_url.url;
+          if (url.startsWith("data:")) {
+            // Base64 data URI → InlineDataPart
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              parts.push({
+                inlineData: { mimeType: match[1], data: match[2] },
+              } as Part);
+            } else {
+              parts.push({ text: `[Image: ${url.substring(0, 100)}...]` });
+            }
+          } else {
+            // Remote URL → FileDataPart
+            parts.push({
+              fileData: {
+                fileUri: url,
+                mimeType: "image/jpeg",
+              },
+            } as Part);
+          }
+        }
+      }
+    }
+
+    const role = msg.role === "assistant" ? "model" : "user";
+    contents.push({ role, parts });
+  }
+
+  return { contents, systemInstruction };
+}
+
+/**
+ * Converts our responseFormat (OpenAI-style json_schema) to Gemini's
+ * generationConfig with responseMimeType and responseSchema.
+ */
+function convertResponseFormatToGemini(responseFormat?: SkillInvokeParams["responseFormat"]): Partial<GenerationConfig> {
+  if (!responseFormat) return {};
+  // Use application/json with the schema
+  const schema = responseFormat.json_schema.schema as any;
+  return {
+    responseMimeType: "application/json",
+    responseSchema: convertSchemaToGemini(schema),
+  };
+}
+
+/**
+ * Recursively converts an OpenAI-style JSON Schema to Gemini's Schema format.
+ */
+function convertSchemaToGemini(schema: any): any {
+  if (!schema || !schema.type) return undefined;
+
+  const result: any = {};
+
+  switch (schema.type) {
+    case "object":
+      result.type = SchemaType.OBJECT;
+      if (schema.properties) {
+        result.properties = {};
+        for (const [key, value] of Object.entries(schema.properties)) {
+          result.properties[key] = convertSchemaToGemini(value);
+        }
+      }
+      if (schema.required) result.required = schema.required;
+      break;
+    case "array":
+      result.type = SchemaType.ARRAY;
+      if (schema.items) result.items = convertSchemaToGemini(schema.items);
+      break;
+    case "string":
+      result.type = SchemaType.STRING;
+      if (schema.enum) result.enum = schema.enum;
+      break;
+    case "number":
+      result.type = SchemaType.NUMBER;
+      break;
+    case "integer":
+      result.type = SchemaType.INTEGER;
+      break;
+    case "boolean":
+      result.type = SchemaType.BOOLEAN;
+      break;
+    default:
+      result.type = SchemaType.STRING;
+  }
+
+  if (schema.description) result.description = schema.description;
+  return result;
+}
+
+async function callGeminiNative(
+  apiKey: string,
+  model: string,
+  messages: SkillMessage[],
+  responseFormat?: SkillInvokeParams["responseFormat"],
+  maxTokens?: number
+): Promise<{ result: SkillInvokeResult; tokensIn: number; tokensOut: number }> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const { contents, systemInstruction } = convertToGeminiContents(messages);
+
+  const generationConfig: GenerationConfig = {
+    maxOutputTokens: maxTokens ?? 16384,
+    ...convertResponseFormatToGemini(responseFormat),
+  };
+
+  const genModel = genAI.getGenerativeModel({
+    model,
+    systemInstruction: systemInstruction || undefined,
+    generationConfig,
+  });
+
+  const response = await genModel.generateContent({ contents });
+  const result = response.response;
+
+  // Extract token usage from usageMetadata
+  const tokensIn = result.usageMetadata?.promptTokenCount ?? 0;
+  const tokensOut = result.usageMetadata?.candidatesTokenCount ?? 0;
+
+  // Extract text content from the response
+  let content: string | null = null;
+  const candidate = result.candidates?.[0];
+  if (candidate?.content?.parts) {
+    content = candidate.content.parts.map((p) => (p as any).text ?? "").join("");
+  }
+
+  return {
+    result: {
+      choices: [{
+        message: { role: "assistant", content },
+        finish_reason: candidate?.finishReason ?? "stop",
+      }],
+      _provider: "google_gemini",
       _model: model,
     },
     tokensIn,
@@ -832,7 +1052,7 @@ export async function invokeLLMWithSkill(
     ? skillRow.provider
     : defaults?.defaultProvider ?? "manus_builtin") as Provider;
   const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
-  const apiKey = resolveApiKey(provider, skillRow?.apiKey);
+  const apiKey = await resolveApiKey(provider);
   const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
   const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults?.userPromptTemplate ?? "";
 
@@ -860,13 +1080,19 @@ export async function invokeLLMWithSkill(
   let result: SkillInvokeResult;
 
   try {
-    if (provider === "anthropic") {
+    if (provider === "google_gemini") {
+      // Native Google Generative AI SDK — full file_url/fileUri support
+      const resp = await callGeminiNative(apiKey, model, messages, responseFormat, maxTokens);
+      result = resp.result;
+      tokensIn = resp.tokensIn;
+      tokensOut = resp.tokensOut;
+    } else if (provider === "anthropic") {
       const resp = await callAnthropic(apiKey, model, messages, responseFormat, maxTokens);
       result = resp.result;
       tokensIn = resp.tokensIn;
       tokensOut = resp.tokensOut;
     } else {
-      // For google_gemini, we use the OpenAI-compatible endpoint which supports file_url natively
+      // OpenAI, Azure, Manus built-in → OpenAI-compatible endpoint
       const endpoint = resolveEndpoint(provider, skillRow?.baseUrl);
       const resp = await callOpenAICompat(endpoint, apiKey, model, messages, responseFormat, maxTokens);
       result = resp.result;

@@ -573,13 +573,10 @@ const SKILL_ICONS: Record<string, string> = {
 function SkillCard({ skill }: { skill: any }) {
   const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(false);
-  const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; provider: string; model: string; response: string } | null>(null);
   const [form, setForm] = useState({
-    provider: skill.provider ?? "manus_builtin",
+    provider: skill.provider ?? "google_gemini",
     model: skill.model ?? "",
-    apiKey: "",
-    baseUrl: skill.baseUrl ?? "",
     systemPrompt: skill.systemPrompt ?? "",
     userPromptTemplate: skill.userPromptTemplate ?? "",
     enabled: skill.enabled ?? true,
@@ -654,9 +651,6 @@ function SkillCard({ skill }: { skill: any }) {
           <div className="flex items-center gap-3 mt-2 flex-wrap">
             <Badge variant="secondary" className="text-xs">{PROVIDER_LABELS[form.provider] ?? form.provider}</Badge>
             {form.model && <span className="text-xs text-muted-foreground font-mono">{form.model}</span>}
-            {form.provider !== "manus_builtin" && (
-              <span className="text-xs text-muted-foreground">{skill.apiKey ? "🔑 Key configured" : "⚠️ No API key"}</span>
-            )}
           </div>
         )}
       </CardHeader>
@@ -696,48 +690,10 @@ function SkillCard({ skill }: { skill: any }) {
             </div>
           </div>
 
-          {/* API Key (hidden for manus_builtin) */}
-          {form.provider !== "manus_builtin" && (
-            <div>
-              <Label className="text-xs mb-1.5 block">API Key</Label>
-              <div className="flex gap-1">
-                <Input
-                  className="h-8 text-sm font-mono"
-                  type={showKey ? "text" : "password"}
-                  value={form.apiKey}
-                  onChange={e => update({ apiKey: e.target.value })}
-                  placeholder={skill.apiKey ? "••••••••••••••••  (stored — enter to replace)" : "sk-..."}
-                />
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setShowKey(s => !s)}>
-                  {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {skill.apiKey
-                  ? "Key stored. Leave blank to keep existing."
-                  : form.provider === "google_gemini"
-                    ? "Falls back to GOOGLE_AI_API_KEY env if blank."
-                    : form.provider === "anthropic"
-                      ? "Falls back to ANTHROPIC_API_KEY env if blank."
-                      : form.provider === "openai"
-                        ? "Falls back to OPENAI_API_KEY env if blank."
-                        : "Enter your API key."}
-              </p>
-            </div>
-          )}
-
-          {/* Azure Base URL */}
-          {form.provider === "azure_openai" && (
-            <div>
-              <Label className="text-xs mb-1.5 block">Azure Endpoint Base URL</Label>
-              <Input
-                className="h-8 text-sm"
-                value={form.baseUrl}
-                onChange={e => update({ baseUrl: e.target.value })}
-                placeholder="https://your-resource.openai.azure.com/openai/deployments/gpt-4o"
-              />
-            </div>
-          )}
+          {/* Provider key info */}
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 border">
+            Uses the <strong>{PROVIDER_LABELS[form.provider] ?? form.provider}</strong> API key from Provider API Keys above.
+          </div>
 
           {/* System Prompt */}
           <div>
@@ -809,8 +765,6 @@ function SkillCard({ skill }: { skill: any }) {
                 skillType: skill.skillType,
                 provider: form.provider as any,
                 model: form.model || undefined,
-                apiKey: form.apiKey || undefined,
-                baseUrl: form.baseUrl || undefined,
                 systemPrompt: form.systemPrompt,
                 userPromptTemplate: form.userPromptTemplate,
                 enabled: form.enabled,
@@ -822,6 +776,70 @@ function SkillCard({ skill }: { skill: any }) {
           </div>
         </CardContent>
       )}
+    </Card>
+  );
+}
+
+function ProviderKeysCard() {
+  const utils = trpc.useUtils();
+  const { data: settings = [] } = trpc.appSettings.list.useQuery();
+  const set = trpc.appSettings.set.useMutation({
+    onSuccess: () => { toast.success("API key saved"); utils.appSettings.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const getValue = (key: string) => (settings as any[]).find((s: any) => s.key === key)?.value ?? "";
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+
+  const PROVIDERS = [
+    { key: "ai_key_google_gemini", label: "Google Gemini", placeholder: "AIza...", color: "bg-purple-500", envFallback: "GOOGLE_AI_API_KEY" },
+    { key: "ai_key_anthropic", label: "Anthropic", placeholder: "sk-ant-...", color: "bg-orange-500", envFallback: "ANTHROPIC_API_KEY" },
+    { key: "ai_key_openai", label: "OpenAI", placeholder: "sk-...", color: "bg-green-500", envFallback: "OPENAI_API_KEY" },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Settings2 className="h-4 w-4" />
+          Provider API Keys
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Enter each provider key once. All skills using that provider will share the key.</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {PROVIDERS.map((p) => {
+          const stored = getValue(p.key);
+          const hasKey = !!stored;
+          return (
+            <div key={p.key} className="flex items-center gap-3">
+              <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${p.color}`} />
+              <Label className="w-32 shrink-0 text-sm font-medium">{p.label}</Label>
+              <div className="flex-1 flex gap-1">
+                <Input
+                  className="h-8 text-sm font-mono"
+                  type={showKeys[p.key] ? "text" : "password"}
+                  defaultValue={stored}
+                  placeholder={hasKey ? "••••••••••••  (stored)" : p.placeholder}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim();
+                    if (val && val !== stored) {
+                      set.mutate({ key: p.key, value: val, description: `${p.label} API key` });
+                    }
+                  }}
+                />
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setShowKeys(s => ({ ...s, [p.key]: !s[p.key] }))}>
+                  {showKeys[p.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              {hasKey ? (
+                <Badge variant="secondary" className="text-xs shrink-0">Configured</Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs shrink-0 text-muted-foreground">Uses {p.envFallback} env</Badge>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
     </Card>
   );
 }
@@ -840,8 +858,7 @@ function AiSkillsTab() {
           <div>
             <h2 className="font-semibold text-base">AI Skills Configuration</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Each skill is an AI task with its own provider, model, API key, and editable prompts.
-              Choose from OpenAI, Anthropic, or Google Gemini for each task independently.
+              Enter your API keys once above, then toggle which provider each skill uses below.
             </p>
           </div>
         </div>
@@ -853,18 +870,10 @@ function AiSkillsTab() {
 
       {subTab === "config" && (
         <>
-          <div className="grid grid-cols-1 gap-3 text-xs text-muted-foreground bg-muted/40 rounded-lg p-3 border">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {Object.entries(PROVIDER_LABELS).filter(([k]) => k !== "azure_openai").map(([k, v]) => (
-                <div key={k} className="flex items-center gap-1.5">
-                  <div className={`h-2 w-2 rounded-full ${k === "manus_builtin" ? "bg-blue-500" : k === "openai" ? "bg-green-500" : k === "anthropic" ? "bg-orange-500" : k === "google_gemini" ? "bg-purple-500" : "bg-slate-500"}`} />
-                  <span>{v}</span>
-                </div>
-              ))}
-            </div>
-            <p>Google Gemini falls back to GOOGLE_AI_API_KEY env. Anthropic falls back to ANTHROPIC_API_KEY env. OpenAI falls back to OPENAI_API_KEY env. Per-skill keys override env.</p>
-          </div>
+          {/* Global Provider Keys */}
+          <ProviderKeysCard />
 
+          {/* Per-skill config */}
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

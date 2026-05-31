@@ -588,3 +588,20 @@
 - [x] Add aiSkills.usage query: monthly aggregation by skill type (total tokens, total cost, call count)
 - [x] Settings AI Skills UI: add Usage tab showing monthly token consumption table and estimated cost per skill
 - [x] Cost estimation: use per-model pricing table (Gemini Flash $0.15/1M in, Claude Sonnet $3/1M in, GPT-4o-mini $0.15/1M in, etc.)
+
+## Switch Gemini to Native Google Generative AI SDK (v3.4)
+- [x] Install @google/generative-ai npm package
+- [x] Rewrite callGemini in llmSkill.ts: use native SDK with proper file_url/inline_data support instead of OpenAI-compat endpoint
+- [x] Keep full preview model strings: gemini-2.5-flash-preview-05-20, gemini-2.5-pro-preview-05-06
+- [x] Remove google_gemini case from resolveEndpoint (no longer needed)
+- [x] Update sanitizeMessagesForProvider: Gemini now uses native SDK so no longer goes through callOpenAICompat
+- [x] Run TypeScript check and tests
+
+## AI Settings UX Restructure — Global Provider Keys (v3.5)
+- [x] Remove per-skill API key fields from the UI
+- [x] Add "Provider API Keys" section at top of AI Settings: one field each for OpenAI, Anthropic, Google Gemini (stored in app_settings table)
+- [x] Per-skill config shows only: provider dropdown + model selector (inherits key from global provider keys)
+- [x] Update resolveApiKey in llmSkill.ts: reads from app_settings first, then ENV, then errors
+- [x] Remove apiKey column usage from ai_skills table (keep column for backward compat but ignore it)
+- [x] Cache app_settings lookups (30s TTL) to avoid DB hit on every LLM call
+- [x] Finish native Gemini SDK migration (zero TypeScript errors)
