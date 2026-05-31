@@ -886,6 +886,19 @@ function convertSchemaToGemini(schema: any): any {
   return result;
 }
 
+/**
+ * Maps model strings to the format required by the native SDK's v1beta endpoint.
+ * The v1beta endpoint uses short model names (e.g. "gemini-2.5-flash")
+ * while the REST API uses full preview strings (e.g. "gemini-2.5-flash-preview-05-20").
+ */
+function resolveGeminiModelForNativeSDK(model: string): string {
+  const MODEL_MAP: Record<string, string> = {
+    "gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
+    "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
+  };
+  return MODEL_MAP[model] ?? model;
+}
+
 async function callGeminiNative(
   apiKey: string,
   model: string,
@@ -893,6 +906,7 @@ async function callGeminiNative(
   responseFormat?: SkillInvokeParams["responseFormat"],
   maxTokens?: number
 ): Promise<{ result: SkillInvokeResult; tokensIn: number; tokensOut: number }> {
+  const resolvedModel = resolveGeminiModelForNativeSDK(model);
   const genAI = new GoogleGenerativeAI(apiKey);
   const { contents, systemInstruction } = convertToGeminiContents(messages);
 
@@ -902,7 +916,7 @@ async function callGeminiNative(
   };
 
   const genModel = genAI.getGenerativeModel({
-    model,
+    model: resolvedModel,
     systemInstruction: systemInstruction || undefined,
     generationConfig,
   });
