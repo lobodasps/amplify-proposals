@@ -296,6 +296,7 @@ export default function ProposalLaunchpad() {
   const executeSkill = trpc.rfpSessions.executeSkill.useMutation();
   const scoreGoNoGo = trpc.proposals.scoreGoNoGo.useMutation();
   const createPursuit = trpc.pursuits.create.useMutation();
+  const createProposal = trpc.proposals.create.useMutation();
   const utils = trpc.useUtils();
 
   // ── Drag-and-drop handlers ────────────────────────────────────────────────
@@ -534,8 +535,18 @@ export default function ProposalLaunchpad() {
       const pursuitList = await utils.pursuits.list.fetch();
       const newest = pursuitList?.[0];
 
-      toast.success("Pursuit created! Opening pursuit plan…");
-      if (newest?.id) {
+      // Create a linked proposal so the workspace has a real UUID
+      const proposalResult = await createProposal.mutateAsync({
+        pursuitId: newest?.id,
+        title: rfpTitle,
+        clientName: rfpAgency || undefined,
+        rfpNumber: rfpNumber || undefined,
+      });
+
+      toast.success("Pursuit created! Opening Proposal Workspace…");
+      if (proposalResult.proposalId) {
+        navigate(`/proposals/${proposalResult.proposalId}`);
+      } else if (newest?.id) {
         navigate(`/pursuits/${newest.id}`);
       } else {
         navigate("/pursuits");

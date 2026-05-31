@@ -39,15 +39,31 @@ export const proposalsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(proposals).values({
+      const rows = await db.insert(proposals).values({
         title: input.title,
         pursuitId: input.pursuitId,
         clientName: input.clientName,
         rfpNumber: input.rfpNumber,
         status: "draft",
         coordinatorId: ctx.user.id,
-      });
-      return { success: true };
+      }).returning({ id: proposals.id });
+      const proposalId = rows[0]?.id ?? null;
+      return { success: true, proposalId };
+    }),
+
+  /** Find the proposal linked to a pursuit (returns null if none exists yet) */
+  getByPursuitId: protectedProcedure
+    .input(z.object({ pursuitId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db
+        .select()
+        .from(proposals)
+        .where(eq(proposals.pursuitId, input.pursuitId))
+        .orderBy(desc(proposals.createdAt))
+        .limit(1);
+      return rows[0] ?? null;
     }),
 
   /** Generate a proposal section — uses the proposal_writer skill */

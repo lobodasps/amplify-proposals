@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Filter, Target, Calendar, DollarSign, User, Trophy, FileText, AlertCircle } from "lucide-react";
+import { Plus, Search, Filter, Target, Calendar, DollarSign, User, Trophy, FileText, AlertCircle, ChevronRight, Loader2 } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   identify: "Identify", qualify: "Qualify", pursue: "Pursue",
@@ -244,7 +244,40 @@ export default function Pursuits() {
   const [search, setSearch] = useState("");
   const [convertTarget, setConvertTarget] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [openingProposalFor, setOpeningProposalFor] = useState<string | null>(null);
+  const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const { data: dbPursuits, isLoading } = trpc.pursuits.list.useQuery(undefined as any);
+
+  const createProposalMutation = trpc.proposals.create.useMutation();
+
+  async function handleOpenProposal(pursuit: any) {
+    setOpeningProposalFor(pursuit.id);
+    try {
+      // Check if a proposal already exists for this pursuit
+      const existing = await utils.proposals.getByPursuitId.fetch({ pursuitId: pursuit.id });
+      if (existing?.id) {
+        navigate(`/proposals/${existing.id}`);
+        return;
+      }
+      // No proposal yet — create one now
+      const result = await createProposalMutation.mutateAsync({
+        pursuitId: pursuit.id,
+        title: pursuit.title,
+        clientName: pursuit.clientName ?? undefined,
+        rfpNumber: pursuit.rfpNumber ?? undefined,
+      });
+      if (result.proposalId) {
+        navigate(`/proposals/${result.proposalId}`);
+      } else {
+        toast.error("Could not create proposal — please try again");
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to open proposal");
+    } finally {
+      setOpeningProposalFor(null);
+    }
+  }
 
   const pursuits = dbPursuits && dbPursuits.length > 0 ? dbPursuits : [];
 
@@ -310,8 +343,13 @@ export default function Pursuits() {
               const value = p.estimatedValue ? `$${(p.estimatedValue / 1000000).toFixed(1)}M` : "—";
               const due = p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD";
 
+              const isOpening = openingProposalFor === p.id;
               return (
-                <Card key={p.id} className={`card-hover border-border/60 ${isAwarded ? "ring-1 ring-emerald-400/40" : ""}`}>
+                <Card
+                  key={p.id}
+                  className={`card-hover border-border/60 cursor-pointer transition-shadow hover:shadow-md ${isAwarded ? "ring-1 ring-emerald-400/40" : ""}`}
+                  onClick={() => handleOpenProposal(p)}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isAwarded ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-primary/10"}`}>
@@ -341,20 +379,39 @@ export default function Pursuits() {
                           )}
                         </div>
                       </div>
-                      {/* Convert to Contract button — only shown for Awarded pursuits */}
-                      {isAwarded && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Convert to Contract button — only shown for Awarded pursuits */}
+                        {isAwarded && (
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConvertTarget(p);
+                            }}
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            Convert to Contract
+                          </Button>
+                        )}
+                        {/* Open Proposal button */}
                         <Button
                           size="sm"
-                          className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 text-xs"
+                          variant="outline"
+                          className="gap-1.5 text-xs font-semibold"
+                          disabled={isOpening}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConvertTarget(p);
+                            handleOpenProposal(p);
                           }}
                         >
-                          <FileText className="w-3.5 h-3.5" />
-                          Convert to Contract
+                          {isOpening
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <ChevronRight className="w-3.5 h-3.5" />
+                          }
+                          {isOpening ? "Opening..." : "Open Proposal"}
                         </Button>
-                      )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
