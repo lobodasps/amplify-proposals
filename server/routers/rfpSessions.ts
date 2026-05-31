@@ -527,6 +527,126 @@ export const rfpSessionsRouter = router({
       return { success: true };
     }),
 
+  // ── Pass 2: Gemini Flash first-2-page document classification ─────────────
+  /**
+   * Accepts a publicly-accessible URL of an uploaded file (PDF or DOCX).
+   * Sends the first 2 pages to Gemini Flash and returns a structured
+   * classification: documentType, confidence, keyEvidence, suggestedLabel,
+   * extractionDepth.
+   *
+   * Used by ProposalLaunchpad for pre-classification of unclassified/medium
+   * confidence files before the user clicks Process.
+   */
+  classifyFile: protectedProcedure
+    .input(
+      z.object({
+        fileUrl: z.string().url(),
+        fileName: z.string(),
+        mimeType: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const systemPrompt = `You are classifying a document in a government AEC RFP package. Read these pages and return JSON only:
+{
+  "documentType": "main_rfp" | "scope" | "appendix" | "form" | "addendum" | "fee_schedule" | "certificate" | "cover_letter" | "reference" | "supplemental",
+  "confidence": "high" | "medium" | "low",
+  "keyEvidence": "string (what told you this — max 15 words)",
+  "suggestedLabel": "string (short human label, max 5 words)",
+  "extractionDepth": "full" | "metadata_only" | "skip"
+}`;
+
+      const DOCTYPE_TO_LABEL: Record<string, string> = {
+        main_rfp:     "Main RFP",
+        scope:        "Scope of Work",
+        appendix:     "Appendix",
+        form:         "Forms",
+        addendum:     "Addendum",
+        fee_schedule: "Fee Schedule",
+        certificate:  "Certificate",
+        cover_letter: "Cover Letter",
+        reference:    "Reference Doc",
+        supplemental: "Supplemental",
+      };
+
+      const DEPTH_TO_TIER: Record<string, string> = {
+        full:          "full_extract",
+        metadata_only: "metadata_only",
+        skip:          "metadata_only",
+      };
+
+      try {
+        const response = await invokeLLMWithSkill({
+          skillType: "rfp_shredder", // use rfp_shredder skill (Gemini Flash)
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Classify this document: "${input.fileName}". Read the first 1-2 pages only.`,
+                },
+                {
+                  type: "file_url" as const,
+                  file_url: {
+                    url: input.fileUrl,
+                    mime_type: input.mimeType as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  },
+                },
+              ],
+            },
+          ],
+          responseFormat: {
+            type: "json_schema",
+            json_schema: {
+              name: "file_classification",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  documentType: { type: "string" },
+                  confidence:   { type: "string" },
+                  keyEvidence:  { type: "string" },
+                  suggestedLabel: { type: "string" },
+                  extractionDepth: { type: "string" },
+                },
+                required: ["documentType", "confidence", "keyEvidence", "suggestedLabel", "extractionDepth"],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        const raw = response.choices?.[0]?.message?.content ?? "{}";
+        const parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw)) as {
+          documentType: string;
+          confidence: string;
+          keyEvidence: string;
+          suggestedLabel: string;
+          extractionDepth: string;
+        };
+
+        return {
+          success: true,
+          documentType:    parsed.documentType,
+          confidence:      (parsed.confidence as "high" | "medium" | "low") ?? "low",
+          keyEvidence:     parsed.keyEvidence ?? "Could not determine",
+          suggestedLabel:  DOCTYPE_TO_LABEL[parsed.documentType] ?? parsed.suggestedLabel ?? "Supplemental",
+          extractionDepth: DEPTH_TO_TIER[parsed.extractionDepth] ?? "metadata_only",
+        };
+      } catch (err) {
+        console.error("[classifyFile] Gemini classification failed:", err);
+        return {
+          success: false,
+          documentType:    "supplemental",
+          confidence:      "low" as const,
+          keyEvidence:     "Classification failed — please review manually",
+          suggestedLabel:  "Supplemental",
+          extractionDepth: "metadata_only",
+        };
+      }
+    }),
+
   // ── Manually update a skill output (for human edits) ─────────────────────
   updateSkillOutput: protectedProcedure
     .input(

@@ -172,3 +172,24 @@ export const TIER_BADGE: Record<ExtractionTier, { label: string; className: stri
   metadata_only: { label: "Metadata Only",  className: "bg-gray-100 text-gray-600 border-gray-200" },
   sheetjs:       { label: "SheetJS Parse",  className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 };
+
+// ─── Two-Pass Pre-Classification ─────────────────────────────────────────────
+// Pass 1: instant client-side heuristics (keyword + size + page count)
+// Pass 2: Gemini Flash first-2-page skim for unclassified / medium-confidence files
+
+export type ClassificationConfidence = "high" | "medium" | "low" | "unclassified";
+
+export interface ClassificationResult {
+  label: RfpFileLabel;
+  confidence: ClassificationConfidence;
+  /** Short human-readable reason (max 15 words) */
+  keyEvidence: string;
+  extractionDepth: ExtractionTier;
+}
+
+export const CONFIDENCE_BADGE: Record<ClassificationConfidence, { icon: string; label: string; className: string }> = {
+  high:         { icon: "✅", label: "High",         className: "text-emerald-600" },
+  medium:       { icon: "〰️", label: "Medium",       className: "text-amber-500" },
+  low:          { icon: "⚠️", label: "Review",       className: "text-red-500" },
+  unclassified: { icon: "⚠️", label: "Review needed", className: "text-red-500" },
+};

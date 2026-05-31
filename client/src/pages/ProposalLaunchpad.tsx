@@ -70,7 +70,17 @@ import {
   PenLine,
 } from "lucide-react";
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
-import { LABEL_TIER_MAP, TIER_BADGE, type RfpFileLabel } from "../../../shared/types";
+import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence } from "../../../shared/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -119,6 +129,15 @@ interface QueuedFile {
   extractedSummary?: string;
   status: "pending" | "uploading" | "extracting" | "done" | "error";
   error?: string;
+  // ── Two-pass pre-classification ─────────────────────────────────────────
+  /** Pass 1 or Pass 2 confidence level */
+  confidence: ClassificationConfidence;
+  /** Short human-readable reason for classification (max 15 words) */
+  keyEvidence: string;
+  /** PDF page count (read client-side from PDF header) */
+  pageCount?: number;
+  /** Whether Pass 2 Gemini skim is currently running for this file */
+  pass2Running?: boolean;
 }
 
 interface GoNoGoResult {
@@ -162,28 +181,111 @@ function isAccepted(file: File): boolean {
   return ACCEPTED_MIME_TYPES.has(file.type) || ACCEPTED_EXTENSIONS.has(ext);
 }
 
-function guessLabel(file: File): FileLabel {
+/** Generic filenames that carry no classification signal — send to Pass 2 */
+const GENERIC_NAME_PATTERN = /^(doc|document|file|attachment|attach|untitled|scan|image|page)\s*\d*$/i;
+
+interface Pass1Result {
+  label: FileLabel;
+  confidence: ClassificationConfidence;
+  keyEvidence: string;
+}
+
+/**
+ * Pass 1: instant client-side classification.
+ * Returns label + confidence + keyEvidence without any API call.
+ */
+function guessClassification(file: File, pageCount?: number): Pass1Result {
   const name = file.name.toLowerCase();
-  // Cover letter / transmittal — must check BEFORE generic 'form' or 'rfp' rules
-  if (name.includes("cover letter") || name.includes("cover sheet") || name.includes("transmittal")) return "Cover Letter";
+  const base = name.replace(/\.[^.]+$/, "").trim(); // strip extension
+
+  // XLSX/XLS → fee_schedule (high confidence)
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    if (name.includes("fee") || name.includes("cost") || name.includes("price") || name.includes("budget") || name.includes("schedule")) {
+      return { label: "Fee Schedule", confidence: "high", keyEvidence: "XLSX file with fee/cost/budget keyword" };
+    }
+    return { label: "Fee Schedule", confidence: "medium", keyEvidence: "XLSX spreadsheet — likely fee schedule" };
+  }
+
+  // Generic names → unclassified, needs Pass 2
+  if (GENERIC_NAME_PATTERN.test(base)) {
+    return { label: "Supplemental", confidence: "unclassified", keyEvidence: "Generic filename — needs Gemini review" };
+  }
+
+  // Cover letter / transmittal — check BEFORE generic 'form' or 'rfp' rules
+  if (name.includes("cover letter") || name.includes("cover sheet") || name.includes("transmittal")) {
+    return { label: "Cover Letter", confidence: "high", keyEvidence: "Filename contains cover letter/transmittal" };
+  }
   // Main RFP — explicit keywords only
-  if (name.includes("rfp") || name.includes("solicitation") || name.includes("invitation for bid") || name.includes("ifb") || name.includes("request for proposal")) return "Main RFP";
+  if (name.includes("rfp") || name.includes("solicitation") || name.includes("invitation for bid") || name.includes("ifb") || name.includes("request for proposal")) {
+    // Size heuristic: 20+ pages + rfp keyword → high confidence
+    const conf: ClassificationConfidence = (pageCount !== undefined && pageCount >= 20) ? "high" : "medium";
+    return { label: "Main RFP", confidence: conf, keyEvidence: `RFP keyword in filename${pageCount !== undefined ? `, ${pageCount}pp` : ""}` };
+  }
   // Scope of Work
-  if (name.includes("scope") || name.includes("sow") || name.includes("scope of work")) return "Scope of Work";
+  if (name.includes("scope") || name.includes("sow") || name.includes("scope of work")) {
+    return { label: "Scope of Work", confidence: "high", keyEvidence: "Scope/SOW keyword in filename" };
+  }
   // Addendum / Amendment
-  if (name.includes("addend") || name.includes("add-") || name.includes("amendment")) return "Addendum";
+  if (name.includes("addend") || name.includes("add-") || name.includes("amendment")) {
+    return { label: "Addendum", confidence: "high", keyEvidence: "Addendum/amendment keyword in filename" };
+  }
   // Appendix / Attachment + number
-  if (name.includes("append") || /attach(ment)?[\s_-]?\d/.test(name)) return "Appendix";
-  // Fee Schedule — XLSX/XLS preferred but also PDF fee docs
-  if (name.includes("fee schedule") || ((name.includes("fee") || name.includes("cost") || name.includes("price") || name.includes("budget")) && (name.endsWith(".xlsx") || name.endsWith(".xls")))) return "Fee Schedule";
+  if (name.includes("append") || /attach(ment)?[\s_-]?\d/.test(name)) {
+    return { label: "Appendix", confidence: "high", keyEvidence: "Appendix/attachment keyword in filename" };
+  }
   // Insurance / Certificate
-  if (name.includes("insurance") || name.includes("coi") || name.includes("certificate") || name.includes("cert")) return "Certificate";
+  if (name.includes("insurance") || name.includes("coi") || name.includes("certificate") || name.includes("cert")) {
+    return { label: "Certificate", confidence: "high", keyEvidence: "Insurance/certificate keyword in filename" };
+  }
   // Forms / Exhibits
-  if (name.includes("form") || name.includes("exhibit")) return "Forms";
+  if (name.includes("form") || name.includes("exhibit")) {
+    return { label: "Forms", confidence: "high", keyEvidence: "Form/exhibit keyword in filename" };
+  }
   // Reference docs
-  if (name.includes("ref") || name.includes("standard") || name.includes("guide")) return "Reference Doc";
+  if (name.includes("ref") || name.includes("standard") || name.includes("guide")) {
+    return { label: "Reference Doc", confidence: "medium", keyEvidence: "Reference/standard/guide keyword" };
+  }
+
+  // Page count heuristics (PDF only)
+  if (pageCount !== undefined) {
+    if (pageCount === 1) {
+      return { label: "Forms", confidence: "medium", keyEvidence: `1-page PDF — likely form or cover sheet` };
+    }
+    if (pageCount <= 3) {
+      return { label: "Forms", confidence: "medium", keyEvidence: `${pageCount}-page PDF — likely form or certificate` };
+    }
+    if (pageCount >= 4 && pageCount <= 20) {
+      return { label: "Supplemental", confidence: "unclassified", keyEvidence: `${pageCount}-page PDF — needs Gemini review` };
+    }
+    if (pageCount > 20) {
+      return { label: "Main RFP", confidence: "medium", keyEvidence: `${pageCount}-page document — likely main RFP` };
+    }
+  }
+
   // Default: Supplemental — force user to manually designate Main RFP
-  return "Supplemental";
+  return { label: "Supplemental", confidence: "medium", keyEvidence: "No strong keyword match" };
+}
+
+/**
+ * Read the page count of a PDF file client-side by scanning the binary for /Type /Page entries.
+ * Fast and cheap — no library needed.
+ */
+async function readPdfPageCount(file: File): Promise<number | undefined> {
+  if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") return undefined;
+  try {
+    // Read first 64 KB — enough to find /Count in most PDFs
+    const slice = file.slice(0, 65536);
+    const text = await slice.text();
+    // Look for /Count N in the PDF catalog
+    const match = text.match(/\/Count\s+(\d+)/);
+    if (match) return parseInt(match[1], 10);
+    // Fallback: count /Type /Page occurrences
+    const pageMatches = text.match(/\/Type\s*\/Page[^s]/g);
+    if (pageMatches) return pageMatches.length;
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function uploadFile(file: File): Promise<{ fileUrl: string; fileKey: string; fileName: string; size: number }> {
@@ -309,11 +411,15 @@ export default function ProposalLaunchpad() {
   // ── Go/No-Go result ───────────────────────────────────────────────────────
   const [goNoGoResult, setGoNoGoResult] = useState<GoNoGoResult | null>(null);
 
+  // ── Pre-process warning state ─────────────────────────────────────────────
+  const [showProcessWarning, setShowProcessWarning] = useState(false);
+
   // ── tRPC mutations ────────────────────────────────────────────────────────
   const createSession = trpc.rfpSessions.create.useMutation();
   const saveRfpFile = trpc.rfpSessions.saveRfpFile.useMutation();
   const saveUploadedFiles = trpc.rfpSessions.saveUploadedFiles.useMutation();
   const executeSkill = trpc.rfpSessions.executeSkill.useMutation();
+  const classifyFileMutation = trpc.rfpSessions.classifyFile.useMutation();
   const scoreGoNoGo = trpc.proposals.scoreGoNoGo.useMutation();
   const createPursuit = trpc.pursuits.create.useMutation();
   const createProposal = trpc.proposals.create.useMutation();
@@ -361,7 +467,6 @@ export default function ProposalLaunchpad() {
       const type = detectFileType(file);
 
       if (type === "zip") {
-        // Expand ZIP client-side and add inner files
         try {
           const inner = await extractZip(file);
           if (inner.length === 0) {
@@ -369,11 +474,17 @@ export default function ProposalLaunchpad() {
             continue;
           }
           for (const innerFile of inner) {
+            const innerType = detectFileType(innerFile);
+            const innerPageCount = await readPdfPageCount(innerFile);
+            const cls = guessClassification(innerFile, innerPageCount);
             newEntries.push({
               id: crypto.randomUUID(),
               file: innerFile,
-              type: detectFileType(innerFile),
-              label: guessLabel(innerFile),
+              type: innerType,
+              label: cls.label,
+              confidence: cls.confidence,
+              keyEvidence: cls.keyEvidence,
+              pageCount: innerPageCount,
               status: "pending",
             });
           }
@@ -382,11 +493,16 @@ export default function ProposalLaunchpad() {
           toast.error(`Could not extract "${file.name}". Is it a valid ZIP?`);
         }
       } else {
+        const pageCount = await readPdfPageCount(file);
+        const cls = guessClassification(file, pageCount);
         newEntries.push({
           id: crypto.randomUUID(),
           file,
           type,
-          label: guessLabel(file),
+          label: cls.label,
+          confidence: cls.confidence,
+          keyEvidence: cls.keyEvidence,
+          pageCount,
           status: "pending",
         });
       }
@@ -394,6 +510,71 @@ export default function ProposalLaunchpad() {
 
     if (newEntries.length > 0) {
       setQueue((prev) => [...prev, ...newEntries]);
+      // Pass 2: Gemini skim for unclassified or medium-confidence files
+      const needsPass2 = newEntries.filter(
+        (e) => e.confidence === "unclassified" || e.confidence === "medium"
+      );
+      if (needsPass2.length > 0) {
+        runPass2Classification(needsPass2);
+      }
+    }
+  };
+
+  // ── Pass 2: Gemini Flash first-2-page skim ────────────────────────────────────────
+  const runPass2Classification = async (entries: QueuedFile[]) => {
+    setQueue((prev) =>
+      prev.map((f) =>
+        entries.some((e) => e.id === f.id) ? { ...f, pass2Running: true } : f
+      )
+    );
+    const BATCH = 5;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (entry) => {
+          try {
+            const uploaded = await uploadFile(entry.file);
+            const result = await classifyFileMutation.mutateAsync({
+              fileUrl: uploaded.fileUrl,
+              fileName: entry.file.name,
+              mimeType: entry.file.type || "application/octet-stream",
+            });
+            const labelMap: Record<string, FileLabel> = {
+              main_rfp: "Main RFP",
+              scope: "Scope of Work",
+              appendix: "Appendix",
+              form: "Forms",
+              addendum: "Addendum",
+              fee_schedule: "Fee Schedule",
+              certificate: "Certificate",
+              cover_letter: "Cover Letter",
+              reference: "Reference Doc",
+              supplemental: "Supplemental",
+            };
+            const mappedLabel = labelMap[result.documentType] ?? "Supplemental";
+            setQueue((prev) =>
+              prev.map((f) =>
+                f.id === entry.id
+                  ? {
+                      ...f,
+                      label: mappedLabel,
+                      confidence: result.confidence as ClassificationConfidence,
+                      keyEvidence: result.keyEvidence,
+                      pass2Running: false,
+                    }
+                  : f
+              )
+            );
+          } catch {
+            setQueue((prev) =>
+              prev.map((f) =>
+                f.id === entry.id ? { ...f, pass2Running: false } : f
+              )
+            );
+          }
+        })
+      );
+      if (i + BATCH < entries.length) await new Promise((r) => setTimeout(r, 500));
     }
   };
 
@@ -418,6 +599,20 @@ export default function ProposalLaunchpad() {
       return;
     }
 
+    // Warn if any files are still unclassified or low confidence
+    const needsReview = queue.filter(
+      (f) => f.confidence === "unclassified" || f.confidence === "low"
+    );
+    if (needsReview.length > 0) {
+      setShowProcessWarning(true);
+      return;
+    }
+
+    await doProcess();
+  };
+
+  // ── Actual processing start (called by handleProcess or warning dialog) ────
+  const doProcess = async () => {
     setStep("processing");
     setProcessingProgress(5);
 
@@ -982,60 +1177,91 @@ export default function ProposalLaunchpad() {
                 </div>
 
                 {/* File queue */}
-                {queue.length > 0 && (
+{queue.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      {queue.length} file{queue.length !== 1 ? "s" : ""} queued
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        {queue.length} file{queue.length !== 1 ? "s" : ""} queued
+                      </p>
+                      {queue.some((f) => f.pass2Running) && (
+                        <span className="flex items-center gap-1 text-[11px] text-blue-600 animate-pulse">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Gemini reviewing {queue.filter((f) => f.pass2Running).length} file{queue.filter((f) => f.pass2Running).length !== 1 ? "s" : ""}…
+                        </span>
+                      )}
+                    </div>
                     <div className="space-y-2">
-                      {queue.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border border-border bg-background"
-                        >
-                          <FileTypeIcon type={entry.type} className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium truncate max-w-[200px]">{entry.file.name}</span>
-                              <FileTypeBadge type={entry.type} />
-                              <span className="text-xs text-muted-foreground">
-                                {(entry.file.size / 1024).toFixed(0)} KB
-                              </span>
+                      {queue.map((entry) => {
+                        const conf = entry.confidence ?? "medium";
+                        const badge = CONFIDENCE_BADGE[conf];
+                        const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
+                        const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
+                        return (
+                          <div
+                            key={entry.id}
+                            className={`flex items-start gap-3 p-3 rounded-lg border bg-background transition-colors ${
+                              conf === "low" || conf === "unclassified"
+                                ? "border-amber-300 bg-amber-50/40"
+                                : "border-border"
+                            }`}
+                          >
+                            <FileTypeIcon type={entry.type} className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium truncate max-w-[200px]">{entry.file.name}</span>
+                                <FileTypeBadge type={entry.type} />
+                                <span className="text-xs text-muted-foreground">
+                                  {(entry.file.size / 1024).toFixed(0)} KB
+                                  {entry.pageCount !== undefined && ` · ${entry.pageCount}pp`}
+                                </span>
+                              </div>
+                              {/* Key evidence subtitle */}
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {entry.pass2Running ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-blue-500">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Analyzing with Gemini…
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="text-[11px]" title={badge.label}>{badge.icon}</span>
+                                    <span className="text-[11px] text-muted-foreground">{entry.keyEvidence}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
+                            {/* Label selector */}
+                            <Select
+                              value={entry.label}
+                              onValueChange={(v) => updateLabel(entry.id, v as FileLabel)}
+                            >
+                              <SelectTrigger className="w-36 h-7 text-xs shrink-0">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {FILE_LABELS.map((l) => (
+                                  <SelectItem key={l} value={l} className="text-xs">{l}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {/* Confidence badge */}
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                            {/* Extraction tier badge */}
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tierClass} shrink-0 whitespace-nowrap`}>
+                              {tierLabel}
+                            </span>
+                            {/* Remove */}
+                            <button
+                              onClick={() => removeFromQueue(entry.id)}
+                              className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-0.5"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
-                          {/* Label selector */}
-                          <Select
-                            value={entry.label}
-                            onValueChange={(v) => updateLabel(entry.id, v as FileLabel)}
-                          >
-                            <SelectTrigger className="w-36 h-7 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FILE_LABELS.map((l) => (
-                                <SelectItem key={l} value={l} className="text-xs">{l}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {/* Extraction tier badge */}
-                          {(() => {
-                            const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
-                            const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
-                            return (
-                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tierClass} shrink-0 whitespace-nowrap`}>
-                                {tierLabel}
-                              </span>
-                            );
-                          })()}
-                          {/* Remove */}
-                          <button
-                            onClick={() => removeFromQueue(entry.id)}
-                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1497,6 +1723,52 @@ export default function ProposalLaunchpad() {
         )}
 
       </div>
+
+      {/* Pre-process warning: low-confidence or unclassified files */}
+      <AlertDialog open={showProcessWarning} onOpenChange={setShowProcessWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Files Need Your Review
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  {queue.filter((f) => f.confidence === "unclassified" || f.confidence === "low").length} file
+                  {queue.filter((f) => f.confidence === "unclassified" || f.confidence === "low").length !== 1 ? "s" : ""} could not be classified with high confidence.
+                  Unreviewed files will be stored but not extracted.
+                </p>
+                <ul className="space-y-1">
+                  {queue
+                    .filter((f) => f.confidence === "unclassified" || f.confidence === "low")
+                    .map((f) => (
+                      <li key={f.id} className="flex items-center gap-2 text-sm">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="font-medium truncate max-w-[260px]">{f.file.name}</span>
+                        <span className="text-muted-foreground text-xs">— {f.keyEvidence}</span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowProcessWarning(false)}>
+              Review Now
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowProcessWarning(false);
+                doProcess();
+              }}
+            >
+              Process Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </AppLayout>
   );
 }

@@ -682,3 +682,18 @@
 - [ ] Apply SheetJS path for fee_schedule XLSX files (no LLM)
 - [ ] Add Full Extract (blue) / Metadata Only (gray) / SheetJS (green) badge to manifest in ProposalLaunchpad.tsx
 - [ ] Zero TypeScript errors after changes
+
+## Two-Pass File Pre-Classification — Proposal Launchpad (v3.9)
+- [ ] Extend QueuedFile type: add confidence, keyEvidence, pageCount, pass2Running fields
+- [ ] Pass 1: PDF page count reader (client-side, read PDF header bytes via FileReader)
+- [ ] Pass 1: Updated guessLabel — XLSX→fee_schedule (high), generic names→unclassified, size/page heuristics for medium confidence
+- [ ] Pass 1: Assign confidence (high/medium/unclassified) to each file on drop
+- [ ] Pass 2: Add classifyFile protected procedure to rfpSessions router (uploads first 2 pages, calls Gemini Flash, returns documentType/confidence/keyEvidence/suggestedLabel/extractionDepth)
+- [ ] Pass 2: classifyWithGemini helper in ProposalLaunchpad — upload file, call classifyFile mutation, update QueuedFile with result
+- [ ] Pass 2: Run in parallel for all unclassified/medium-confidence files after drop (batches of 5)
+- [ ] Manifest UI: confidence badge (✅ High / 〰️ Medium / ⚠️ Review needed)
+- [ ] Manifest UI: keyEvidence subtitle under filename in small gray text
+- [ ] Manifest UI: page count and file size display per file
+- [ ] Manifest UI: extraction depth badge (Full Extract blue / Metadata Only gray / Skip red)
+- [ ] Manifest UI: auto-open label dropdown for low-confidence files
+- [ ] Pre-process warning dialog: "X files need review" with Review Now / Process Anyway options
