@@ -76,14 +76,19 @@ function buildSkillVariables(
   const scopeSummary = extracted.scopeSummary ?? rfpContext;
 
   switch (skillName) {
-    case "rfp_parser":
+    case "rfp_parser": {
+      const uploadedFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
+      const fileList = uploadedFiles.length > 0
+        ? `RFP Package contains ${uploadedFiles.length} files:\n${uploadedFiles.map((f) => `- ${f.name}`).join("\n")}\n\nThe most relevant documents are attached as file content below. Extract all RFP details from the attached files.`
+        : session.rfpFileUrl
+          ? `[File attached below]`
+          : "No RFP file uploaded.";
       return {
-        rfpText: session.rfpFileUrl
-          ? `[File available at: ${session.rfpFileUrl}]`
-          : "No RFP file uploaded.",
+        rfpText: fileList,
         firmProfile:
           "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ/NY/NYC public-agency markets.",
       };
+    }
 
     case "win_themes":
       return {
@@ -668,15 +673,39 @@ export const rfpSessionsRouter = router({
         const responseFormat = getResponseFormat(input.skillName);
         const systemOverride = getSystemOverride(input.skillName);
 
-        // For rfp_parser: attach all uploaded files as file_url content parts
-        // so the LLM can actually read the PDFs/DOCXs
-        let extraUserContent: Array<{ type: "file_url"; file_url: { url: string; mime_type?: string } }> | undefined;
+        // For rfp_parser: attach the most relevant PDFs as file_url content parts
+        // Limit to max 3 files to avoid overwhelming the LLM / hitting upstream limits
+        let extraUserContent: Array<{ type: "file_url"; file_url: { url: string; mime_type?: string } } | { type: "text"; text: string }> | undefined;
         if (input.skillName === "rfp_parser") {
           const allFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
-          if (allFiles.length > 0) {
-            extraUserContent = allFiles
-              .filter((f) => f.mimeType === "application/pdf" || f.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-              .map((f) => ({ type: "file_url" as const, file_url: { url: f.url, mime_type: f.mimeType as any } }));
+          const docFiles = allFiles.filter((f) => f.mimeType === "application/pdf" || f.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+          if (docFiles.length > 0) {
+            // Prioritize: files with "RFP" in name first, then by name length (longer names tend to be the main doc)
+            const sorted = [...docFiles].sort((a, b) => {
+              const aIsRfp = /rfp|solicitation|request for/i.test(a.name) ? 1 : 0;
+              const bIsRfp = /rfp|solicitation|request for/i.test(b.name) ? 1 : 0;
+              if (bIsRfp !== aIsRfp) return bIsRfp - aIsRfp;
+              return b.name.length - a.name.length;
+            });
+
+            // Send at most 3 files as actual file content
+            const toAttach = sorted.slice(0, 3);
+            const remaining = sorted.slice(3);
+
+            extraUserContent = toAttach.map((f) => ({
+              type: "file_url" as const,
+              file_url: { url: f.url, mime_type: f.mimeType as any },
+            }));
+
+            // List remaining files as text context so LLM knows they exist
+            if (remaining.length > 0) {
+              const fileList = remaining.map((f) => `- ${f.name}`).join("\n");
+              extraUserContent.push({
+                type: "text" as const,
+                text: `\n\nAdditional documents in this RFP package (not attached but part of the submission):\n${fileList}`,
+              });
+            }
           } else if (session.rfpFileUrl) {
             // Fallback: use the single primary file
             extraUserContent = [{ type: "file_url", file_url: { url: session.rfpFileUrl, mime_type: (session.rfpMimeType ?? "application/pdf") as any } }];
