@@ -221,7 +221,7 @@ function SkillOutputEditor({
   })();
 
   return (
-    <div className="flex flex-col h-full gap-3">
+    <div className="flex flex-col gap-3">
       {/* Toolbar */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ function SkillOutputEditor({
           placeholder="Edit the AI output here..."
         />
       ) : (
-        <ScrollArea className="flex-1 rounded-md border bg-muted/20 p-4">
+        <ScrollArea className="rounded-md border bg-muted/20 p-4 min-h-[200px]">
           {isJson ? (
             <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed">
               {formattedJson}
@@ -713,7 +713,7 @@ export default function ProposalWorkspace() {
       <AppLayout title="Proposal Workspace">
         <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
           {/* ── Top Bar ──────────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0 gap-4 bg-background">
+          <div className="flex flex-wrap items-center justify-between px-4 py-2.5 border-b shrink-0 gap-2 bg-background">
             <div className="flex items-center gap-3 min-w-0">
               <Button
                 variant="ghost"
@@ -1090,7 +1090,7 @@ export default function ProposalWorkspace() {
                   </div>
 
                   {/* Skill output */}
-                  <div className="flex-1 overflow-hidden p-6">
+                  <div className="flex-1 overflow-y-auto p-6">
                     {activeSkill === selectedSkill.name ? (
                       /* Running state */
                       <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
