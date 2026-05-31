@@ -988,8 +988,19 @@ export const damDocuments = pgTable("dam_documents", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   // Document type
-  // Valid values: past_proposal, project_sheet, resume, certification, rfp, contract, boilerplate, other
+  // Valid values: past_proposal, project_sheet, resume, certification, rfp, contract, boilerplate, image, other
   docType: text("docType").notNull().default("other"),
+
+  // Image-specific metadata (docType = 'image')
+  photographer: text("photographer"),   // Optional photographer credit
+  yearTaken: integer("yearTaken"),       // Year photo was taken
+  // Valid values: internal_only, proposal_use, marketing, unrestricted
+  usageRights: text("usageRights"),      // Usage rights classification
+  // Valid values: high, medium, low
+  imageQuality: text("imageQuality"),    // Gemini vision quality rating
+  hasPersonnel: boolean("hasPersonnel"), // Whether people are visible in the image
+  // Valid values: bridge, dam, roadway, retaining-wall, building, park, athletic-field, environmental-site, utility, tunnel, other
+  structureType: text("structureType"),  // Primary AEC structure type from vision analysis
 
   title: text("title").notNull(),
   description: text("description"),
@@ -1042,6 +1053,9 @@ export const damDocuments = pgTable("dam_documents", {
 
   // Tags (comma-separated keywords)
   tags: text("tags"),
+
+  // Thumbnail URL for image docTypes (stored in S3, auto-generated on upload)
+  thumbnailUrl: text("thumbnailUrl"),
 
   // Audit
   uploadedBy: uuid("uploadedBy"),

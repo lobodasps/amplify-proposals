@@ -20,8 +20,25 @@ import { getDb } from "../db";
 import { damDocuments, personnel, projects } from "../../drizzle/schema";
 import { storageGet } from "../storage";
 import { invokeLLM, type Message } from "../_core/llm";
+import { invokeLLMWithSkill } from "../_core/llmSkill";
 import { TRPCError } from "@trpc/server";
 import { shredDocumentForDam } from "../damShredder";
+
+// ─── Image MIME type detection ───────────────────────────────────────────────
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/tiff",
+  "image/webp",
+  "image/gif",
+]);
+
+function isImageMime(mimeType?: string | null): boolean {
+  if (!mimeType) return false;
+  return IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
+}
 
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -33,6 +50,7 @@ const DOC_TYPES = [
   "rfp",
   "contract",
   "boilerplate",
+  "image",
   "other",
 ] as const;
 
@@ -76,6 +94,11 @@ const createInput = z.object({
 
   // Tags
   tags: z.string().optional(), // comma-separated
+
+  // Image-specific metadata (docType = 'image')
+  photographer: z.string().optional(),
+  yearTaken: z.number().int().min(1900).max(2100).optional(),
+  usageRights: z.enum(["internal_only", "proposal_use", "marketing"]).optional(),
 });
 
 const updateMetaInput = z.object({
@@ -98,6 +121,11 @@ const updateMetaInput = z.object({
   contractValue: z.string().optional(),
   awardYear: z.number().optional(),
   tags: z.string().optional(),
+
+  // Image-specific metadata
+  photographer: z.string().optional(),
+  yearTaken: z.number().int().min(1900).max(2100).optional(),
+  usageRights: z.enum(["internal_only", "proposal_use", "marketing"]).optional(),
 });
 
 const listInput = z.object({
@@ -658,6 +686,73 @@ export const damRouter = router({
         // Get a fresh signed URL
         const { url: freshUrl } = await storageGet(doc.fileKey);
 
+        // ── Path 0: Image caption (skip all document extraction) ────────────
+        if (doc.docType === "image" || isImageMime(doc.mimeType)) {
+          const captionResult = await invokeLLMWithSkill({
+            skillType: "dam_image_caption",
+            variables: {
+              fileName: doc.fileName,
+              context: [
+                doc.projectName ? `Project: ${doc.projectName}` : "",
+                doc.description ?? "",
+              ].filter(Boolean).join(" | ") || "AEC project image",
+            },
+            extraUserContent: [
+              {
+                type: "image_url",
+                image_url: { url: freshUrl },
+              },
+            ],
+          });
+
+          const rawCaption = captionResult.choices?.[0]?.message?.content ?? "{}";
+          let captionData: Record<string, any> = {};
+          try {
+            // Strip markdown fences if present
+            const cleaned = rawCaption.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+            captionData = JSON.parse(cleaned);
+          } catch {
+            captionData = { caption: rawCaption };
+          }
+
+          // Build tag string from tags array
+          const tagArr: string[] = Array.isArray(captionData.tags) ? captionData.tags : [];
+          const tagString = tagArr.map((t: string) => t.trim().toLowerCase().replace(/\s+/g, "-")).join(",");
+
+          // Build extractedText for search
+          const extractedText = [
+            captionData.caption,
+            captionData.description,
+            captionData.structureType,
+            captionData.environment,
+            tagArr.join(" "),
+          ].filter(Boolean).join("\n");
+
+          await db
+            .update(damDocuments)
+            .set({
+              extractedMeta: captionData,
+              extractedText,
+              tags: tagString,
+              extractionMethod: "dam_image_caption",
+              processingStatus: "indexed",
+              processingError: null,
+              // Store structured fields in dedicated columns for filtering
+              imageQuality: captionData.qualityRating ?? null,
+              hasPersonnel: captionData.hasPersonnel ?? null,
+              structureType: captionData.structureType ?? null,
+            })
+            .where(eq(damDocuments.id, input.id));
+
+          return {
+            success: true,
+            extractionMethod: "dam_image_caption",
+            caption: captionData.caption ?? null,
+            structureType: captionData.structureType ?? null,
+            qualityRating: captionData.qualityRating ?? null,
+          };
+        }
+
         // ── Routing decision ──────────────────────────────────────────────────
         //
         // DocTypes that always use llm_single_pass regardless of page count:
@@ -833,6 +928,42 @@ export const damRouter = router({
         accessUrl = url;
       } catch {
         // fall back to the original URL
+      }
+
+      // ── Fast path for images: skip document analysis, return image defaults ──
+      if (isImageMime(input.mimeType)) {
+        const baseName = input.fileName.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+        return {
+          docType: "image" as const,
+          companyTag: null as string | null,
+          title: baseName,
+          clientName: null as string | null,
+          projectName: null as string | null,
+          projectNumber: null as string | null,
+          contractValue: null as string | null,
+          awardYear: null as number | null,
+          staffName: null as string | null,
+          tags: null as string | null,
+          description: null as string | null,
+          ownerName: null as string | null,
+          firmRole: null as string | null,
+          resumeVersion: null as string | null,
+          pursuitContext: null as string | null,
+          multiProject: false,
+          projects: [] as Array<{
+            projectName: string;
+            owner: string;
+            client: string | null;
+            firmRole: string | null;
+            location: string | null;
+            contractValue: string | null;
+            startDate: string | null;
+            endDate: string | null;
+            serviceLines: string | null;
+            scope: string | null;
+            description: string | null;
+          }>,
+        };
       }
 
       const supportedMimes = ["application/pdf", "audio/mpeg", "audio/wav", "audio/mp4", "video/mp4"];

@@ -504,14 +504,22 @@ Return complete structured extraction including sections, key facts, and metadat
       "Generates descriptive captions and tags for images uploaded to the Digital Asset Management library.",
     defaultProvider: "google_gemini",
     defaultModel: "gemini-2.5-flash-preview-05-20",
-    systemPrompt: `You are an expert AEC digital asset manager. You describe images from AEC projects — photos, drawings, site plans, renderings.
-Generate a professional caption and search tags.
-Return structured JSON only.`,
-    userPromptTemplate: `Describe this image from an AEC project:
+    systemPrompt: `You are an AEC (Architecture, Engineering, Construction) image analyst. Analyze this project photo and return a JSON object with:
+
+caption: one sentence describing what the image shows (max 20 words)
+description: 2-3 sentence detailed description including structure type, construction phase, setting, and notable features
+structureType: primary structure shown — bridge, dam, roadway, retaining-wall, building, park, athletic-field, environmental-site, utility, tunnel, other
+constructionPhase: design | under-construction | completed | maintenance
+setting: aerial | ground-level | interior | underwater | drone
+environment: urban | suburban | rural | waterfront | forested | industrial
+tags: array of 5-10 searchable keywords — be specific: prefer steel-girder-bridge over just bridge, synthetic-turf-field over just field
+hasPersonnel: boolean — are people visible in the image?
+qualityRating: high | medium | low — based on image clarity and composition for proposal use`,
+    userPromptTemplate: `Analyze this AEC project image:
 FILE: {{fileName}}
 CONTEXT: {{context}}
 
-Return JSON with: caption (1-2 sentences), tags (5-8 keywords), imageType (photo/drawing/rendering/diagram/map/other).`,
+Return a JSON object with exactly these fields: caption, description, structureType, constructionPhase, setting, environment, tags (array), hasPersonnel (boolean), qualityRating.`,
     templateVariables: ["fileName", "context"],
   },
 };

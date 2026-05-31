@@ -227,13 +227,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Knowledge Hub",
         href: "/knowledge-hub",
         icon: HardDrive,
-        description: "Upload & manage proposals, project sheets, resumes, certifications",
-      },
-      {
-        label: "Resource Library",
-        href: "/resource-library",
-        icon: Library,
-        description: "Templates, boilerplate & rate sheets",
+        description: "Upload & manage proposals, project sheets, resumes, templates, images & more",
       },
       {
         label: "Glossary",

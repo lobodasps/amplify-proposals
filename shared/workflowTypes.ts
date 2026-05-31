@@ -37,6 +37,8 @@ export interface SkillStateEntry {
   /** Which model/provider was used */
   model?: string;
   provider?: string;
+  /** Live sub-step message written during long-running operations (e.g. shredding file X of Y) */
+  subStepMessage?: string;
 }
 
 /** Full workflow state — stored in rfpSessions.workflowState */

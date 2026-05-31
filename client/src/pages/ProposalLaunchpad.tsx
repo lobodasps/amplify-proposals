@@ -469,8 +469,29 @@ export default function ProposalLaunchpad() {
       }
 
       // 5. Run rfp_parser skill on the session (uses primary file URL)
-      setProcessingStatus("Running AI extraction…");
-      const result = await executeSkill.mutateAsync({ sessionId: sid, skillName: "rfp_parser" });
+      // Start polling for sub-step messages while the long-running skill executes
+      setProcessingStatus("Starting AI extraction…");
+      let pollInterval: ReturnType<typeof setInterval> | null = null;
+      const startPoll = () => {
+        pollInterval = setInterval(async () => {
+          try {
+            const sessionData = await utils.rfpSessions.getById.fetch({ id: sid });
+            const rfpParserState = (sessionData?.workflowState as Record<string, { status?: string; subStepMessage?: string }> | null)?.rfp_parser;
+            if (rfpParserState?.subStepMessage) {
+              setProcessingStatus(rfpParserState.subStepMessage);
+            }
+          } catch { /* non-fatal */ }
+        }, 2000);
+      };
+      startPoll();
+      let result;
+      try {
+        result = await executeSkill.mutateAsync({ sessionId: sid, skillName: "rfp_parser" });
+      } catch (skillErr) {
+        if (pollInterval) clearInterval(pollInterval);
+        throw skillErr;
+      }
+      if (pollInterval) clearInterval(pollInterval);
       setProcessingProgress(90);
 
       // 6. Parse structured output
@@ -998,9 +1019,9 @@ export default function ProposalLaunchpad() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{processingStatus || "Starting…"}</span>
-                  <span>{processingProgress}%</span>
+                <div className="flex justify-between text-sm">
+                  <span className="flex-1 mr-2 text-foreground font-medium truncate">{processingStatus || "Starting…"}</span>
+                  <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{processingProgress}%</span>
                 </div>
                 <Progress value={processingProgress} className="h-2" />
               </div>

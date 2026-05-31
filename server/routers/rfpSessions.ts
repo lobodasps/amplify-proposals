@@ -700,11 +700,24 @@ export const rfpSessionsRouter = router({
               return { type: "supplemental", label: "Supplemental Document" };
             }
 
+            // Helper: write a sub-step message into workflowState so the UI can poll it
+            const writeSubStep = async (msg: string) => {
+              try {
+                const freshDb = await getDb();
+                if (!freshDb) return;
+                const latestRows = await freshDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+                const latestState = ((latestRows[0]?.workflowState ?? {}) as WorkflowState);
+                const updatedEntry: SkillStateEntry = { ...latestState.rfp_parser, status: "running", subStepMessage: msg } as SkillStateEntry;
+                await freshDb.update(rfpSessions).set({ workflowState: { ...latestState, rfp_parser: updatedEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
+              } catch { /* non-fatal */ }
+            };
+
             // Shred each file sequentially with a 1.5s delay to avoid rate limits
             const documentFragments: string[] = [];
             for (let i = 0; i < allFiles.length; i++) {
               if (i > 0) await new Promise((r) => setTimeout(r, 1500));
               const { type: docType, label } = classifyFile(allFiles[i].name, i);
+              await writeSubStep(`Shredding file ${i + 1} of ${allFiles.length}: ${allFiles[i].name}`);
               try {
                 const fragment = await shredSingleFile({
                   fileName: allFiles[i].name,
@@ -732,6 +745,8 @@ export const rfpSessionsRouter = router({
               ...documentFragments,
               `</rfp_package>`,
             ].join("\n");
+
+            await writeSubStep(`All ${allFiles.length} files shredded — running AI parser...`);
 
             // Pass the combined XML as text content to the rfp_parser
             extraUserContent = [{

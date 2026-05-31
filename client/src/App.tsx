@@ -30,7 +30,6 @@ import ContractAnalyzer from "./pages/ContractAnalyzer";
 import Glossary from "./pages/Glossary";
 import BidCalendar from "./pages/BidCalendar";
 import Help from "./pages/Help";
-import ResourceLibrary from "./pages/ResourceLibrary";
 import OpportunityDetail from "./pages/OpportunityDetail";
 import DocumentShredder from "./pages/DocumentShredder";
 import RfpWiki from "./pages/RfpWiki";
@@ -94,7 +93,7 @@ function Router() {
       <Route path="/glossary">{() => <ProtectedRoute component={Glossary} />}</Route>
       <Route path="/bid-calendar">{() => <ProtectedRoute component={BidCalendar} />}</Route>
       <Route path="/help">{() => <ProtectedRoute component={Help} />}</Route>
-      <Route path="/resource-library">{() => <ProtectedRoute component={ResourceLibrary} />}</Route>
+      <Route path="/resource-library">{() => <Redirect to="/knowledge-hub" />}</Route>
       <Route path="/file-library">{() => <ProtectedRoute component={FileLibrary} />}</Route>
       <Route path="/opportunities/:id">{() => <ProtectedRoute component={OpportunityDetail} />}</Route>
       <Route path="/document-shredder">{() => <ProtectedRoute component={DocumentShredder} />}</Route>

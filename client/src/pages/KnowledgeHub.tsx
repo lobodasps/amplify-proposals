@@ -45,7 +45,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 type DocType =
   | "past_proposal" | "project_sheet" | "resume"
-  | "certification" | "rfp" | "contract" | "boilerplate" | "other";
+  | "certification" | "rfp" | "contract" | "boilerplate" | "image" | "other";
 
 type CompanyTag = "JPCL" | "Strans" | "Both";
 
@@ -54,14 +54,15 @@ type ProcessingStatus = "uploaded" | "processing" | "indexed" | "error";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DOC_TYPE_CONFIG: Record<DocType, { label: string; icon: any; color: string; bg: string }> = {
-  past_proposal: { label: "Past Proposal",  icon: FileText,  color: "text-violet-600", bg: "bg-violet-50" },
-  project_sheet: { label: "Project Sheet",  icon: Building2, color: "text-blue-600",   bg: "bg-blue-50" },
-  resume:        { label: "Resume / CV",    icon: Users,     color: "text-emerald-600",bg: "bg-emerald-50" },
-  certification: { label: "Certification",  icon: Award,     color: "text-amber-600",  bg: "bg-amber-50" },
-  rfp:           { label: "RFP Package",    icon: FolderOpen,color: "text-rose-600",   bg: "bg-rose-50" },
-  contract:      { label: "Contract",       icon: FileText,  color: "text-slate-600",  bg: "bg-slate-50" },
-  boilerplate:   { label: "Boilerplate",    icon: BookOpen,  color: "text-teal-600",   bg: "bg-teal-50" },
-  other:         { label: "Other",          icon: File,      color: "text-gray-500",   bg: "bg-gray-50" },
+  past_proposal: { label: "Past Proposal",  icon: FileText,   color: "text-violet-600", bg: "bg-violet-50" },
+  project_sheet: { label: "Project Sheet",  icon: Building2,  color: "text-blue-600",   bg: "bg-blue-50" },
+  resume:        { label: "Resume / CV",    icon: Users,      color: "text-emerald-600",bg: "bg-emerald-50" },
+  certification: { label: "Certification",  icon: Award,      color: "text-amber-600",  bg: "bg-amber-50" },
+  rfp:           { label: "RFP Package",    icon: FolderOpen, color: "text-rose-600",   bg: "bg-rose-50" },
+  contract:      { label: "Contract",       icon: FileText,   color: "text-slate-600",  bg: "bg-slate-50" },
+  boilerplate:   { label: "Boilerplate",    icon: BookOpen,   color: "text-teal-600",   bg: "bg-teal-50" },
+  image:         { label: "Images",         icon: ImageIcon,  color: "text-pink-600",   bg: "bg-pink-50" },
+  other:         { label: "Other",          icon: File,       color: "text-gray-500",   bg: "bg-gray-50" },
 };
 
 const STATUS_CONFIG: Record<ProcessingStatus, { label: string; icon: any; color: string }> = {
@@ -101,6 +102,10 @@ interface UploadFormState {
   contractValue: string;
   awardYear: string;
   tags: string;
+  // Image-specific
+  photographer: string;
+  yearTaken: string;
+  usageRights: "internal_only" | "proposal_use" | "marketing" | "";
 }
 
 const DEFAULT_FORM: UploadFormState = {
@@ -119,6 +124,9 @@ const DEFAULT_FORM: UploadFormState = {
   contractValue: "",
   awardYear: "",
   tags: "",
+  photographer: "",
+  yearTaken: "",
+  usageRights: "",
 };
 
 // ─── Multi-project split types ───────────────────────────────────────────────
@@ -397,7 +405,22 @@ export default function KnowledgeHub() {
       const { url, key, fileName, size } = await uploadRes.json();
       setStagedUpload({ url, key, fileName, size });
 
-      // Step 2: Ask LLM to read the file and extract metadata
+      // Step 2: For images, skip LLM document extraction — triggerExtract handles vision captioning server-side
+      const IMAGE_MIMES = ["image/jpeg", "image/jpg", "image/png", "image/tiff", "image/webp"];
+      if (IMAGE_MIMES.includes(file.type)) {
+        setForm({
+          ...DEFAULT_FORM,
+          docType: "image",
+          title: baseName,
+          photographer: "",
+          yearTaken: "",
+          usageRights: "",
+        });
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Step 2b: Ask LLM to read the file and extract metadata
       const meta = await autoExtractMutation.mutateAsync({
         fileUrl: url,
         fileKey: key,
@@ -452,6 +475,9 @@ export default function KnowledgeHub() {
         contractValue: meta.contractValue ?? "",
         awardYear: meta.awardYear ? String(meta.awardYear) : "",
         tags: meta.tags ?? "",
+        photographer: "",
+        yearTaken: "",
+        usageRights: "",
       });
 
       // Step 4: Content-level duplicate check
@@ -530,6 +556,9 @@ export default function KnowledgeHub() {
           contractValue: form.contractValue.trim() || undefined,
           awardYear: form.awardYear ? parseInt(form.awardYear) : undefined,
           tags: form.tags.trim() || undefined,
+          photographer: form.photographer.trim() || undefined,
+          yearTaken: form.yearTaken ? parseInt(form.yearTaken) : undefined,
+          usageRights: (form.usageRights as any) || undefined,
         });
       }
 
@@ -648,7 +677,7 @@ export default function KnowledgeHub() {
             type="file"
             multiple
             className="hidden"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.tiff,.tif,.webp"
             onChange={handleFileSelect}
           />
         </div>
@@ -710,7 +739,7 @@ export default function KnowledgeHub() {
             <div className="text-center">
               <p className="text-sm font-medium">Drop a file here or click to browse</p>
               <p className="text-xs text-muted-foreground mt-1">
-                PDF, Word, Excel, PowerPoint, TXT — up to 50 MB &bull; max 10 files per batch
+                PDF, Word, Excel, PowerPoint, TXT, JPG, PNG, TIFF, WEBP — up to 50 MB &bull; max 10 files per batch
               </p>
             </div>
           </div>
@@ -961,6 +990,60 @@ export default function KnowledgeHub() {
                     </Select>
                   </div>
                 </div>
+              )}
+
+              {/* Image-specific fields */}
+              {form.docType === "image" && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>Project Association</Label>
+                      <Input
+                        value={form.projectName}
+                        onChange={(e) => updateForm("projectName", e.target.value)}
+                        placeholder="Project name this photo belongs to"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Location</Label>
+                      <Input
+                        value={form.ownerName}
+                        onChange={(e) => updateForm("ownerName", e.target.value)}
+                        placeholder="e.g. Newark, NJ"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Year Taken</Label>
+                      <Input
+                        value={form.yearTaken}
+                        onChange={(e) => updateForm("yearTaken", e.target.value)}
+                        placeholder="e.g. 2023"
+                        type="number"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Photographer <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                      <Input
+                        value={form.photographer}
+                        onChange={(e) => updateForm("photographer", e.target.value)}
+                        placeholder="e.g. J. Smith"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Usage Rights</Label>
+                    <Select value={form.usageRights} onValueChange={(v) => updateForm("usageRights", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select usage rights…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="internal_only">Internal Only</SelectItem>
+                        <SelectItem value="proposal_use">Proposal Use</SelectItem>
+                        <SelectItem value="marketing">Marketing</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               )}
 
               {/* Tags */}
@@ -1505,9 +1588,23 @@ export default function KnowledgeHub() {
                       )}
                       {/* Header */}
                       <div className={`flex items-start gap-3 ${selectionMode ? "pl-6" : ""}`}>
-                        <div className={`p-2 rounded-lg ${cfg.bg} shrink-0`}>
-                          <Icon className={`w-4 h-4 ${cfg.color}`} />
-                        </div>
+                        {doc.docType === "image" && doc.fileUrl ? (
+                          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted">
+                            <img
+                              src={doc.fileUrl}
+                              alt={doc.title}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                                (e.currentTarget.parentElement as HTMLElement).innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\'/><circle cx=\'8.5\' cy=\'8.5\' r=\'1.5\'/><path d=\'m21 15-5-5L5 21\'/></svg></div>';
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className={`p-2 rounded-lg ${cfg.bg} shrink-0`}>
+                            <Icon className={`w-4 h-4 ${cfg.color}`} />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm leading-tight line-clamp-2">{doc.title}</p>
                           <div className="flex flex-wrap gap-1 mt-1">
@@ -1543,7 +1640,7 @@ export default function KnowledgeHub() {
                               <Eye className="w-4 h-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            {doc.processingStatus !== "indexed" && (
+                            {doc.processingStatus !== "indexed" && doc.docType !== "image" && (
                               <DropdownMenuItem
                                 onClick={() => extractMutation.mutate({ id: doc.id })}
                                 disabled={isExtracting || doc.processingStatus === "processing"}
@@ -1684,6 +1781,9 @@ export default function KnowledgeHub() {
                           contractValue: previewDoc.contractValue ?? "",
                           awardYear: previewDoc.awardYear ? String(previewDoc.awardYear) : "",
                           tags: previewDoc.tags ?? "",
+                          photographer: (previewDoc as any).photographer ?? "",
+                          yearTaken: (previewDoc as any).yearTaken ? String((previewDoc as any).yearTaken) : "",
+                          usageRights: ((previewDoc as any).usageRights ?? "") as UploadFormState["usageRights"],
                         });
                         setIsEditing(true);
                       }}
@@ -1787,6 +1887,16 @@ export default function KnowledgeHub() {
               ) : (
               <>
               <div className="space-y-4">
+                {/* Image preview */}
+                {previewDoc.docType === "image" && previewDoc.fileUrl && (
+                  <div className="rounded-xl overflow-hidden border border-border bg-muted max-h-72 flex items-center justify-center">
+                    <img
+                      src={previewDoc.fileUrl}
+                      alt={previewDoc.title}
+                      className="max-w-full max-h-72 object-contain"
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">File</p>
@@ -1842,6 +1952,78 @@ export default function KnowledgeHub() {
                     )}
                   </div>
                 )}
+
+                {/* Image-specific metadata */}
+                {previewDoc.docType === "image" && (() => {
+                  const meta = previewDoc.extractedMeta as Record<string, any> | null;
+                  const photographer = (previewDoc as any).photographer;
+                  const yearTaken = (previewDoc as any).yearTaken;
+                  const usageRights = (previewDoc as any).usageRights;
+                  const qualityRating = (previewDoc as any).imageQuality || meta?.qualityRating;
+                  const structureType = (previewDoc as any).structureType || meta?.structureType;
+                  const hasPersonnel = (previewDoc as any).hasPersonnel ?? meta?.hasPersonnel;
+                  const setting = meta?.setting;
+                  const environment = meta?.environment;
+                  return (
+                    <div className="border-t pt-4 space-y-3">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Image Details</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {structureType && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Structure Type</p>
+                            <p className="mt-0.5 capitalize">{structureType.replace(/-/g, " ")}</p>
+                          </div>
+                        )}
+                        {qualityRating && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Quality</p>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-0.5 ${
+                              qualityRating === "high" ? "bg-emerald-100 text-emerald-700" :
+                              qualityRating === "medium" ? "bg-amber-100 text-amber-700" :
+                              "bg-rose-100 text-rose-700"
+                            }`}>{qualityRating}</span>
+                          </div>
+                        )}
+                        {setting && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Setting</p>
+                            <p className="mt-0.5 capitalize">{setting.replace(/-/g, " ")}</p>
+                          </div>
+                        )}
+                        {environment && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Environment</p>
+                            <p className="mt-0.5 capitalize">{environment}</p>
+                          </div>
+                        )}
+                        {photographer && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Photographer</p>
+                            <p className="mt-0.5">{photographer}</p>
+                          </div>
+                        )}
+                        {yearTaken && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Year Taken</p>
+                            <p className="mt-0.5">{yearTaken}</p>
+                          </div>
+                        )}
+                        {usageRights && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Usage Rights</p>
+                            <p className="mt-0.5 capitalize">{usageRights.replace(/_/g, " ")}</p>
+                          </div>
+                        )}
+                        {hasPersonnel !== undefined && hasPersonnel !== null && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Personnel Visible</p>
+                            <p className="mt-0.5">{hasPersonnel ? "Yes" : "No"}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {previewDoc.tags && (
                   <div className="border-t pt-4">
@@ -1921,7 +2103,7 @@ export default function KnowledgeHub() {
               </div>
 
               <DialogFooter className="flex gap-2 pt-2">
-                {previewDoc.processingStatus !== "indexed" && (
+                {previewDoc.processingStatus !== "indexed" && previewDoc.docType !== "image" && (
                   <Button
                     variant="outline"
                     className="gap-2"

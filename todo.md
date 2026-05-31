@@ -605,3 +605,58 @@
 - [x] Remove apiKey column usage from ai_skills table (keep column for backward compat but ignore it)
 - [x] Cache app_settings lookups (30s TTL) to avoid DB hit on every LLM call
 - [x] Finish native Gemini SDK migration (zero TypeScript errors)
+
+## Proposal Launcher — Granular Progress Indicators (v3.6)
+- [x] Add subStepMessage field to SkillStateEntry type in shared/workflowTypes.ts
+- [x] Write subStepMessage updates into workflowState during shredding loop in rfpSessions.ts ("Shredding file X of Y: filename")
+- [x] Write subStepMessage for rfp_parser LLM call ("Parsing RFP with Gemini...")
+- [x] Poll getById every 2s during executeSkill call in ProposalLaunchpad.tsx
+- [x] Update processingStatus with subStepMessage from workflowState.rfp_parser
+- [x] Make status text more prominent (font-medium, full width, larger text)
+
+## Knowledge Hub Consolidation & Image Upload (v3.7)
+- [ ] Audit ResourceLibrary.tsx: identify any unique doc types or backend procedures not in KnowledgeHub
+- [ ] Remove ResourceLibrary page from App.tsx routes
+- [ ] Remove Resource Library from sidebar navigation in DashboardLayout/AppLayout
+- [ ] Merge any unique Resource Library doc types into Knowledge Hub docType filter
+- [ ] Add image upload support to Knowledge Hub: accept JPG, JPEG, PNG, TIFF
+- [ ] Skip triggerExtract for image uploads; invoke dam_image_caption skill instead
+- [ ] Image upload form fields: Project association, Location, Year taken, Photographer (optional), Usage rights
+- [ ] Store caption as extractedText, full vision output as extractedMeta in assets table
+- [ ] Show image thumbnail in Knowledge Hub grid instead of document icon for image assets
+- [ ] Add 'Images' as a docType filter option in the Knowledge Hub toolbar
+- [ ] Run TypeScript check and verify zero errors
+
+## Image Upload Support — Phase 1 (v2.5)
+- [x] dam.ts: Add "image" to DOC_TYPES and createInput/updateMetaInput schemas
+- [x] dam.ts: Add IMAGE_MIME_TYPES set and isImageMime() helper
+- [x] dam.ts: triggerExtract — image fast-path invokes dam_image_caption skill, stores imageQuality/hasPersonnel/structureType in dedicated columns
+- [x] dam.ts: autoExtract — image fast-path returns image docType defaults without calling document LLM
+- [x] schema.ts: Add imageQuality (text), hasPersonnel (boolean), structureType (text) columns to dam_documents
+- [x] db:push: Migration applied — dam_documents now has 41 columns including all 6 image-specific columns
+- [x] llmSkill.ts: Update dam_image_caption system prompt to AEC image analyst (structureType, constructionPhase, setting, environment, hasPersonnel, qualityRating)
+- [x] DB: dam_image_caption skill system prompt updated via SQL script
+- [x] KnowledgeHub.tsx: Add "image" to DocType union and DOC_TYPE_CONFIG (ImageIcon, violet)
+- [x] KnowledgeHub.tsx: Add photographer/yearTaken/usageRights to UploadFormState and DEFAULT_FORM
+- [x] KnowledgeHub.tsx: File input accept attribute updated to include JPG/PNG/TIFF/WEBP
+- [x] KnowledgeHub.tsx: prepareUpload — image MIME fast-path sets docType=image, skips autoExtract
+- [x] KnowledgeHub.tsx: Image-specific form fields (project, location, year, photographer, usage rights)
+- [x] KnowledgeHub.tsx: Drop zone text updated to include image formats
+- [x] KnowledgeHub.tsx: Card header shows image thumbnail instead of icon for image docType
+- [x] KnowledgeHub.tsx: Extract Content dropdown item hidden for image docType
+- [x] KnowledgeHub.tsx: Preview dialog shows image thumbnail at top for image docType
+- [x] KnowledgeHub.tsx: Preview dialog shows image metadata section (structure type, quality, setting, environment, photographer, year, usage rights, personnel)
+- [x] TypeScript: zero errors after all changes
+
+## Bulk Image Import — Phase 2 (v2.5 — Roadmap Part 1-11)
+- [ ] BulkImageImport.tsx: Entry point — "Bulk Import" button in Knowledge Hub toolbar opens full-screen Sheet
+- [ ] BulkImageImport.tsx: Drop zone — multi-file drag & drop (up to 200 images), folder drag support
+- [ ] BulkImageImport.tsx: Upload stage — fan out POST /api/upload calls in batches of 5, progress bar per file
+- [ ] BulkImageImport.tsx: Captioning queue — after each upload, call triggerExtract; show live caption/quality badge per file
+- [ ] BulkImageImport.tsx: Smart grouping UI — group images by structureType or project, drag to regroup
+- [ ] BulkImageImport.tsx: Group metadata panel — set project, location, year, photographer, usage rights per group
+- [ ] BulkImageImport.tsx: Review panel — thumbnail grid with caption overlay, quality badges, deselect bad images
+- [ ] BulkImageImport.tsx: Confirm & create — call dam.create for each selected image, show success/error summary
+- [ ] KnowledgeHub.tsx: Add "Images" docType filter tab
+- [ ] KnowledgeHub.tsx: Image grid view — larger thumbnails when filtered to images only
+- [ ] KnowledgeHub.tsx: Quality filter (high/medium/low) in toolbar when images filter active
