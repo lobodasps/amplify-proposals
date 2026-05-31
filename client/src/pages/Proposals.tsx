@@ -17,7 +17,7 @@ import { useState } from "react";
 import {
   Plus, Search, FileText, Calendar, DollarSign,
   Sparkles, Brain, Clock, CheckCircle2, AlertCircle,
-  Upload, Download, Eye, ChevronRight, Building2
+  Upload, Download, Eye, ChevronRight, Building2, Trash2
 } from "lucide-react";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -214,8 +214,17 @@ export default function Proposals() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [refreshKey, setRefreshKey] = useState(0);
+  const utils = trpc.useUtils();
 
   const { data: dbProposals, isLoading } = trpc.proposals.list.useQuery(undefined as any);
+
+  const deleteMutation = trpc.proposals.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Proposal deleted");
+      utils.proposals.list.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message ?? "Failed to delete"),
+  });
 
   const proposals = (dbProposals && dbProposals.length > 0)
     ? dbProposals.map((p: any) => ({
@@ -285,7 +294,8 @@ export default function Proposals() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {filtered.map((proposal) => (
-              <Link key={proposal.id} href={`/proposals/${proposal.id}`}>
+              <div key={proposal.id} className="relative group">
+              <Link href={`/proposals/${proposal.id}`}>
                 <Card className="card-hover cursor-pointer h-full">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -346,6 +356,24 @@ export default function Proposals() {
                   </CardContent>
                 </Card>
               </Link>
+              {/* Delete button — visible on hover */}
+              {typeof proposal.id === "string" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 text-destructive hover:bg-destructive/10"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (confirm("Delete this proposal and all linked sessions? This cannot be undone.")) {
+                      deleteMutation.mutate({ id: proposal.id as string });
+                    }
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              </div>
             ))}
           </div>
         )}

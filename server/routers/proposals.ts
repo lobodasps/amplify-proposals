@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { proposals, proposalSections, tailoredResumes } from "../../drizzle/schema";
+import { proposals, proposalSections, tailoredResumes, rfpSessions } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 
@@ -69,6 +69,23 @@ export const proposalsRouter = router({
         .orderBy(desc(proposals.createdAt))
         .limit(1);
       return rows[0] ?? null;
+    }),
+
+  /** Delete a proposal and its linked rfpSessions */
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      // Delete linked rfpSessions
+      await db.delete(rfpSessions).where(eq(rfpSessions.proposalId, input.id));
+      // Delete proposal sections
+      await db.delete(proposalSections).where(eq(proposalSections.proposalId, input.id));
+      // Delete tailored resumes
+      await db.delete(tailoredResumes).where(eq(tailoredResumes.proposalId, input.id));
+      // Delete the proposal itself
+      await db.delete(proposals).where(eq(proposals.id, input.id));
+      return { success: true };
     }),
 
   /** Generate a proposal section — uses the proposal_writer skill */

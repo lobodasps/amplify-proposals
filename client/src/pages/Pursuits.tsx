@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Filter, Target, Calendar, DollarSign, User, Trophy, FileText, AlertCircle, ChevronRight, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, Target, Calendar, DollarSign, User, Trophy, FileText, AlertCircle, ChevronRight, Loader2, Trash2 } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   identify: "Identify", qualify: "Qualify", pursue: "Pursue",
@@ -251,6 +251,14 @@ export default function Pursuits() {
 
   const createProposalMutation = trpc.proposals.create.useMutation();
 
+  const deletePursuitMutation = trpc.pursuits.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Pursuit deleted");
+      utils.pursuits.list.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message ?? "Failed to delete"),
+  });
+
   async function handleOpenProposal(pursuit: any) {
     setOpeningProposalFor(pursuit.id);
     try {
@@ -394,6 +402,20 @@ export default function Pursuits() {
                             Convert to Contract
                           </Button>
                         )}
+                        {/* Delete button */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1 text-xs text-destructive hover:bg-destructive/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm("Delete this pursuit and all linked proposals/sessions? This cannot be undone.")) {
+                              deletePursuitMutation.mutate({ id: p.id });
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
                         {/* Open Proposal button */}
                         <Button
                           size="sm"

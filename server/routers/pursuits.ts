@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { pursuits, tasks } from "../../drizzle/schema";
+import { pursuits, tasks, proposals, rfpSessions, proposalSections, tailoredResumes } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 export const pursuitsRouter = router({
@@ -50,6 +50,28 @@ export const pursuitsRouter = router({
         status: "identify",
       }).returning({ id: pursuits.id });
       return { success: true, pursuitId: rows[0]?.id ?? null };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      // Delete linked proposals and their children
+      const linkedProposals = await db.select({ id: proposals.id }).from(proposals).where(eq(proposals.pursuitId, input.id));
+      for (const p of linkedProposals) {
+        await db.delete(rfpSessions).where(eq(rfpSessions.proposalId, p.id));
+        await db.delete(proposalSections).where(eq(proposalSections.proposalId, p.id));
+        await db.delete(tailoredResumes).where(eq(tailoredResumes.proposalId, p.id));
+      }
+      await db.delete(proposals).where(eq(proposals.pursuitId, input.id));
+      // Delete linked rfpSessions by pursuitId
+      await db.delete(rfpSessions).where(eq(rfpSessions.pursuitId, input.id));
+      // Delete tasks
+      await db.delete(tasks).where(eq(tasks.pursuitId, input.id));
+      // Delete the pursuit itself
+      await db.delete(pursuits).where(eq(pursuits.id, input.id));
+      return { success: true };
     }),
 
   updateStatus: protectedProcedure

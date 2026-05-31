@@ -563,3 +563,9 @@
 - [x] Add rfpSessionId column to pursuits table and save it when GO creates the pursuit
 - [x] Proposal inherits pursuit metadata: copy serviceLines, dueDate, estimatedValue from pursuit to proposal on create
 - [x] Verify Generate Proposal reads rfpSession extractedData and skillOutputs (already wired via linkToProposal)
+
+## Proposals & Pursuits — Delete Actions
+- [x] Add delete mutation to proposals router (cascade-deletes linked rfpSessions, sections, tailored resumes)
+- [x] Add delete button (trash icon) to proposal cards on hover
+- [x] Add delete mutation to pursuits router (cascade-deletes linked proposals, sessions, tasks)
+- [x] Add delete button to pursuit cards
