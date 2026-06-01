@@ -738,4 +738,5 @@
 - [x] Proposal Workspace UI: live progress indicator per section (Preparing context / Generating / Done / Error sub-step messages)
 - [x] Full draft display with inline-editable sections, autosave-on-blur, score badges, auto-switch on completion
 - [x] Zero TypeScript errors, 25/25 tests passing
-- [ ] Push to GitHub
+- [x] Push to GitHub
+- [x] Live generation chain verified: win_themes + technical_writer ran against real DB data (Claude Sonnet 4), all variables populated, no fallbacks
