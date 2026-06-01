@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions } from "../../drizzle/schema";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
@@ -55,28 +55,116 @@ function mergeJson<T extends Record<string, unknown>>(
   return { ...base, ...patch } as T;
 }
 
-/** Build skill-specific LLM variables from session context */
-function buildSkillVariables(
+/**
+ * Build skill-specific LLM variables from session context.
+ * Now async — fetches real data from pursuits, proposals, personnel, projects,
+ * rfpWikis, rfpStructuredIndex, and firm_settings to populate template variables.
+ */
+async function buildSkillVariables(
   skillName: WorkflowSkillName,
   session: typeof rfpSessions.$inferSelect
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const outputs = (session.skillOutputs ?? {}) as SkillOutputs;
   const extracted = (session.extractedData ?? {}) as Partial<ParsedRfpData>;
 
+  // ── Base context from prior skill outputs ─────────────────────────────────
   const rfpContext = outputs.rfp_parser ?? extracted.scopeSummary ?? "RFP context not yet parsed.";
-  const winThemes = outputs.win_themes ?? "Win themes not yet generated.";
+  const winThemesOutput = outputs.win_themes ?? "Win themes not yet generated.";
   const technicalOutline = outputs.technical_outline ?? "Technical outline not yet generated.";
   const technicalApproach = outputs.technical_writer ?? "Technical approach not yet drafted.";
-  const keyPersonnel = outputs.key_personnel ?? "Key personnel section not yet drafted.";
+  const keyPersonnelOutput = outputs.key_personnel ?? "Key personnel section not yet drafted.";
   const pastPerformance = outputs.past_performance ?? "Past performance section not yet drafted.";
 
+  // ── Extracted fields from rfp_parser output ───────────────────────────────
   const agency = extracted.agency ?? "the client agency";
   const rfpTitle = extracted.projectTitle ?? "this proposal";
-  const rfpNumber = extracted.rfpNumber ?? "";
   const evalCriteria = JSON.stringify(extracted.evaluationCriteria ?? []);
   const keyPersonnelReqs = JSON.stringify(extracted.keyPersonnelRequirements ?? []);
   const scopeSummary = extracted.scopeSummary ?? rfpContext;
 
+  // ── Fetch real context from DB (non-blocking — failures return fallbacks) ─
+  const db = await getDb();
+
+  // Pursuit context
+  let pursuitTitle = rfpTitle;
+  let pursuitServiceLines = "";
+  let pursuitValue = "";
+  let pursuitDueDate = "";
+  if (db && session.pursuitId) {
+    const [pursuit] = await db.select().from(pursuits).where(eq(pursuits.id, session.pursuitId)).limit(1);
+    if (pursuit) {
+      pursuitTitle = pursuit.title || rfpTitle;
+      pursuitServiceLines = Array.isArray(pursuit.serviceLines) ? (pursuit.serviceLines as string[]).join(", ") : "";
+      pursuitValue = pursuit.estimatedValue ?? "";
+      pursuitDueDate = pursuit.dueDate ? new Date(pursuit.dueDate).toLocaleDateString() : "";
+    }
+  }
+
+  // Proposal context (for selected personnel/projects)
+  let selectedPersonnelIds: string[] = [];
+  let selectedProjectIds: string[] = [];
+  if (db && session.proposalId) {
+    const [proposal] = await db.select().from(proposals).where(eq(proposals.id, session.proposalId)).limit(1);
+    if (proposal) {
+      selectedPersonnelIds = Array.isArray(proposal.selectedPersonnelIds) ? proposal.selectedPersonnelIds as string[] : [];
+      selectedProjectIds = Array.isArray(proposal.selectedProjectIds) ? proposal.selectedProjectIds as string[] : [];
+    }
+  }
+
+  // Personnel data
+  let personnelSummary = "No personnel selected.";
+  if (db && selectedPersonnelIds.length > 0) {
+    const allPersonnel = await db.select().from(personnel).limit(200);
+    const selected = allPersonnel.filter(p => selectedPersonnelIds.includes(p.id));
+    if (selected.length > 0) {
+      personnelSummary = selected.map(p => {
+        const certs = Array.isArray(p.certifications) ? (p.certifications as string[]).join(", ") : "";
+        const licenses = Array.isArray(p.licenses) ? (p.licenses as string[]).join(", ") : "";
+        return `- ${p.name} | ${p.title ?? "Staff"} | ${p.yearsExperience ?? "?"} yrs exp | Certs: ${certs || "N/A"} | Licenses: ${licenses || "N/A"} | Summary: ${p.summary ?? "N/A"}`;
+      }).join("\n");
+    }
+  }
+
+  // Projects data
+  let projectsSummary = "No projects selected.";
+  if (db && selectedProjectIds.length > 0) {
+    const allProjects = await db.select().from(projects).limit(200);
+    const selected = allProjects.filter(p => selectedProjectIds.includes(p.id));
+    if (selected.length > 0) {
+      projectsSummary = selected.map(p =>
+        `- ${p.name} | Client: ${p.clientName ?? "N/A"} | Location: ${p.location ?? "N/A"}, ${p.state ?? ""} | Value: ${p.contractValue ?? "N/A"} | Service: ${p.serviceLine ?? "N/A"} | Highlights: ${p.highlights ?? "N/A"} | Description: ${p.description ?? "N/A"}`
+      ).join("\n");
+    }
+  }
+
+  // Firm settings (entity-scoped)
+  let firmName = "Our firm";
+  let firmDescription = "AEC firm specializing in public-agency markets in NJ/NY/NYC.";
+  let firmServiceLines = pursuitServiceLines || "Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, Environmental";
+  let firmCertifications = "";
+  if (db) {
+    // Try to load entity-scoped firm settings — fall back to any available row
+    const firmRows = await db.select().from(firmSettings).limit(5);
+    const firmRow = firmRows[0];
+    if (firmRow) {
+      firmName = firmRow.firmName || firmName;
+      firmServiceLines = Array.isArray(firmRow.serviceLines) && firmRow.serviceLines.length > 0
+        ? firmRow.serviceLines.join(", ")
+        : firmServiceLines;
+      firmDescription = `${firmName} — ${firmServiceLines}. Licensed in: ${Array.isArray(firmRow.states) ? firmRow.states.join(", ") : "NJ, NY"}.`;
+    }
+  }
+
+  // RFP Wiki content (if available from prior shred)
+  let rfpWikiContent = "";
+  if (db && session.pursuitId) {
+    const wikiRows = await db.select().from(rfpWikis).where(eq(rfpWikis.pursuitId, session.pursuitId)).limit(1);
+    if (wikiRows[0]?.wikiContent) {
+      rfpWikiContent = wikiRows[0].wikiContent;
+    }
+  }
+
+  // ── Skill-specific variable mapping ───────────────────────────────────────
   switch (skillName) {
     case "rfp_parser": {
       const uploadedFiles = (session.uploadedFiles ?? []) as Array<{ name: string; url: string; mimeType: string }>;
@@ -87,62 +175,61 @@ function buildSkillVariables(
           : "No RFP file uploaded.";
       return {
         rfpText: fileList,
-        firmProfile:
-          "AEC firm specializing in Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, and Environmental services in NJ/NY/NYC public-agency markets.",
+        firmProfile: firmDescription,
       };
     }
 
     case "win_themes":
       return {
-        rfpContext,
+        pursuitTitle,
         agency,
-        rfpTitle,
-        evalCriteria,
-        firmCapabilities:
-          "Special Inspections (NICET-certified), Construction Management, Traffic Engineering, Landscape/Streetscape, Environmental services. 20+ years NJ/NY/NYC public-agency experience. NJDOT, NYSDOT, PANYNJ, NJTA, NYC DOT, NYC DEP approved.",
+        serviceLines: firmServiceLines,
+        value: pursuitValue || extracted.estimatedValue || "Not specified",
+        dueDate: pursuitDueDate || extracted.submissionDeadline || "Not specified",
+        rfpSummary: scopeSummary,
+        evaluationCriteria: evalCriteria,
+        firmStrengths: `${firmDescription}\n\nRelevant Projects:\n${projectsSummary}\n\nKey Personnel:\n${personnelSummary}`,
       };
 
     case "technical_outline":
       return {
         rfpContext,
-        winThemes,
+        winThemes: winThemesOutput,
         agency,
-        rfpTitle,
+        rfpTitle: pursuitTitle,
         evalCriteria,
         scopeSummary,
       };
 
     case "technical_writer":
       return {
-        rfpContext,
-        winThemes,
-        technicalOutline,
         agency,
-        rfpTitle,
-        firmExperience:
-          "Our firm brings 20+ years of NJ/NY/NYC public-agency AEC experience. We have successfully delivered Special Inspections, CM, Traffic Engineering, and Environmental services for NJDOT, NYSDOT, PANYNJ, NJTA, NYC DOT, and NYC DEP.",
-        wordLimit: "800-1200 words",
+        pursuitTitle,
+        scopeSummary,
+        serviceLines: firmServiceLines,
+        evaluationCriteria: evalCriteria,
+        winThemes: winThemesOutput,
+        relevantProjects: projectsSummary,
+        rfpRequirements: rfpWikiContent || rfpContext,
       };
 
     case "key_personnel":
       return {
-        rfpContext,
-        keyPersonnelReqs,
         agency,
-        rfpTitle,
-        availableStaff:
-          "Staff data will be pulled from the Timekeeping skills matrix in a future integration. For now, reference firm's qualified personnel with relevant certifications.",
+        pursuitTitle,
+        serviceLines: firmServiceLines,
+        evaluationCriteria: evalCriteria,
+        rfpPersonnelRequirements: keyPersonnelReqs,
+        selectedPersonnel: personnelSummary,
       };
 
     case "past_performance":
       return {
-        rfpContext,
         agency,
-        rfpTitle,
-        evalCriteria,
-        pastProjectsContext:
-          "Project briefs will be pulled from the DAM in a future integration. For now, reference firm's relevant completed projects in NJ/NY/NYC public-agency markets.",
-        projectCount: "5",
+        pursuitTitle,
+        serviceLines: firmServiceLines,
+        evaluationCriteria: evalCriteria,
+        selectedProjects: projectsSummary,
       };
 
     case "fee_estimator":
@@ -150,10 +237,10 @@ function buildSkillVariables(
         rfpContext,
         technicalOutline,
         agency,
-        rfpTitle,
+        rfpTitle: pursuitTitle,
         scopeSummary,
         laborCategories:
-          "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative. Rates from Timekeeping system (future integration).",
+          "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative.",
       };
 
     case "proposal_scorer":
@@ -161,28 +248,31 @@ function buildSkillVariables(
         rfpContext,
         evalCriteria,
         agency,
-        rfpTitle,
+        rfpTitle: pursuitTitle,
         technicalApproach,
-        keyPersonnel,
+        keyPersonnel: keyPersonnelOutput,
         pastPerformance,
-        winThemes,
+        winThemes: winThemesOutput,
         scoreTarget: "full proposal draft",
       };
 
     default:
-      return { rfpContext, agency, rfpTitle };
+      return { rfpContext, agency, rfpTitle: pursuitTitle };
   }
 }
 
-/** Map WorkflowSkillName to the aiSkills.skillType used for LLM config lookup */
+/**
+ * Map WorkflowSkillName to the dedicated aiSkills.skillType for LLM config lookup.
+ * Each workflow step now has its own dedicated skill with tailored prompts.
+ */
 function mapToSkillType(skillName: WorkflowSkillName): string {
   const mapping: Record<WorkflowSkillName, string> = {
     rfp_parser: "rfp_shredder",
-    win_themes: "go_no_go_advisor",
-    technical_outline: "proposal_writer",
-    technical_writer: "proposal_writer",
-    key_personnel: "resume_tailor",
-    past_performance: "proposal_writer",
+    win_themes: "win_theme_generator",
+    technical_outline: "technical_approach_writer",
+    technical_writer: "technical_approach_writer",
+    key_personnel: "key_personnel_writer",
+    past_performance: "project_experience_writer",
     fee_estimator: "proposal_writer",
     proposal_scorer: "proposal_scorer",
   };
@@ -319,17 +409,14 @@ function getResponseFormat(skillName: WorkflowSkillName) {
   return undefined;
 }
 
-/** Get system prompt override for workflow-specific skills */
+/**
+ * Get system prompt override for workflow-specific skills.
+ * Now that each workflow step maps to a dedicated skill type with its own system prompt,
+ * overrides are only needed for skills that reuse a generic skill type (fee_estimator → proposal_writer).
+ */
 function getSystemOverride(skillName: WorkflowSkillName): string | undefined {
   const overrides: Partial<Record<WorkflowSkillName, string>> = {
-    win_themes: `You are an expert AEC proposal strategist specializing in NJ/NY/NYC public-agency markets.
-Generate 3-5 differentiated win themes for this proposal. Each theme must:
-1. Directly address a key evaluation criterion
-2. Be specific to this firm's capabilities (not generic)
-3. Include evidence from past performance
-4. Be expressed as a compelling, memorable statement
-Return as a numbered list with theme title, supporting evidence, and how it addresses the RFP.`,
-
+    // technical_outline reuses technical_approach_writer but needs an outline-specific system prompt
     technical_outline: `You are an expert AEC proposal writer. Create a detailed section-by-section outline for the Technical Approach.
 Each section must:
 1. Map directly to an RFP evaluation criterion
@@ -337,24 +424,6 @@ Each section must:
 3. Reference the win themes where applicable
 4. Note any specific RFP language to mirror
 Return as a structured outline with section headers and bullet points.`,
-
-    key_personnel: `You are an expert AEC proposal writer specializing in key personnel sections.
-Draft the Key Personnel section based on RFP requirements.
-For each required role:
-1. State the qualifications required by the RFP
-2. Describe the type of professional needed (certifications, experience)
-3. Note how the firm's staff meets or exceeds requirements
-4. Format for SF-330 Section E compatibility
-Return as a professional proposal section.`,
-
-    past_performance: `You are an expert AEC proposal writer specializing in past performance sections.
-Draft the Past Performance section based on RFP requirements.
-For each project:
-1. Project name, client, location, contract value
-2. Scope description (2-3 sentences)
-3. Relevance to this RFP (specific connection to evaluation criteria)
-4. Key outcomes and measurable results
-Format for SF-330 Section F compatibility. Return as a professional proposal section.`,
 
     fee_estimator: `You are an expert AEC fee estimator with deep knowledge of NJ/NY/NYC public-agency contract structures.
 Generate a preliminary fee estimate based on the project scope.
@@ -838,7 +907,7 @@ export const rfpSessionsRouter = router({
         let usedProvider = "unknown";
 
         try {
-        const variables = buildSkillVariables(input.skillName, session);
+        const variables = await buildSkillVariables(input.skillName, session);
         const skillType = mapToSkillType(input.skillName) as Parameters<typeof invokeLLMWithSkill>[0]["skillType"];
         const responseFormat = getResponseFormat(input.skillName);
         const systemOverride = getSystemOverride(input.skillName);

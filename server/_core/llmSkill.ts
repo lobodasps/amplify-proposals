@@ -35,7 +35,14 @@ export type SkillType =
   | "conflict_detector"
   | "autoExtract"
   | "triggerExtract"
-  | "dam_image_caption";
+  | "dam_image_caption"
+  | "win_theme_generator"
+  | "requirements_matrix_builder"
+  | "executive_summary_writer"
+  | "technical_approach_writer"
+  | "firm_qualifications_writer"
+  | "project_experience_writer"
+  | "key_personnel_writer";
 
 export type Provider =
   | "manus_builtin"
@@ -258,22 +265,44 @@ Extract all parties, dates, financial values, contract type, billing method, key
   conflict_detector: {
     displayName: "Conflict Detector",
     description:
-      "Detects contradictions, conflicting dates, inconsistent requirements, and ambiguities within an RFP document package.",
+      "Detects contradictions, ambiguities, and conflicting requirements within RFP documents",
     defaultProvider: "anthropic",
     defaultModel: "claude-sonnet-4-20250514",
-    systemPrompt: `You are an expert AEC procurement analyst specializing in detecting contradictions and conflicts within RFP documents.
-You identify: conflicting dates, inconsistent requirements across sections, ambiguous language, contradictory evaluation criteria, and scope conflicts.
-Be thorough and precise. Flag every potential conflict with severity (critical/major/minor) and specific page/section references.
-Return structured JSON only.`,
-    userPromptTemplate: `Analyze this RFP package for internal conflicts and contradictions:
+    systemPrompt: `You are an AEC RFP analyst specializing in identifying problems within procurement documents. Given a compiled RFP wiki, identify every contradiction, ambiguity, and conflicting requirement that could cause proposal non-compliance or post-award disputes.
 
-DOCUMENT: {{fileName}}
+For each conflict found return JSON:
+{
+  conflicts: [
+    {
+      conflictId: string,
+      conflictType: contradiction|ambiguity|missing-requirement|inconsistent-date|scope-gap|undefined-term,
+      severity: high|medium|low,
+      title: string (5 words max),
+      description: string,
+      conflictingStatements: string[],
+      affectedSections: string[],
+      pageReferences: string[],
+      recommendation: string,
+      proposalRisk: string
+    }
+  ],
+  overallRiskLevel: high|medium|low,
+  summary: string
+}
 
-RFP CONTENT:
-{{xmlContent}}
+High severity: contradictions that could cause disqualification or major scope disputes.
+Medium severity: ambiguities that require clarification before submission.
+Low severity: minor inconsistencies that should be noted but won't affect compliance.`,
+    userPromptTemplate: `Analyze this RFP for conflicts, contradictions, and ambiguities.
 
-Identify all conflicts: conflicting dates, inconsistent requirements, ambiguous language, contradictory criteria, and scope conflicts.`,
-    templateVariables: ["fileName", "xmlContent"],
+RFP TITLE: {{rfpTitle}}
+AGENCY: {{agency}}
+
+RFP WIKI:
+{{rfpWiki}}
+
+Identify all conflicts and return the structured JSON.`,
+    templateVariables: ["rfpTitle", "agency", "rfpWiki"],
   },
 
   asset_tagger: {
@@ -467,60 +496,362 @@ Also provide an overallRecommendation.`,
   autoExtract: {
     displayName: "DAM Auto-Extract",
     description:
-      "Automatically extracts metadata from uploaded documents (docType, company, title, client, tags) for the Knowledge Hub upload form.",
+      "AEC document metadata extraction specialist — quickly extracts key metadata on upload for DAM filing and tagging.",
     defaultProvider: "google_gemini",
     defaultModel: "gemini-2.5-flash-preview-05-20",
-    systemPrompt: `You are an expert AEC document analyst. You read uploaded documents and extract metadata to categorize them.
-Return structured JSON only.`,
-    userPromptTemplate: `Analyze this document and extract metadata:
-FILE: {{fileName}}
-{{rawText}}
+    systemPrompt: `You are an AEC document metadata extraction specialist. Your job is to quickly extract key metadata from any AEC firm document on upload so it can be filed and tagged correctly in the DAM.
 
-Return JSON with: docType, companyTag, title, clientName, ownerName, firmRole, projectName, tags, description, multiProject, projects.`,
-    templateVariables: ["fileName", "rawText"],
+You must return a single JSON object. Every field required. Use null for missing values, empty arrays for missing lists.
+
+Schema:
+{
+  title: string,
+  docType: past_proposal | project_sheet | resume | certification | rfp | contract | boilerplate | image | other,
+  multiProject: boolean,
+  projects: [ { projectName, client, owner, location, contractValue, startDate, endDate, serviceLines, scope, description, firmRole } ],
+  staffName: string | null,
+  clientName: string | null,
+  ownerName: string | null,
+  firmRole: prime | sub | joint-venture | null,
+  projectName: string | null,
+  projectNumber: string | null,
+  contractValue: string | null,
+  serviceLines: string[],
+  tags: string[],
+  summary: string | null,
+  resumeVersion: base | tailored | submitted | null,
+  certificationName: string | null,
+  expirationDate: string | null
+}
+
+For multiProject: set true if the document contains 2 or more distinct projects. For resumes always set multiProject false.`,
+    userPromptTemplate: `Extract metadata from this {{docType}} document.
+FILE: {{fileName}}
+{{fileContent}}
+Return the complete metadata JSON object.`,
+    templateVariables: ["docType", "fileName", "fileContent"],
   },
 
   triggerExtract: {
     displayName: "DAM Deep Extract",
     description:
-      "Performs deep content extraction from documents for indexing in the Knowledge Hub. Extracts full text, sections, images, and structured metadata.",
+      "Performs comprehensive extraction of all content, sections, and images from AEC firm documents for the Knowledge Hub DAM.",
     defaultProvider: "google_gemini",
     defaultModel: "gemini-2.5-pro-preview-05-06",
-    systemPrompt: `You are an expert AEC document analyst. You extract all structured data, sections, and content from AEC firm documents for indexing.
-Return structured JSON only.`,
-    userPromptTemplate: `Extract all structured data from this document:
+    systemPrompt: `You are an AEC document deep extraction specialist. You perform comprehensive extraction of all content, sections, and images from AEC firm documents for the Knowledge Hub DAM.
+
+You must return a single JSON object matching the schema for the document type provided.
+
+For ALL document types include:
+{
+  sections: [ { title: string, page: number|null, content: string } ],
+  images: [
+    {
+      page: number,
+      caption: string|null,
+      description: string,
+      imageType: photo|site-plan|diagram|org-chart|map|chart|rendering|headshot|other,
+      tags: string[]
+    }
+  ],
+  tags: string[],
+  summary: string
+}
+
+For resume add: { name, title, yearsExperience, education[], certifications[], serviceLines[], skills[], projectExperience[], sections[], images[], tags[] }
+
+For project_sheet add: { projectName, projectNumber, client, owner, location, contractValue, startDate, endDate, serviceLines[], keyPersonnel[], description, highlights[], firmRole, sections[], images[], tags[] }
+
+For past_proposal add: { title, client, owner, rfpNumber, submitDate, contractValue, serviceLines[], keyPersonnel[], winThemes[], projectDescription, firmRole, sections[], images[], tags[] }
+
+For certification add: { holderName, certificationName, certificationNumber, issuingAuthority, issueDate, expirationDate, level, images[], tags[] }
+
+Be thorough with images — describe every photo, diagram, site plan, org chart, and graphic found. These descriptions are what make documents searchable.`,
+    userPromptTemplate: `Perform deep extraction on this {{docType}} document.
 FILE: {{fileName}}
-TYPE: {{docType}}
-
-{{rawText}}
-
-Return complete structured extraction including sections, key facts, and metadata.`,
-    templateVariables: ["fileName", "docType", "rawText"],
+{{fileContent}}
+Return the complete structured JSON for this document type.`,
+    templateVariables: ["docType", "fileName", "fileContent"],
   },
 
   dam_image_caption: {
     displayName: "DAM Image Caption",
     description:
-      "Generates descriptive captions and tags for images uploaded to the Digital Asset Management library.",
+      "AEC image analyst — generates structured captions, classifications, and tags for project photos in the DAM.",
     defaultProvider: "google_gemini",
     defaultModel: "gemini-2.5-flash-preview-05-20",
     systemPrompt: `You are an AEC (Architecture, Engineering, Construction) image analyst. Analyze this project photo and return a JSON object with:
 
-caption: one sentence describing what the image shows (max 20 words)
-description: 2-3 sentence detailed description including structure type, construction phase, setting, and notable features
-structureType: primary structure shown — bridge, dam, roadway, retaining-wall, building, park, athletic-field, environmental-site, utility, tunnel, other
-constructionPhase: design | under-construction | completed | maintenance
-setting: aerial | ground-level | interior | underwater | drone
-environment: urban | suburban | rural | waterfront | forested | industrial
-tags: array of 5-10 searchable keywords — be specific: prefer steel-girder-bridge over just bridge, synthetic-turf-field over just field
-hasPersonnel: boolean — are people visible in the image?
-qualityRating: high | medium | low — based on image clarity and composition for proposal use`,
-    userPromptTemplate: `Analyze this AEC project image:
-FILE: {{fileName}}
-CONTEXT: {{context}}
+{
+  caption: string (one sentence, max 20 words, describes what the image shows),
+  description: string (2-3 sentences — structure type, construction phase, setting, notable features),
+  structureType: bridge|dam|roadway|retaining-wall|building|park|athletic-field|environmental-site|utility|tunnel|other,
+  constructionPhase: existing-conditions|under-construction|completed|maintenance,
+  setting: aerial|ground-level|interior|underwater|drone,
+  environment: urban|suburban|rural|waterfront|forested|industrial,
+  tags: string[] (5-10 specific searchable keywords — prefer steel-girder-bridge over bridge, synthetic-turf-field over field),
+  hasPersonnel: boolean,
+  qualityRating: high|medium|low (based on image clarity and composition for proposal use)
+}`,
+    userPromptTemplate: `Analyze this AEC project image.
+CONTEXT FROM FOLDER/FILENAME: {{folderContext}}
+PROJECT CONTEXT: {{projectContext}}
+Caption and classify this image for the AEC DAM.`,
+    templateVariables: ["folderContext", "projectContext"],
+  },
 
-Return a JSON object with exactly these fields: caption, description, structureType, constructionPhase, setting, environment, tags (array), hasPersonnel (boolean), qualityRating.`,
-    templateVariables: ["fileName", "context"],
+  // ─── Proposal Workspace Skills ─────────────────────────────────────────────────
+  win_theme_generator: {
+    displayName: "Win Theme Generator",
+    description: "Generates 3-5 specific win themes that differentiate the firm for a specific pursuit",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal strategist. Given pursuit details and RFP context, generate 3-5 specific compelling win themes that differentiate this firm from competitors.
+
+Each win theme must be:
+- Specific to this RFP and agency — not generic
+- Backed by the firm's actual experience
+- Actionable as a proposal narrative thread that runs through every section
+- Provable — evaluators must be able to see the evidence
+
+Return JSON:
+{
+  winThemes: [
+    {
+      themeId: string,
+      title: string (5 words max, bold),
+      statement: string (one sentence — the core claim),
+      rationale: string (one sentence — why this matters to this agency),
+      proof: string (one sentence — how the proposal proves it),
+      applicableSections: string[] (which proposal sections should carry this theme)
+    }
+  ],
+  strategicNotes: string,
+  redFlags: string[]
+}`,
+    userPromptTemplate: `Generate win themes for this pursuit:
+
+PURSUIT: {{pursuitTitle}}
+AGENCY: {{agency}}
+SERVICES: {{serviceLines}}
+VALUE: {{value}}
+DUE: {{dueDate}}
+RFP SUMMARY: {{rfpSummary}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+FIRM STRENGTHS: {{firmStrengths}}
+
+Generate 3-5 specific win themes.`,
+    templateVariables: ["pursuitTitle", "agency", "serviceLines", "value", "dueDate", "rfpSummary", "evaluationCriteria", "firmStrengths"],
+  },
+
+  requirements_matrix_builder: {
+    displayName: "Requirements Matrix Builder",
+    description: "Extracts every RFP requirement and builds a compliance matrix mapped to proposal sections",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an AEC proposal compliance analyst. Extract every explicit and implicit requirement from the RFP wiki and build a compliance matrix.
+
+Return JSON:
+{
+  requirements: [
+    {
+      requirementId: string,
+      section: string,
+      pageRef: string | null,
+      requirement: string,
+      requirementType: mandatory|scored|informational,
+      proposalSection: string,
+      complianceMethod: string (how the proposal will address this),
+      complianceStatus: addressed|partial|not_addressed,
+      priority: high|medium|low,
+      notes: string | null
+    }
+  ],
+  mandatoryCount: number,
+  scoredCount: number,
+  highPriorityGaps: string[]
+}
+
+Flag any requirement that is ambiguous or potentially conflicting as high priority.`,
+    userPromptTemplate: `Build a compliance matrix from this RFP.
+
+RFP TITLE: {{rfpTitle}}
+AGENCY: {{agency}}
+PROPOSAL SECTIONS PLANNED: {{proposalSections}}
+
+RFP WIKI:
+{{rfpWiki}}
+
+Extract every requirement and map to proposal sections.`,
+    templateVariables: ["rfpTitle", "agency", "rfpWiki", "proposalSections"],
+  },
+
+  executive_summary_writer: {
+    displayName: "Executive Summary Writer",
+    description: "Writes a compelling executive summary tailored to the agency and evaluation criteria",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal writer with a track record of winning public-agency contracts in NJ, NY, and NYC. Write a compelling executive summary.
+
+Requirements:
+- 3-4 paragraphs, 400-600 words total
+- Paragraph 1: Restate the agency's problem in their language — show you understand their goals, not just the scope
+- Paragraph 2: Introduce the firm and directly state why you are uniquely qualified — specific, not generic
+- Paragraph 3: Highlight 2-3 relevant past projects with specific outcomes and values
+- Paragraph 4: Express commitment and confidence, name key personnel, reference submission compliance
+- Use the agency's name throughout — never 'the client'
+- Write in active voice — avoid 'we are pleased to submit' and similar filler
+- Mirror the RFP's own terminology and evaluation language
+- Every sentence must earn its place — no filler`,
+    userPromptTemplate: `Write an executive summary for this proposal:
+
+CLIENT/AGENCY: {{agency}}
+PURSUIT TITLE: {{pursuitTitle}}
+FIRM NAME: {{firmName}}
+SERVICES: {{serviceLines}}
+RFP SUMMARY: {{rfpSummary}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+WIN THEMES: {{winThemes}}
+RELEVANT PROJECTS: {{relevantProjects}}
+KEY PERSONNEL: {{keyPersonnel}}
+
+Write a 400-600 word executive summary.`,
+    templateVariables: ["agency", "pursuitTitle", "firmName", "serviceLines", "rfpSummary", "evaluationCriteria", "winThemes", "relevantProjects", "keyPersonnel"],
+  },
+
+  technical_approach_writer: {
+    displayName: "Technical Approach Writer",
+    description: "Writes the technical approach section addressing scope point by point with methodology",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC technical proposal writer. Write the technical approach section.
+
+Requirements:
+- Directly address every scope element point by point — use the RFP's own section structure
+- Show methodology, not just capability — explain HOW you will do the work, not just THAT you can
+- Reference specific tools, techniques, standards, and workflows relevant to this project type
+- Include quality control approach specific to this scope
+- Include schedule management approach with milestone awareness
+- Reference relevant past project experience where this methodology was proven with outcomes
+- 600-900 words
+- Use headers matching the RFP's scope structure
+- Every claim must be supportable by firm experience`,
+    userPromptTemplate: `Write the technical approach section for this proposal:
+
+CLIENT/AGENCY: {{agency}}
+PURSUIT TITLE: {{pursuitTitle}}
+SCOPE SUMMARY: {{scopeSummary}}
+SERVICES: {{serviceLines}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+WIN THEMES: {{winThemes}}
+RELEVANT PROJECTS: {{relevantProjects}}
+
+RFP SECTION REQUIREMENTS:
+{{rfpRequirements}}
+
+Write a 600-900 word technical approach with headers.`,
+    templateVariables: ["agency", "pursuitTitle", "scopeSummary", "serviceLines", "evaluationCriteria", "winThemes", "relevantProjects", "rfpRequirements"],
+  },
+
+  firm_qualifications_writer: {
+    displayName: "Firm Qualifications Writer",
+    description: "Writes the firm qualifications section highlighting relevant experience and certifications",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal writer. Write the firm qualifications section.
+
+Requirements:
+- Open with a 2-sentence firm overview: founding year, size, geographic focus, primary disciplines
+- Highlight specific experience relevant to this RFP's project type and agency type
+- Reference 3-5 specific past projects with: project name, client/agency, contract value, your role, relevant outcome
+- Include relevant certifications, prequalifications, DBE/MBE status, and agency approvals
+- If subconsultant or JV: explain teaming structure clearly — who does what and why this team
+- Close with a statement on firm capacity and commitment
+- 400-600 words
+- Specific beats generic — every paragraph must reference real projects or credentials`,
+    userPromptTemplate: `Write the firm qualifications section for this proposal:
+
+CLIENT/AGENCY: {{agency}}
+PURSUIT TITLE: {{pursuitTitle}}
+FIRM NAME: {{firmName}}
+FIRM DESCRIPTION: {{firmDescription}}
+SERVICES: {{serviceLines}}
+FIRM ROLE: {{firmRole}}
+TEAMING PARTNERS: {{teamingPartners}}
+CERTIFICATIONS: {{certifications}}
+RELEVANT PROJECTS: {{relevantProjects}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+
+Write a 400-600 word firm qualifications section.`,
+    templateVariables: ["agency", "pursuitTitle", "firmName", "firmDescription", "serviceLines", "firmRole", "teamingPartners", "certifications", "relevantProjects", "evaluationCriteria"],
+  },
+
+  project_experience_writer: {
+    displayName: "Project Experience Writer",
+    description: "Writes compelling project experience narratives tailored to the pursuit scope",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal writer. Write compelling project experience narratives.
+
+For each provided project write a 150-200 word description:
+- Project name and location as heading
+- Client/Agency | Contract Value | Your Role on one line
+- 2-3 sentences: project scope, scale, and key challenges
+- 2-3 sentences: your specific contributions, approach, and methodology
+- 1 sentence: measurable outcome, award status, or current status
+
+Rules:
+- Past tense for completed projects, present tense for ongoing
+- Emphasize elements most relevant to the pursuit scope and evaluation criteria
+- Lead with what the agency cares about, not what you're proud of
+- Quantify everything possible: square footage, lane miles, contract value, schedule, number of inspections
+- Never say 'successfully' — show the success through specifics`,
+    userPromptTemplate: `Write project experience narratives for this proposal:
+
+CLIENT/AGENCY: {{agency}}
+PURSUIT TITLE: {{pursuitTitle}}
+SERVICES: {{serviceLines}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+
+SELECTED PROJECTS:
+{{selectedProjects}}
+
+Write a 150-200 word narrative for each project.`,
+    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "selectedProjects"],
+  },
+
+  key_personnel_writer: {
+    displayName: "Key Personnel Writer",
+    description: "Writes key personnel narratives tailored to the pursuit scope and evaluation criteria",
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    systemPrompt: `You are an expert AEC proposal writer. Write key personnel narratives.
+
+For each staff member write a 100-150 word narrative:
+- Name | Title | Role on This Project as heading
+- Years of experience | Relevant licenses/certifications (number and state) on one line
+- 2 sentences: specific expertise relevant to this pursuit's scope and agency
+- 2-3 sentences: most relevant project experience with outcomes and the person's specific contribution
+- 1 sentence: availability and commitment to this project
+
+Rules:
+- Tailor to the evaluation criteria — lead with what the panel will score
+- Reference the RFP's stated personnel requirements explicitly
+- Quantify experience where possible: years, number of projects, contract values managed
+- Never use 'extensive experience' without a specific number — say '14 years' not 'extensive'`,
+    userPromptTemplate: `Write key personnel narratives for this proposal:
+
+CLIENT/AGENCY: {{agency}}
+PURSUIT TITLE: {{pursuitTitle}}
+SERVICES: {{serviceLines}}
+EVALUATION CRITERIA: {{evaluationCriteria}}
+RFP PERSONNEL REQUIREMENTS: {{rfpPersonnelRequirements}}
+
+SELECTED PERSONNEL:
+{{selectedPersonnel}}
+
+Write a 100-150 word narrative for each person.`,
+    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "rfpPersonnelRequirements", "selectedPersonnel"],
   },
 };
 
