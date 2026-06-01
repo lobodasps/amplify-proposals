@@ -242,6 +242,11 @@ export const pursuits = pgTable("pursuits", {
   isWon: boolean("isWon"),
   awardedValue: numeric("awardedValue"),
   lostReason: text("lostReason"),
+  // Asset matching selections (Step 3 of Launchpad)
+  selectedProjectIds: jsonb("selectedProjectIds").$type<string[]>(),
+  selectedPastProposalIds: jsonb("selectedPastProposalIds").$type<string[]>(),
+  selectedPersonnel: jsonb("selectedPersonnel").$type<Array<{ damDocumentId: string; staffName: string; role: string }>>(),
+
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 });

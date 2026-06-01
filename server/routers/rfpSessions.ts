@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections } from "../../drizzle/schema";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
@@ -100,20 +100,48 @@ async function buildSkillVariables(
     }
   }
 
-  // Proposal context (for selected personnel/projects)
-  let selectedPersonnelIds: string[] = [];
-  let selectedProjectIds: string[] = [];
-  if (db && session.proposalId) {
-    const [proposal] = await db.select().from(proposals).where(eq(proposals.id, session.proposalId)).limit(1);
-    if (proposal) {
-      selectedPersonnelIds = Array.isArray(proposal.selectedPersonnelIds) ? proposal.selectedPersonnelIds as string[] : [];
-      selectedProjectIds = Array.isArray(proposal.selectedProjectIds) ? proposal.selectedProjectIds as string[] : [];
+  // ── Asset selections from pursuit (Step 3 Launchpad) ─────────────────────
+  let pursuitSelectedProjectIds: string[] = [];
+  let pursuitSelectedPastProposalIds: string[] = [];
+  let pursuitSelectedPersonnel: Array<{ damDocumentId: string; staffName: string; role: string }> = [];
+  if (db && session.pursuitId) {
+    const [pursuit] = await db.select().from(pursuits).where(eq(pursuits.id, session.pursuitId)).limit(1);
+    if (pursuit) {
+      pursuitSelectedProjectIds = Array.isArray(pursuit.selectedProjectIds) ? pursuit.selectedProjectIds as string[] : [];
+      pursuitSelectedPastProposalIds = Array.isArray(pursuit.selectedPastProposalIds) ? pursuit.selectedPastProposalIds as string[] : [];
+      pursuitSelectedPersonnel = Array.isArray(pursuit.selectedPersonnel) ? pursuit.selectedPersonnel as typeof pursuitSelectedPersonnel : [];
     }
   }
 
-  // Personnel data
+  // Fallback: legacy proposal-based selections (if pursuit has none)
+  let selectedPersonnelIds: string[] = [];
+  let selectedProjectIds: string[] = [];
+  if (pursuitSelectedProjectIds.length === 0 && pursuitSelectedPersonnel.length === 0) {
+    if (db && session.proposalId) {
+      const [proposal] = await db.select().from(proposals).where(eq(proposals.id, session.proposalId)).limit(1);
+      if (proposal) {
+        selectedPersonnelIds = Array.isArray(proposal.selectedPersonnelIds) ? proposal.selectedPersonnelIds as string[] : [];
+        selectedProjectIds = Array.isArray(proposal.selectedProjectIds) ? proposal.selectedProjectIds as string[] : [];
+      }
+    }
+  }
+
+  // Personnel data — prefer pursuit DAM-based selections
   let personnelSummary = "No personnel selected.";
-  if (db && selectedPersonnelIds.length > 0) {
+  if (pursuitSelectedPersonnel.length > 0 && db) {
+    // Hydrate from DAM documents (extractedMeta has resume details)
+    const damIds = pursuitSelectedPersonnel.map(p => p.damDocumentId);
+    const allDam = await db.select().from(damDocuments).limit(200);
+    const damMap = new Map(allDam.filter(d => damIds.includes(d.id)).map(d => [d.id, d]));
+    personnelSummary = pursuitSelectedPersonnel.map(p => {
+      const doc = damMap.get(p.damDocumentId);
+      const meta = doc?.extractedMeta as Record<string, any> | null;
+      const certs = meta?.certifications ? (Array.isArray(meta.certifications) ? meta.certifications.join(", ") : meta.certifications) : "N/A";
+      const yearsExp = meta?.yearsExperience ?? "?";
+      const title = meta?.title ?? p.role ?? "Staff";
+      return `- ${p.staffName} | ${title} | Role: ${p.role || "TBD"} | ${yearsExp} yrs exp | Certs: ${certs} | Summary: ${meta?.summary ?? doc?.extractedText?.slice(0, 200) ?? "N/A"}`;
+    }).join("\n");
+  } else if (db && selectedPersonnelIds.length > 0) {
     const allPersonnel = await db.select().from(personnel).limit(200);
     const selected = allPersonnel.filter(p => selectedPersonnelIds.includes(p.id));
     if (selected.length > 0) {
@@ -125,15 +153,38 @@ async function buildSkillVariables(
     }
   }
 
-  // Projects data
+  // Projects data — prefer pursuit DAM-based project sheet selections
   let projectsSummary = "No projects selected.";
-  if (db && selectedProjectIds.length > 0) {
+  if (pursuitSelectedProjectIds.length > 0 && db) {
+    // Hydrate from DAM documents (project sheets have extractedMeta with project details)
+    const allDam = await db.select().from(damDocuments).limit(200);
+    const selected = allDam.filter(d => pursuitSelectedProjectIds.includes(d.id));
+    if (selected.length > 0) {
+      projectsSummary = selected.map(d => {
+        const meta = d.extractedMeta as Record<string, any> | null;
+        return `- ${d.projectName || d.title} | Client: ${d.clientName ?? "N/A"} | Owner: ${d.ownerName ?? "N/A"} | Value: ${d.contractValue ?? meta?.contractValue ?? "N/A"} | Service: ${d.tags ?? "N/A"} | Highlights: ${meta?.highlights ?? "N/A"} | Description: ${meta?.description ?? d.extractedText?.slice(0, 300) ?? "N/A"}`;
+      }).join("\n");
+    }
+  } else if (db && selectedProjectIds.length > 0) {
     const allProjects = await db.select().from(projects).limit(200);
     const selected = allProjects.filter(p => selectedProjectIds.includes(p.id));
     if (selected.length > 0) {
       projectsSummary = selected.map(p =>
         `- ${p.name} | Client: ${p.clientName ?? "N/A"} | Location: ${p.location ?? "N/A"}, ${p.state ?? ""} | Value: ${p.contractValue ?? "N/A"} | Service: ${p.serviceLine ?? "N/A"} | Highlights: ${p.highlights ?? "N/A"} | Description: ${p.description ?? "N/A"}`
       ).join("\n");
+    }
+  }
+
+  // Past proposals data (new — from pursuit selections)
+  let pastProposalsSummary = "No past proposals selected.";
+  if (pursuitSelectedPastProposalIds.length > 0 && db) {
+    const allDam = await db.select().from(damDocuments).limit(200);
+    const selected = allDam.filter(d => pursuitSelectedPastProposalIds.includes(d.id));
+    if (selected.length > 0) {
+      pastProposalsSummary = selected.map(d => {
+        const meta = d.extractedMeta as Record<string, any> | null;
+        return `- ${d.title} | Client: ${d.clientName ?? "N/A"} | Value: ${d.contractValue ?? "N/A"} | Tags: ${d.tags ?? "N/A"} | Summary: ${meta?.summary ?? d.extractedText?.slice(0, 300) ?? "N/A"}`;
+      }).join("\n");
     }
   }
 
@@ -188,7 +239,7 @@ async function buildSkillVariables(
         dueDate: pursuitDueDate || extracted.submissionDeadline || "Not specified",
         rfpSummary: scopeSummary,
         evaluationCriteria: evalCriteria,
-        firmStrengths: `${firmDescription}\n\nRelevant Projects:\n${projectsSummary}\n\nKey Personnel:\n${personnelSummary}`,
+        firmStrengths: `${firmDescription}\n\nRelevant Projects:\n${projectsSummary}\n\nKey Personnel:\n${personnelSummary}\n\nPast Proposals:\n${pastProposalsSummary}`,
       };
 
     case "technical_outline":
@@ -230,6 +281,7 @@ async function buildSkillVariables(
         serviceLines: firmServiceLines,
         evaluationCriteria: evalCriteria,
         selectedProjects: projectsSummary,
+        pastProposals: pastProposalsSummary,
       };
 
     case "fee_estimator":

@@ -1312,4 +1312,160 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
 
       return { success: true };
     }),
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ASSET MATCHING — Step 3 of Proposal Launchpad
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  /** Match project sheets by service line tag overlap */
+  matchProjectSheets: protectedProcedure
+    .input(z.object({ serviceLines: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      if (input.serviceLines.length === 0) return [];
+
+      // Tags are comma-separated text. Match any service line via ILIKE.
+      const tagConditions = input.serviceLines.map(
+        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+      );
+      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+
+      const rows = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          clientName: damDocuments.clientName,
+          ownerName: damDocuments.ownerName,
+          contractValue: damDocuments.contractValue,
+          tags: damDocuments.tags,
+          staffName: damDocuments.staffName,
+          projectName: damDocuments.projectName,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(
+          and(
+            eq(damDocuments.docType, "project_sheet"),
+            eq(damDocuments.processingStatus, "indexed"),
+            tagOverlap
+          )
+        )
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(10);
+
+      return rows;
+    }),
+
+  /** Match resumes (base version) by service line tag overlap */
+  matchResumes: protectedProcedure
+    .input(z.object({ serviceLines: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      if (input.serviceLines.length === 0) return [];
+
+      const tagConditions = input.serviceLines.map(
+        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+      );
+      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+
+      const rows = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          staffName: damDocuments.staffName,
+          tags: damDocuments.tags,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(
+          and(
+            eq(damDocuments.docType, "resume"),
+            eq(damDocuments.resumeVersion, "base"),
+            eq(damDocuments.processingStatus, "indexed"),
+            tagOverlap
+          )
+        )
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(10);
+
+      return rows;
+    }),
+
+  /** Match past proposals by service line tag overlap */
+  matchPastProposals: protectedProcedure
+    .input(z.object({ serviceLines: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      if (input.serviceLines.length === 0) return [];
+
+      const tagConditions = input.serviceLines.map(
+        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+      );
+      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+
+      const rows = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          clientName: damDocuments.clientName,
+          contractValue: damDocuments.contractValue,
+          tags: damDocuments.tags,
+          createdAt: damDocuments.createdAt,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(
+          and(
+            eq(damDocuments.docType, "past_proposal"),
+            eq(damDocuments.processingStatus, "indexed"),
+            tagOverlap
+          )
+        )
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(5);
+
+      return rows;
+    }),
+
+  /** Search DAM documents by title or tag (free text, any docType) */
+  searchForAssetMatching: protectedProcedure
+    .input(z.object({
+      query: z.string().min(1),
+      docTypes: z.array(z.string()).optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      const term = "%" + input.query + "%";
+      const conditions: any[] = [
+        eq(damDocuments.processingStatus, "indexed"),
+        sql`(${damDocuments.title} ILIKE ${term} OR ${damDocuments.tags} ILIKE ${term} OR ${damDocuments.staffName} ILIKE ${term})`,
+      ];
+      if (input.docTypes && input.docTypes.length > 0) {
+        const typeConditions = input.docTypes.map(dt => eq(damDocuments.docType, dt));
+        conditions.push(sql`(${sql.join(typeConditions, sql` OR `)})`);
+      }
+
+      const rows = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          docType: damDocuments.docType,
+          staffName: damDocuments.staffName,
+          clientName: damDocuments.clientName,
+          contractValue: damDocuments.contractValue,
+          tags: damDocuments.tags,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(and(...conditions))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(15);
+
+      return rows;
+    }),
 });

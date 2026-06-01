@@ -771,3 +771,21 @@
 - [ ] Backlog: ConflictDetectorViewer renderer — conflict cards with severity badges, affected sections (for conflict_detector skill)
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Proposal Launchpad Step 3 — Asset Matching (v4.6)
+- [x] Schema: add selectedProjectIds (text/json), selectedPastProposalIds (text/json), selectedPersonnel (text/json) to pursuits table
+- [x] Schema: push migration (pnpm db:push)
+- [x] Server: dam.matchProjectSheets query (dam_documents docType=project_sheet, indexed, tag overlap with pursuit.serviceLines, top 10)
+- [x] Server: dam.matchResumes query (dam_documents docType=resume, resumeVersion=base, indexed, tag overlap, top 10)
+- [x] Server: dam.matchPastProposals query (dam_documents docType=past_proposal, indexed, tag overlap, top 5)
+- [x] Server: dam.searchForAssetMatching query (free text search by title or tag, filtered by docType)
+- [x] Server: pursuits.saveAssetSelections mutation (saves selectedProjectIds, selectedPastProposalIds, selectedPersonnel to pursuit)
+- [x] Client: AssetMatchingPanel component with 3 sections (project sheets, resumes, past proposals), checkboxes, search bars, pre-check defaults
+- [x] Client: wire AssetMatchingPanel into Launchpad flow after GO click, before workspace navigation
+- [x] Client: Continue Anyway button when no assets selected (skips to workspace)
+- [x] Server: update buildSkillVariables() to read pursuit.selectedProjectIds → dam_documents → extractedMeta → populate selectedProjects
+- [x] Server: update buildSkillVariables() to read pursuit.selectedPersonnel → dam_documents → populate selectedPersonnel with name, role, resumeText
+- [x] Server: update buildSkillVariables() to read pursuit.selectedPastProposalIds → dam_documents → populate pastProposalsSummary
+- [x] Client: 'Edit Asset Selections' button in Proposal Workspace toolbar → Sheet side panel with AssetMatchingPanel
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint

@@ -112,4 +112,35 @@ export const pursuitsRouter = router({
       });
       return { success: true };
     }),
+
+  // ── Asset Matching — Save Selections to Pursuit ──────────────────────────────
+  saveAssetSelections: protectedProcedure
+    .input(
+      z.object({
+        pursuitId: z.string().uuid(),
+        selectedProjectIds: z.array(z.string().uuid()).default([]),
+        selectedPastProposalIds: z.array(z.string().uuid()).default([]),
+        selectedPersonnel: z.array(
+          z.object({
+            damDocumentId: z.string().uuid(),
+            staffName: z.string(),
+            role: z.string(),
+          })
+        ).default([]),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db
+        .update(pursuits)
+        .set({
+          selectedProjectIds: input.selectedProjectIds,
+          selectedPastProposalIds: input.selectedPastProposalIds,
+          selectedPersonnel: input.selectedPersonnel,
+          updatedAt: new Date(),
+        })
+        .where(eq(pursuits.id, input.pursuitId));
+      return { success: true };
+    }),
 });

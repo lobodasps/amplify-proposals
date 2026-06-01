@@ -18,6 +18,8 @@
 
 import AppLayout from "@/components/AppLayout";
 import { SkillOutputRenderer, type SkillOutputType } from "@/components/SkillOutputRenderer";
+import AssetMatchingPanel from "@/components/AssetMatchingPanel";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -447,6 +449,7 @@ export default function ProposalWorkspace() {
   const [localOutputs, setLocalOutputs] = useState<SkillOutputs>({});
   const [localState, setLocalState] = useState<WorkflowState>({});
   const [showResetDialog, setShowResetDialog] = useState<WorkflowSkillName | null>(null);
+  const [showAssetPanel, setShowAssetPanel] = useState(false);
   const abortRef = useRef(false);
 
   // ── Sync server → local state on session load ──────────────────────────────
@@ -825,6 +828,24 @@ export default function ProposalWorkspace() {
                   <TooltipContent>
                     Proposal Score (from Skill 8 — Proposal Scorer)
                   </TooltipContent>
+                </Tooltip>
+              )}
+
+              {/* Edit Asset Selections */}
+              {session?.pursuitId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAssetPanel(true)}
+                      className="gap-1.5 text-xs"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Assets
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit project sheets, resumes, and past proposals for this pursuit</TooltipContent>
                 </Tooltip>
               )}
 
@@ -1376,6 +1397,31 @@ export default function ProposalWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Asset Matching Side Panel ─────────────────────────────────── */}
+      <Sheet open={showAssetPanel} onOpenChange={setShowAssetPanel}>
+        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Edit Asset Selections</SheetTitle>
+          </SheetHeader>
+          {session?.pursuitId && (
+            <div className="mt-4">
+              <AssetMatchingPanel
+                pursuitId={session.pursuitId}
+                serviceLines={
+                  Array.isArray((session.extractedData as any)?.serviceLines)
+                    ? (session.extractedData as any).serviceLines
+                    : []
+                }
+                onComplete={() => {
+                  setShowAssetPanel(false);
+                  toast.success("Asset selections saved.");
+                }}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </TooltipProvider>
   );
 }

@@ -92,6 +92,13 @@
       "when": 1780345941519,
       "tag": "0012_strong_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780347510721,
+      "tag": "0013_thankful_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

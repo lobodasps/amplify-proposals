@@ -73,6 +73,7 @@ import type { ParsedRfpData } from "../../../shared/workflowTypes";
 import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence, type QuickSignals, type FirmProfile } from "../../../shared/types";
 import { computeQuickSignal, SIGNAL_STRENGTH_CONFIG, SIGNAL_RATING_CONFIG } from "@/lib/quickSignal";
 import { useEntityContext } from "@/contexts/EntityContext";
+import AssetMatchingPanel from "@/components/AssetMatchingPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -151,7 +152,7 @@ interface GoNoGoResult {
   winThemes: string[];
 }
 
-type WizardStep = "upload" | "processing" | "review" | "scoring" | "decision" | "archived";
+type WizardStep = "upload" | "processing" | "review" | "scoring" | "decision" | "asset_matching" | "archived";
 type EntryMode = "choose" | "upload" | "manual";
 
 const MANUAL_SERVICE_LINES = [
@@ -419,6 +420,10 @@ export default function ProposalLaunchpad() {
 
   // ── Pre-process warning state ─────────────────────────────────────────────
   const [showProcessWarning, setShowProcessWarning] = useState(false);
+
+  // ── Asset Matching state (Step 3) ─────────────────────────────────────────
+  const [createdPursuitId, setCreatedPursuitId] = useState<string | null>(null);
+  const [createdProposalId, setCreatedProposalId] = useState<string | null>(null);
 
   // ── tRPC mutations ────────────────────────────────────────────────────────
   const createSession = trpc.rfpSessions.create.useMutation();
@@ -859,14 +864,11 @@ export default function ProposalLaunchpad() {
         });
       }
 
-      toast.success("Pursuit created! Opening Proposal Workspace…");
-      if (proposalResult.proposalId) {
-        navigate(`/proposals/${proposalResult.proposalId}`);
-      } else if (newest?.id) {
-        navigate(`/pursuits/${newest.id}`);
-      } else {
-        navigate("/pursuits");
-      }
+      // Store IDs and transition to asset matching step
+      setCreatedPursuitId(pursuitId ?? null);
+      setCreatedProposalId(proposalResult.proposalId ?? null);
+      toast.success("Pursuit created! Select assets for the proposal.");
+      setStep("asset_matching");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create pursuit";
       toast.error(msg);
@@ -1835,6 +1837,24 @@ export default function ProposalLaunchpad() {
               </Button>
             </div>
           </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* ASSET MATCHING (Step 3)                                             */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {step === "asset_matching" && createdPursuitId && (
+          <AssetMatchingPanel
+            pursuitId={createdPursuitId}
+            serviceLines={rfpServiceLines}
+            onComplete={() => {
+              if (createdProposalId) {
+                navigate(`/proposals/${createdProposalId}`);
+              } else {
+                navigate(`/pursuits/${createdPursuitId}`);
+              }
+            }}
+            onBack={() => setStep("decision")}
+          />
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
