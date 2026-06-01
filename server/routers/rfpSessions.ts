@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings } from "../../drizzle/schema";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
@@ -907,7 +907,45 @@ export const rfpSessionsRouter = router({
         let usedProvider = "unknown";
 
         try {
+        // Sub-step: Preparing context
+        {
+          const stepDb = await getDb();
+          if (stepDb) {
+            const stepRows = await stepDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+            const stepState = ((stepRows[0]?.workflowState ?? {}) as WorkflowState);
+            const stepEntry: SkillStateEntry = { ...stepState[input.skillName as WorkflowSkillName], status: "running", startedAt, subStepMessage: "Preparing context..." };
+            await stepDb.update(rfpSessions).set({ workflowState: { ...stepState, [input.skillName]: stepEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
+          }
+        }
         const variables = await buildSkillVariables(input.skillName, session);
+
+        // ── Substitution validator: scan for unresolved {variable} or {{variable}} patterns ──
+        const missingVariables: string[] = [];
+        for (const [key, value] of Object.entries(variables)) {
+          const unresolvedMatches = value.match(/\{\{?\w+\}?\}/g);
+          if (unresolvedMatches) {
+            for (const m of unresolvedMatches) missingVariables.push(`${key}:${m}`);
+          }
+          // Also replace empty/placeholder values with '[Not provided]'
+          if (!value || value.trim() === '' || value === 'N/A') {
+            variables[key] = '[Not provided]';
+            missingVariables.push(key);
+          }
+        }
+        if (missingVariables.length > 0) {
+          console.warn(`[executeSkill] Missing variables for ${input.skillName}:`, missingVariables);
+          // Write warning to workflowState so UI can display it
+          try {
+            const warnDb = await getDb();
+            if (warnDb) {
+              const warnRows = await warnDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+              const warnState = ((warnRows[0]?.workflowState ?? {}) as WorkflowState);
+              const warnEntry: SkillStateEntry = { ...warnState[input.skillName as WorkflowSkillName], status: "running", startedAt, missingVariables };
+              await warnDb.update(rfpSessions).set({ workflowState: { ...warnState, [input.skillName]: warnEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
+            }
+          } catch { /* non-fatal */ }
+        }
+
         const skillType = mapToSkillType(input.skillName) as Parameters<typeof invokeLLMWithSkill>[0]["skillType"];
         const responseFormat = getResponseFormat(input.skillName);
         const systemOverride = getSystemOverride(input.skillName);
@@ -1064,6 +1102,17 @@ export const rfpSessionsRouter = router({
           }
         }
 
+        // Sub-step: Generating
+        {
+          const genDb = await getDb();
+          if (genDb) {
+            const genRows = await genDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+            const genState = ((genRows[0]?.workflowState ?? {}) as WorkflowState);
+            const genEntry: SkillStateEntry = { ...genState[input.skillName as WorkflowSkillName], status: "running", startedAt, subStepMessage: "Generating..." };
+            await genDb.update(rfpSessions).set({ workflowState: { ...genState, [input.skillName]: genEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
+          }
+        }
+
         const result = await invokeLLMWithSkill({
           skillType,
           variables,
@@ -1168,6 +1217,45 @@ export const rfpSessionsRouter = router({
           ...(scorerPatch ?? {}),
         })
         .where(eq(rfpSessions.id, input.sessionId));
+
+      // ── 5b. Save section to proposal_sections immediately (preserves work if browser closes) ──
+      const SKILL_TO_SECTION: Partial<Record<WorkflowSkillName, { title: string; order: number }>> = {
+        win_themes: { title: "Win Themes", order: 1 },
+        technical_outline: { title: "Technical Outline", order: 2 },
+        technical_writer: { title: "Technical Approach", order: 3 },
+        key_personnel: { title: "Key Personnel", order: 4 },
+        past_performance: { title: "Past Performance / Project Experience", order: 5 },
+        fee_estimator: { title: "Fee Estimate", order: 6 },
+        proposal_scorer: { title: "Proposal Score", order: 7 },
+      };
+      const sectionMeta = SKILL_TO_SECTION[input.skillName as WorkflowSkillName];
+      if (sectionMeta && session.proposalId && llmOutput) {
+        try {
+          // Upsert: if a section with this title already exists for this proposal, update it
+          const existing = await db.select().from(proposalSections)
+            .where(eq(proposalSections.proposalId, session.proposalId))
+            .then(rows => rows.find(r => r.title === sectionMeta.title));
+          if (existing) {
+            await db.update(proposalSections).set({
+              content: llmOutput,
+              aiGenerated: true,
+              status: "draft",
+              updatedAt: new Date(),
+            }).where(eq(proposalSections.id, existing.id));
+          } else {
+            await db.insert(proposalSections).values({
+              proposalId: session.proposalId,
+              title: sectionMeta.title,
+              content: llmOutput,
+              sectionOrder: sectionMeta.order,
+              aiGenerated: true,
+              status: "draft",
+            });
+          }
+        } catch (secErr) {
+          console.error(`[executeSkill] failed to save section "${sectionMeta.title}":`, secErr);
+        }
+      }
 
         console.log(`[executeSkill] background job complete: ${input.skillName} session=${input.sessionId}`);
       }); // end setImmediate

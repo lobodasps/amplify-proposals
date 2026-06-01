@@ -81,7 +81,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ActiveView = "overview" | WorkflowSkillName;
+type ActiveView = "overview" | "full_draft" | WorkflowSkillName;
 
 // ─── Skill Status Icon ────────────────────────────────────────────────────────
 
@@ -152,6 +152,11 @@ function SkillRow({
         >
           {skill.displayName}
         </p>
+        {isActive && stateEntry?.subStepMessage && (
+          <p className="text-[10px] text-blue-400 mt-0.5 animate-pulse">
+            {stateEntry.subStepMessage}
+          </p>
+        )}
         {stateEntry?.completedAt && (
           <p className="text-[10px] text-muted-foreground/60 mt-0.5">
             {stateEntry.model ?? "AI"} ·{" "}
@@ -159,6 +164,11 @@ function SkillRow({
               hour: "2-digit",
               minute: "2-digit",
             })}
+          </p>
+        )}
+        {stateEntry?.missingVariables && stateEntry.missingVariables.length > 0 && (
+          <p className="text-[10px] text-amber-500 mt-0.5 line-clamp-1" title={stateEntry.missingVariables.join(", ")}>
+            ⚠ {stateEntry.missingVariables.length} variable{stateEntry.missingVariables.length > 1 ? "s" : ""} missing
           </p>
         )}
         {stateEntry?.errorMessage && (
@@ -316,6 +326,131 @@ function SkillOutputEditor({
   );
 }
 
+// ─── Full Draft Section Card (inline-editable with autosave) ────────────────
+
+function FullDraftSectionCard({
+  section,
+  onSave,
+}: {
+  section: {
+    id: string;
+    title: string;
+    content: string | null;
+    sectionOrder: number | null;
+    rfpRequirement: string | null;
+    complianceStatus: string | null;
+    aiGenerated: boolean | null;
+    status: string | null;
+  };
+  onSave: (content: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(section.content ?? "");
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(section.content ?? "");
+  }, [section.content, editing]);
+
+  const handleBlur = () => {
+    // Debounce blur to avoid saving when clicking within the textarea
+    blurTimerRef.current = setTimeout(() => {
+      if (draft !== (section.content ?? "")) {
+        onSave(draft);
+        toast.success(`"${section.title}" saved`, { duration: 2000 });
+      }
+      setEditing(false);
+    }, 200);
+  };
+
+  const handleFocus = () => {
+    if (blurTimerRef.current) {
+      clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+  };
+
+  // Score badge from complianceStatus (stored as "85" or similar)
+  const sectionScore = section.complianceStatus
+    ? parseInt(section.complianceStatus, 10)
+    : null;
+
+  return (
+    <Card className="group">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-mono w-5">
+              {section.sectionOrder ?? "-"}
+            </span>
+            <CardTitle className="text-sm">{section.title}</CardTitle>
+            {section.aiGenerated && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                AI
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {sectionScore !== null && !isNaN(sectionScore) && (
+              <Badge
+                className={[
+                  "text-xs px-2 py-0.5",
+                  sectionScore >= 80
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    : sectionScore >= 60
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                ].join(" ")}
+              >
+                {sectionScore}/100
+              </Badge>
+            )}
+            {!editing && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="opacity-0 group-hover:opacity-100 transition-opacity h-7"
+                onClick={() => setEditing(true)}
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
+            )}
+          </div>
+        </div>
+        {section.rfpRequirement && (
+          <p className="text-xs text-muted-foreground/70 mt-1 italic">
+            Requirement: {section.rfpRequirement}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleBlur}
+            onFocus={handleFocus}
+            autoFocus
+            className="min-h-[200px] text-sm leading-relaxed resize-y font-sans"
+          />
+        ) : (
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none cursor-pointer hover:bg-muted/30 rounded-md p-2 -m-2 transition-colors"
+            onClick={() => setEditing(true)}
+          >
+            {(section.content ?? "").split("\n").map((line, i) => (
+              <p key={i} className="text-sm leading-relaxed mb-1.5">
+                {line || <span className="block h-2" />}
+              </p>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Parsed RFP Summary Card ──────────────────────────────────────────────────
 
 function ParsedRfpSummary({ data }: { data: ParsedRfpData }) {
@@ -452,6 +587,16 @@ export default function ProposalWorkspace() {
   }, [session]);
 
   // ── tRPC mutations ─────────────────────────────────────────────────────────
+  // ── Full Draft: load proposal sections ──────────────────────────────────────
+  const { data: proposalSections, refetch: refetchSections } =
+    trpc.proposals.getSections.useQuery(
+      { proposalId },
+      { enabled: !!proposalId && isRealProposal }
+    );
+  const updateSectionMutation = trpc.proposals.updateSection.useMutation({
+    onSuccess: () => refetchSections(),
+  });
+
   const executeSkillMutation = trpc.rfpSessions.executeSkill.useMutation();
   const resetSkillMutation = trpc.rfpSessions.resetSkill.useMutation({
     onSuccess: () =>
@@ -623,13 +768,14 @@ export default function ProposalWorkspace() {
 
       if (!abortRef.current) {
         toast.success("Proposal generation complete!", {
-          description: `All ${WORKFLOW_SKILL_NAMES.length} skills completed and saved.`,
+          description: `All ${WORKFLOW_SKILL_NAMES.length} skills completed and saved. Switching to Full Draft view.`,
         });
-        setActiveView("overview");
+        setActiveView("full_draft");
+        refetchSections();
         utils.rfpSessions.getById.invalidate({ id: sessionId });
       }
     },
-    [executeSkillMutation, utils, skillDisplayName, activeSessionId]
+    [executeSkillMutation, utils, skillDisplayName, activeSessionId, refetchSections]
   );
 
   // ── Handle "Generate Proposal" / "Resume" click ────────────────────────────
@@ -705,7 +851,7 @@ export default function ProposalWorkspace() {
 
   // ── Selected skill for the main panel ─────────────────────────────────────
   const selectedSkill =
-    activeView !== "overview"
+    activeView !== "overview" && activeView !== "full_draft"
       ? ORDERED_SKILLS.find((s) => s.name === activeView)
       : null;
   const selectedOutput = selectedSkill
@@ -893,6 +1039,28 @@ export default function ProposalWorkspace() {
                 </div>
               </ScrollArea>
 
+              {/* Full Draft button */}
+              {resumeState.completedCount > 0 && (
+                <div className="px-3 py-2 border-t">
+                  <button
+                    onClick={() => setActiveView("full_draft")}
+                    className={[
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all",
+                      "hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      activeView === "full_draft" ? "bg-accent" : "",
+                    ].join(" ")}
+                  >
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-medium">Full Draft</span>
+                    {resumeState.isFullyComplete && (
+                      <Badge variant="secondary" className="ml-auto text-[9px] px-1.5 py-0">
+                        Ready
+                      </Badge>
+                    )}
+                  </button>
+                </div>
+              )}
+
               {/* Session status footer */}
               <div className="p-3 border-t space-y-1.5">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -1051,6 +1219,59 @@ export default function ProposalWorkspace() {
                         </div>
                       </CardContent>
                     </Card>
+                  </div>
+                </ScrollArea>
+              ) : activeView === "full_draft" ? (
+                /* ── Full Draft Panel ──────────────────────────────────── */
+                <ScrollArea className="flex-1">
+                  <div className="p-6 max-w-4xl mx-auto space-y-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h2 className="text-lg font-semibold">Full Proposal Draft</h2>
+                        <p className="text-sm text-muted-foreground">
+                          {proposalSections?.length ?? 0} sections · Edit any section inline, changes save automatically.
+                        </p>
+                      </div>
+                      {liveScore !== null && (
+                        <Badge
+                          className={[
+                            "text-sm font-bold px-3 py-1",
+                            liveScore >= 80
+                              ? "bg-emerald-500 hover:bg-emerald-500 text-white"
+                              : liveScore >= 60
+                                ? "bg-amber-500 hover:bg-amber-500 text-white"
+                                : "bg-red-500 hover:bg-red-500 text-white",
+                          ].join(" ")}
+                        >
+                          Score: {liveScore}/100
+                        </Badge>
+                      )}
+                    </div>
+
+                    {(!proposalSections || proposalSections.length === 0) ? (
+                      <Card>
+                        <CardContent className="py-12 text-center">
+                          <FileText className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+                          <p className="text-muted-foreground">No sections generated yet.</p>
+                          <p className="text-sm text-muted-foreground/60 mt-1">
+                            Run the proposal generation workflow to populate sections.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      proposalSections.map((section) => (
+                        <FullDraftSectionCard
+                          key={section.id}
+                          section={section}
+                          onSave={(content) =>
+                            updateSectionMutation.mutate({
+                              sectionId: section.id,
+                              content,
+                            })
+                          }
+                        />
+                      ))
+                    )}
                   </div>
                 </ScrollArea>
               ) : selectedSkill ? (

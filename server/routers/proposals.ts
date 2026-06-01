@@ -333,4 +333,20 @@ export const proposalsRouter = router({
         };
       }
     }),
+
+  /** Update a single proposal section's content (autosave-on-blur) */
+  updateSection: protectedProcedure
+    .input(z.object({
+      sectionId: z.string().uuid(),
+      content: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db
+        .update(proposalSections)
+        .set({ content: input.content, updatedAt: new Date() })
+        .where(eq(proposalSections.id, input.sectionId));
+      return { success: true };
+    }),
 });

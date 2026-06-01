@@ -39,6 +39,8 @@ export interface SkillStateEntry {
   provider?: string;
   /** Live sub-step message written during long-running operations (e.g. shredding file X of Y) */
   subStepMessage?: string;
+  /** Variables that could not be populated from DB — replaced with '[Not provided]' before LLM call */
+  missingVariables?: string[];
 }
 
 /** Full workflow state — stored in rfpSessions.workflowState */

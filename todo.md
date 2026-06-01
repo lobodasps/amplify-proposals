@@ -733,9 +733,9 @@
 - [x] Fix buildSkillVariables: async function now queries pursuit, rfpSession, firm_settings, wiki, personnel, projects from DB
 - [x] Fix mapToSkillType: routes to dedicated skill types (win_theme_generator, technical_approach_writer, etc.)
 - [x] Fix proposal draft generation orchestration: await async buildSkillVariables in executeSkill
-- [ ] Add substitution validator: check for unresolved {variable} patterns before LLM call, replace with fallback text
-- [ ] Each section saved to proposal record immediately on completion
-- [ ] Proposal Workspace UI: live progress indicator per section during generation
-- [ ] Full draft display with inline-editable sections when complete
+- [x] Add substitution validator: check for unresolved {variable} patterns before LLM call, replace with '[Not provided]' fallback + missingVariables warning in UI
+- [x] Each section saved to proposal record immediately on completion (save-on-completion in executeSkill)
+- [x] Proposal Workspace UI: live progress indicator per section (Preparing context / Generating / Done / Error sub-step messages)
+- [x] Full draft display with inline-editable sections, autosave-on-blur, score badges, auto-switch on completion
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [ ] Push to GitHub
