@@ -12,7 +12,6 @@ describe("LLM Skill Configuration", () => {
       const expectedSkills: SkillType[] = [
         "rfp_shredder",
         "resume_tailor",
-        "tailored_resume",
         "go_no_go_advisor",
         "opportunity_scorer",
         "contract_analyzer",
@@ -51,7 +50,7 @@ describe("LLM Skill Configuration", () => {
       expect(DEFAULT_SKILLS.proposal_scorer.defaultProvider).toBe("anthropic");
       expect(DEFAULT_SKILLS.conflict_detector.defaultProvider).toBe("anthropic");
       expect(DEFAULT_SKILLS.contract_analyzer.defaultProvider).toBe("anthropic");
-      expect(DEFAULT_SKILLS.tailored_resume.defaultProvider).toBe("anthropic");
+      expect(DEFAULT_SKILLS.resume_tailor.defaultProvider).toBe("anthropic");
     });
 
     it("should assign correct default models per user spec", () => {
@@ -69,7 +68,7 @@ describe("LLM Skill Configuration", () => {
       expect(DEFAULT_SKILLS.proposal_scorer.defaultModel).toBe("claude-sonnet-4-20250514");
       expect(DEFAULT_SKILLS.conflict_detector.defaultModel).toBe("claude-sonnet-4-20250514");
       expect(DEFAULT_SKILLS.contract_analyzer.defaultModel).toBe("claude-sonnet-4-20250514");
-      expect(DEFAULT_SKILLS.tailored_resume.defaultModel).toBe("claude-sonnet-4-20250514");
+      expect(DEFAULT_SKILLS.resume_tailor.defaultModel).toBe("claude-sonnet-4-20250514");
     });
 
     it("should have valid provider values for all skills", () => {
