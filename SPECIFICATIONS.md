@@ -186,9 +186,11 @@ Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billin
 
 ### 4.3 LLM Architecture
 
-All LLM calls route through `invokeLLM()` in `server/_core/llm.ts`. The system defaults to models configured in Settings > AI Skills (`ai_skill_configs` table, which stores system prompt, user prompt template, provider, model, and API key per named skill). When no config is found for a skill, the helper falls back to the Manus built-in API. No existing procedure call signatures change when a user switches providers.
+All LLM calls route through `invokeLLMWithSkill()` in `server/_core/llmSkill.ts`. The system defaults to models configured in Settings > AI Skills (`ai_skills` table, which stores system prompt, user prompt template, provider, model, and API key per named skill). When the DB row has null provider/model, the helper falls back to `DEFAULT_SKILLS` definitions. No existing procedure call signatures change when a user switches providers.
 
-Named skills currently in production: `rfp_parser`, `compliance_matrix`, `scope_analysis`, `win_themes`, `key_personnel`, `past_performance`, `fee_estimator`, `executive_summary`, `technical_approach`, `management_plan`, `quality_control`, `final_review`, `go_no_go_scorer`, `dam_image_caption`, `xml_shredder`, `wiki_compiler`, `conflict_detector`, `contract_analyzer`.
+**CRITICAL RULE:** When seeding missing `ai_skills` records, do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, and `userPromptTemplate`.
+
+Named skills currently in production: `rfp_shredder`, `resume_tailor`, `go_no_go_advisor`, `opportunity_scorer`, `contract_analyzer`, `asset_tagger`, `proposal_writer`, `opportunity_ingestion`, `proposal_scorer`, `xml_shredder`, `wiki_compiler`, `agent_guidelines`, `conflict_detector`, `autoExtract`, `triggerExtract`, `dam_image_caption`.
 
 ### 4.4 File Upload
 

@@ -140,7 +140,9 @@ All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function 
 | DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 | DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 
-The `invokeLLM()` helper checks `ai_skill_configs` for a task-specific config (provider, model, API key, prompts). If no config is found, it falls back to the Manus built-in API. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
+The `invokeLLMWithSkill()` helper checks the `ai_skills` table for a task-specific config (provider, model, API key, prompts). If the DB row has null provider/model, it falls back to `DEFAULT_SKILLS` in `server/_core/llmSkill.ts`. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
+
+**CRITICAL RULE:** When seeding missing `ai_skills` records (in `seedDefaultSkills()` or the `aiSkills.list` query), do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, and `userPromptTemplate`.
 
 ---
 

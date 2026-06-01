@@ -722,3 +722,19 @@
 - [x] Docs: update ARCHITECTURE.md, SPECIFICATIONS.md, CLAUDE.md, FEATURE_CATALOG.md, README.md with per-entity firm profile notes
 - [x] Push all changes to GitHub
 - [x] Zero TypeScript errors, 25/25 tests passing
+
+## Proposal Workspace Fix (v4.2)
+- [x] Audit: list all skillTypes called in Proposal Workspace code vs ai_skills DB records
+- [x] Enforce seeding rule: removed hardcoded provider/model from seedDefaultSkills() and aiSkills.list seed paths
+- [x] Added permanent docblock to seedDefaultSkills() and deprecation comment to fixProviders mutation
+- [x] Updated CLAUDE.md, ARCHITECTURE.md, SPECIFICATIONS.md with the seeding rule
+- [ ] Seed missing ai_skills records (win_theme_generator, requirements_matrix_builder, executive_summary_writer, technical_approach_writer, firm_qualifications_writer, project_experience_writer, key_personnel_writer) — NO provider/model hardcoded, leave null
+- [ ] Update conflict_detector system prompt in seed
+- [ ] Fix buildSkillVariables: populate all required variables from pursuit, rfpSession, firm_settings, wiki, personnel, projects
+- [ ] Add substitution validator: check for unresolved {variable} patterns before LLM call, replace with fallback text
+- [ ] Fix proposal draft generation orchestration: run skills in sequence (win_themes → requirements_matrix → exec_summary → firm_quals → tech_approach → project_exp → key_personnel → scorer)
+- [ ] Each section saved to proposal record immediately on completion
+- [ ] Proposal Workspace UI: live progress indicator per section during generation
+- [ ] Full draft display with inline-editable sections when complete
+- [ ] Zero TypeScript errors
+- [ ] Push to GitHub

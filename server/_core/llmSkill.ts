@@ -1052,8 +1052,10 @@ export async function invokeLLMWithSkill(
   }
 
   const defaults = DEFAULT_SKILLS[skillType];
-  // Use the skill's configured provider, or fall back to the default provider for this skill type
-  const provider = (skillRow?.provider && skillRow.provider !== "manus_builtin"
+  // Provider/model resolution: DB row value takes priority; if null/empty, fall back to DEFAULT_SKILLS.
+  // Provider and model selection is managed exclusively through Settings → AI Configuration UI.
+  // Seeds and migrations must never hardcode provider/model — only skillType, displayName, description, systemPrompt, userPromptTemplate.
+  const provider = (skillRow?.provider
     ? skillRow.provider
     : defaults?.defaultProvider ?? "manus_builtin") as Provider;
   const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
@@ -1149,8 +1151,14 @@ export async function getSkillProvider(skillType: SkillType): Promise<Provider> 
 }
 
 /**
- * Seed the ai_skills table with default values if it is empty.
- * Call this once at server startup.
+ * Seed the ai_skills table with any missing skill types.
+ * Called once at server startup.
+ *
+ * RULE: When seeding missing ai_skills records, do NOT specify provider or model values.
+ * Leave those columns null. Provider and model selection is managed exclusively through
+ * the Settings → AI Configuration UI and must never be hardcoded in migrations, seed
+ * scripts, or application code. Only insert: skillType, displayName, description,
+ * systemPrompt, and userPromptTemplate.
  */
 export async function seedDefaultSkills(): Promise<void> {
   try {
@@ -1161,12 +1169,11 @@ export async function seedDefaultSkills(): Promise<void> {
 
     for (const [skillType, def] of Object.entries(DEFAULT_SKILLS)) {
       if (!existingTypes.has(skillType)) {
+        // Do NOT hardcode provider/model — leave null so Settings → AI Skills UI controls selection
         await db.insert(aiSkills).values({
           skillType,
           displayName: def.displayName,
           description: def.description,
-          provider: def.defaultProvider,
-          model: def.defaultModel,
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),

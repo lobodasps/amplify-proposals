@@ -29,13 +29,12 @@ export const aiSkillsRouter = router({
     const rows = await db.select().from(aiSkills).orderBy(aiSkills.skillType);
 
     // If table is empty, seed defaults and return them
+    // Do NOT hardcode provider/model — leave null so Settings → AI Skills UI controls selection
     if (rows.length === 0) {
       const toInsert = Object.entries(DEFAULT_SKILLS).map(([skillType, def]) => ({
         skillType,
         displayName: def.displayName,
         description: def.description,
-        provider: def.defaultProvider,
-        model: def.defaultModel,
         systemPrompt: def.systemPrompt,
         userPromptTemplate: def.userPromptTemplate,
         templateVariables: JSON.stringify(def.templateVariables),
@@ -53,8 +52,6 @@ export const aiSkillsRouter = router({
           skillType,
           displayName: def.displayName,
           description: def.description,
-          provider: def.defaultProvider,
-          model: def.defaultModel,
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),
@@ -319,7 +316,11 @@ export const aiSkillsRouter = router({
       return rows;
     }),
 
-  /** Fix all manus_builtin providers to correct defaults */
+  /**
+   * DEPRECATED: One-time migration utility to fix providers that were seeded as manus_builtin.
+   * Provider/model selection is now managed exclusively through Settings → AI Configuration UI.
+   * This mutation exists only for legacy DB rows that need a one-time correction.
+   */
   fixProviders: protectedProcedure.mutation(async () => {
     const db = await getDb();
     if (!db) throw new Error("Database unavailable");
