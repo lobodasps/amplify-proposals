@@ -70,7 +70,8 @@ import {
   PenLine,
 } from "lucide-react";
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
-import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence } from "../../../shared/types";
+import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence, type QuickSignals, type FirmProfile } from "../../../shared/types";
+import { computeQuickSignal, SIGNAL_STRENGTH_CONFIG, SIGNAL_RATING_CONFIG } from "@/lib/quickSignal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -411,6 +412,9 @@ export default function ProposalLaunchpad() {
   // ── Go/No-Go result ───────────────────────────────────────────────────────
   const [goNoGoResult, setGoNoGoResult] = useState<GoNoGoResult | null>(null);
 
+  // ── Quick Signal pre-score ────────────────────────────────────────────────
+  const [quickSignals, setQuickSignals] = useState<QuickSignals | null>(null);
+
   // ── Pre-process warning state ─────────────────────────────────────────────
   const [showProcessWarning, setShowProcessWarning] = useState(false);
 
@@ -424,7 +428,20 @@ export default function ProposalLaunchpad() {
   const createPursuit = trpc.pursuits.create.useMutation();
   const createProposal = trpc.proposals.create.useMutation();
   const linkSession = trpc.rfpSessions.linkToProposal.useMutation();
+  const createOpportunity = trpc.opportunities.create.useMutation();
   const utils = trpc.useUtils();
+
+  // ── Firm profile for Quick Signal scoring ───────────────────────────────
+  const { data: firmProfileData } = trpc.firmSettings.get.useQuery();
+  const firmProfile: FirmProfile = {
+    serviceLines: (firmProfileData?.serviceLines as string[]) ?? [],
+    states: (firmProfileData?.states as string[]) ?? [],
+    typicalValueMin: firmProfileData?.typicalValueMin != null ? parseFloat(String(firmProfileData.typicalValueMin)) : null,
+    typicalValueMax: firmProfileData?.typicalValueMax != null ? parseFloat(String(firmProfileData.typicalValueMax)) : null,
+    minDaysToRespond: firmProfileData?.minDaysToRespond ?? 14,
+    preferredAgencies: (firmProfileData?.preferredAgencies as string[]) ?? [],
+    avoidedAgencies: (firmProfileData?.avoidedAgencies as string[]) ?? [],
+  };
 
   // ── Drag-and-drop handlers ────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -534,10 +551,13 @@ export default function ProposalLaunchpad() {
         batch.map(async (entry) => {
           try {
             const uploaded = await uploadFile(entry.file);
+            // Detect if this file is already labeled (or heuristically identified) as Main RFP
+            const isMainRfp = entry.label === "Main RFP";
             const result = await classifyFileMutation.mutateAsync({
               fileUrl: uploaded.fileUrl,
               fileName: entry.file.name,
               mimeType: entry.file.type || "application/octet-stream",
+              isMainRfp,
             });
             const labelMap: Record<string, FileLabel> = {
               main_rfp: "Main RFP",
@@ -552,6 +572,10 @@ export default function ProposalLaunchpad() {
               supplemental: "Supplemental",
             };
             const mappedLabel = labelMap[result.documentType] ?? "Supplemental";
+            // Capture quickSignals when the file is confirmed as main_rfp
+            if (result.documentType === "main_rfp" && result.quickSignals) {
+              setQuickSignals(result.quickSignals as QuickSignals);
+            }
             setQueue((prev) =>
               prev.map((f) =>
                 f.id === entry.id
@@ -853,6 +877,32 @@ export default function ProposalLaunchpad() {
     toast.info("RFP archived. No pursuit created.");
   };
 
+  // ── Quick Signal — Archive This RFP (creates archived opportunity, skips extraction) ──
+  const handleQuickSignalArchive = async () => {
+    try {
+      const titleGuess = rfpTitle || queue[0]?.file.name || "Archived RFP";
+      await createOpportunity.mutateAsync({
+        title: titleGuess,
+        agencyName: quickSignals?.agency ?? rfpAgency ?? undefined,
+        description: quickSignals
+          ? `Quick Signal archive. Agency: ${quickSignals.agency ?? "unknown"}, Type: ${quickSignals.projectType ?? "unknown"}, Value: ${quickSignals.estimatedValue ?? "unknown"}, Due: ${quickSignals.dueDate ?? "unknown"}.`
+          : "Archived from Proposal Launchpad via Quick Signal.",
+        estimatedValue: quickSignals?.estimatedValue
+          ? parseFloat(quickSignals.estimatedValue.replace(/[^0-9.]/g, "")) || undefined
+          : undefined,
+        dueDate: quickSignals?.dueDate ? new Date(quickSignals.dueDate) : undefined,
+        source: "rfp_upload",
+        aiScore: 0,
+        aiScoreReason: "Archived via Quick Signal pre-score before full analysis.",
+      });
+      setStep("archived");
+      toast.info("RFP archived as an opportunity record.");
+    } catch {
+      toast.error("Failed to archive. Proceeding to archived state anyway.");
+      setStep("archived");
+    }
+  };
+
   // ── Manual entry: populate fields and go straight to review ─────────────
   const handleManualSubmit = () => {
     if (!rfpTitle.trim()) { toast.error("Title is required."); return; }
@@ -876,6 +926,7 @@ export default function ProposalLaunchpad() {
     setRfpServiceLines([]);
     setRfpSummary("");
     setGoNoGoResult(null);
+    setQuickSignals(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -1268,21 +1319,106 @@ export default function ProposalLaunchpad() {
               </CardContent>
             </Card>
 
+            {/* Quick Signal Card — shown after Pass 2 returns quickSignals */}
+            {quickSignals && (() => {
+              const score = computeQuickSignal(quickSignals, firmProfile);
+              const cfg = SIGNAL_STRENGTH_CONFIG[score.strength];
+              return (
+                <div className={`rounded-xl border-2 p-5 space-y-4 ${cfg.borderClass} bg-background`}>
+                  {/* Header */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{cfg.icon}</span>
+                      <div>
+                        <p className="font-bold text-sm">{cfg.label}</p>
+                        <p className="text-xs text-muted-foreground">{cfg.subtitle}</p>
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.badgeClass}`}>
+                      {score.favorableCount}/6 favorable
+                    </span>
+                  </div>
+
+                  {/* Extracted signal values */}
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground border-t pt-3">
+                    {quickSignals.agency && <span><span className="font-medium text-foreground">Agency:</span> {quickSignals.agency}</span>}
+                    {quickSignals.projectType && <span><span className="font-medium text-foreground">Type:</span> {quickSignals.projectType}</span>}
+                    {quickSignals.estimatedValue && <span><span className="font-medium text-foreground">Value:</span> {quickSignals.estimatedValue}</span>}
+                    {quickSignals.dueDate && <span><span className="font-medium text-foreground">Due:</span> {quickSignals.dueDate}</span>}
+                    {quickSignals.location && <span><span className="font-medium text-foreground">Location:</span> {quickSignals.location}</span>}
+                    {quickSignals.prequalRequired && <span><span className="font-medium text-foreground">Prequal:</span> {quickSignals.prequalType ?? "Required"}</span>}
+                  </div>
+
+                  {/* Factor checklist */}
+                  <div className="space-y-1.5 border-t pt-3">
+                    {score.factors.map((f) => {
+                      const rc = SIGNAL_RATING_CONFIG[f.rating];
+                      return (
+                        <div key={f.label} className="flex items-start gap-2 text-sm">
+                          <span className={`shrink-0 mt-0.5 ${rc.className}`}>{rc.icon}</span>
+                          <span>
+                            <span className="font-medium">{f.label}:</span>{" "}
+                            <span className="text-muted-foreground">{f.detail}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Red flag chips */}
+                  {quickSignals.immediateRedFlags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 border-t pt-3">
+                      {quickSignals.immediateRedFlags.map((flag, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium border border-amber-200">
+                          ⚠ {flag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex flex-col sm:flex-row gap-2 border-t pt-3">
+                    <Button
+                      size="sm"
+                      onClick={handleProcess}
+                      disabled={queue.length === 0}
+                      className="flex-1 gap-1.5"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                      Process &amp; Full Analysis
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleQuickSignalArchive}
+                      disabled={createOpportunity.isPending}
+                      className="flex-1 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                    >
+                      {createOpportunity.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                      Archive This RFP
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* CTA */}
             <div className="flex items-center justify-between gap-4">
               <Button variant="ghost" size="sm" onClick={() => setEntryMode("choose")} className="text-muted-foreground">
                 <ArrowLeft className="w-4 h-4 mr-1.5" />
                 Back
               </Button>
-              <Button
-                size="lg"
-                onClick={handleProcess}
-                disabled={queue.length === 0}
-                className="gap-2"
-              >
-                Process Package
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+              {!quickSignals && (
+                <Button
+                  size="lg"
+                  onClick={handleProcess}
+                  disabled={queue.length === 0}
+                  className="gap-2"
+                >
+                  Process Package
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </div>
         )}

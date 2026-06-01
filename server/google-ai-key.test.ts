@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 describe("Google AI API Key validation", () => {
-  it("should successfully call Gemini API with the provided key", async () => {
+  it("should successfully call Gemini API with the provided key", { timeout: 15000 }, async () => {
     const apiKey = process.env.GOOGLE_AI_API_KEY;
     expect(apiKey).toBeTruthy();
 

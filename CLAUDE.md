@@ -18,7 +18,7 @@ This document describes the current technical architecture of the Amplify Propos
 | Database | Supabase Postgres | Session pooler (port 6543) |
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
-| LLM | Configurable | Currently defaults to Manus Built-in via `invokeLLM()`; designed to support OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API per task type |
+| LLM | Configurable | Defaults to models defined in Settings > AI Skills; supports OpenAI, Anthropic, Google Gemini per task type |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
 | Testing | Vitest | 25 tests across 4 files |

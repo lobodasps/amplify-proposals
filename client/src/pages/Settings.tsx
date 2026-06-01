@@ -485,6 +485,7 @@ export default function Settings() {
           <TabsTrigger value="reminders">Reminders</TabsTrigger>
           <TabsTrigger value="appSettings">App Settings</TabsTrigger>
           <TabsTrigger value="aiSkills" className="flex items-center gap-1"><Brain className="h-3 w-3" />AI Skills</TabsTrigger>
+          <TabsTrigger value="firmProfile" className="flex items-center gap-1"><Building2 className="h-3 w-3" />Firm Profile</TabsTrigger>
           <TabsTrigger value="import" className="flex items-center gap-1"><Upload className="h-3 w-3" />Import</TabsTrigger>
         </TabsList>
         <TabsContent value="entities" className="mt-4"><EntitiesTab /></TabsContent>
@@ -525,6 +526,7 @@ export default function Settings() {
         </TabsContent>
         <TabsContent value="appSettings" className="mt-4"><AppSettingsTab /></TabsContent>
         <TabsContent value="aiSkills" className="mt-4"><AiSkillsTab /></TabsContent>
+        <TabsContent value="firmProfile" className="mt-4"><FirmProfileTab /></TabsContent>
         <TabsContent value="import" className="mt-4"><ImportTab /></TabsContent>
       </Tabs>
     </div>
@@ -1031,6 +1033,275 @@ function UsageTab() {
           <p className="text-xs mt-1">Usage is logged automatically when AI skills are invoked.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Firm Profile Tab ─────────────────────────────────────────────────────────
+
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY","DC",
+];
+
+const FIRM_SERVICE_LINE_OPTIONS = [
+  "Special Inspections",
+  "Construction Management",
+  "Traffic Engineering",
+  "Landscape / Streetscape",
+  "Environmental",
+  "Structural Engineering",
+  "Civil Engineering",
+  "Geotechnical",
+  "MEP Engineering",
+  "Architecture",
+  "Planning",
+  "Survey",
+  "Other",
+];
+
+function TagInput({
+  label,
+  values,
+  onChange,
+  placeholder,
+  suggestions,
+}: {
+  label: string;
+  values: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+  suggestions?: string[];
+}) {
+  const [input, setInput] = React.useState("");
+  const [showSuggestions, setShowSuggestions] = React.useState(false);
+
+  const add = (val: string) => {
+    const trimmed = val.trim();
+    if (trimmed && !values.includes(trimmed)) {
+      onChange([...values, trimmed]);
+    }
+    setInput("");
+    setShowSuggestions(false);
+  };
+
+  const filtered = suggestions?.filter(
+    (s) => s.toLowerCase().includes(input.toLowerCase()) && !values.includes(s)
+  ) ?? [];
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</Label>
+      <div className="min-h-[2.5rem] p-2 rounded-md border border-input bg-background flex flex-wrap gap-1.5">
+        {values.map((v) => (
+          <Badge key={v} variant="secondary" className="text-xs gap-1">
+            {v}
+            <button
+              type="button"
+              onClick={() => onChange(values.filter((x) => x !== v))}
+              className="hover:text-destructive transition-colors ml-0.5"
+            >
+              ×
+            </button>
+          </Badge>
+        ))}
+        <div className="relative flex-1 min-w-[120px]">
+          <input
+            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            value={input}
+            onChange={(e) => { setInput(e.target.value); setShowSuggestions(true); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(input); }
+              if (e.key === "Backspace" && !input && values.length > 0) {
+                onChange(values.slice(0, -1));
+              }
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            placeholder={values.length === 0 ? placeholder : ""}
+          />
+          {showSuggestions && filtered.length > 0 && (
+            <div className="absolute top-full left-0 z-50 mt-1 w-48 rounded-md border bg-popover shadow-md max-h-48 overflow-y-auto">
+              {filtered.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onMouseDown={() => add(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Press Enter or comma to add. Click × to remove.</p>
+    </div>
+  );
+}
+
+import React from "react";
+
+function FirmProfileTab() {
+  const { data: profile, isLoading } = trpc.firmSettings.get.useQuery();
+  const upsert = trpc.firmSettings.upsert.useMutation();
+  const utils = trpc.useUtils();
+
+  const [firmName, setFirmName] = React.useState("");
+  const [serviceLines, setServiceLines] = React.useState<string[]>([]);
+  const [states, setStates] = React.useState<string[]>([]);
+  const [typicalValueMin, setTypicalValueMin] = React.useState("");
+  const [typicalValueMax, setTypicalValueMax] = React.useState("");
+  const [minDaysToRespond, setMinDaysToRespond] = React.useState("14");
+  const [preferredAgencies, setPreferredAgencies] = React.useState<string[]>([]);
+  const [avoidedAgencies, setAvoidedAgencies] = React.useState<string[]>([]);
+  const [initialized, setInitialized] = React.useState(false);
+
+  React.useEffect(() => {
+    if (profile && !initialized) {
+      setFirmName(profile.firmName ?? "");
+      setServiceLines((profile.serviceLines as string[]) ?? []);
+      setStates((profile.states as string[]) ?? []);
+      setTypicalValueMin(profile.typicalValueMin != null ? String(profile.typicalValueMin) : "");
+      setTypicalValueMax(profile.typicalValueMax != null ? String(profile.typicalValueMax) : "");
+      setMinDaysToRespond(String(profile.minDaysToRespond ?? 14));
+      setPreferredAgencies((profile.preferredAgencies as string[]) ?? []);
+      setAvoidedAgencies((profile.avoidedAgencies as string[]) ?? []);
+      setInitialized(true);
+    }
+  }, [profile, initialized]);
+
+  const handleSave = async () => {
+    try {
+      await upsert.mutateAsync({
+        firmName: firmName || undefined,
+        serviceLines,
+        states,
+        typicalValueMin: typicalValueMin ? parseFloat(typicalValueMin) : null,
+        typicalValueMax: typicalValueMax ? parseFloat(typicalValueMax) : null,
+        minDaysToRespond: parseInt(minDaysToRespond, 10) || 14,
+        preferredAgencies,
+        avoidedAgencies,
+      });
+      utils.firmSettings.get.invalidate();
+      toast.success("Firm profile saved.");
+    } catch {
+      toast.error("Failed to save firm profile.");
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Building2 className="h-4 w-4" />
+            Firm Profile
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Used by the Quick Signal pre-score to evaluate RFP fit before committing to full analysis.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Firm Name */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Firm Name</Label>
+            <Input
+              value={firmName}
+              onChange={(e) => setFirmName(e.target.value)}
+              placeholder="e.g. Acme Engineering LLC"
+            />
+          </div>
+
+          {/* Service Lines */}
+          <TagInput
+            label="Service Lines"
+            values={serviceLines}
+            onChange={setServiceLines}
+            placeholder="Type or select a service line…"
+            suggestions={FIRM_SERVICE_LINE_OPTIONS}
+          />
+
+          {/* States */}
+          <TagInput
+            label="Licensed / Registered States"
+            values={states}
+            onChange={setStates}
+            placeholder="Type a state abbreviation…"
+            suggestions={US_STATES}
+          />
+
+          {/* Typical Contract Value */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Min ($)</Label>
+              <Input
+                type="number"
+                value={typicalValueMin}
+                onChange={(e) => setTypicalValueMin(e.target.value)}
+                placeholder="e.g. 100000"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Max ($)</Label>
+              <Input
+                type="number"
+                value={typicalValueMax}
+                onChange={(e) => setTypicalValueMax(e.target.value)}
+                placeholder="e.g. 2000000"
+              />
+            </div>
+          </div>
+
+          {/* Min Days to Respond */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Minimum Days to Respond</Label>
+            <Input
+              type="number"
+              min={1}
+              max={90}
+              value={minDaysToRespond}
+              onChange={(e) => setMinDaysToRespond(e.target.value)}
+              className="w-32"
+            />
+            <p className="text-[11px] text-muted-foreground">Proposals with fewer days remaining will be flagged as unfavorable.</p>
+          </div>
+
+          {/* Preferred Agencies */}
+          <TagInput
+            label="Preferred Agencies (existing relationships)"
+            values={preferredAgencies}
+            onChange={setPreferredAgencies}
+            placeholder="e.g. NYC DOT, MTA…"
+          />
+
+          {/* Avoided Agencies */}
+          <TagInput
+            label="Agencies to Avoid"
+            values={avoidedAgencies}
+            onChange={setAvoidedAgencies}
+            placeholder="e.g. Any agency to skip…"
+          />
+
+          <div className="flex justify-end pt-2">
+            <Button onClick={handleSave} disabled={upsert.isPending} className="gap-2">
+              {upsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save Firm Profile
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

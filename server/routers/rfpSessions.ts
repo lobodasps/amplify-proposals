@@ -543,16 +543,29 @@ export const rfpSessionsRouter = router({
         fileUrl: z.string().url(),
         fileName: z.string(),
         mimeType: z.string(),
+        isMainRfp: z.boolean().optional().default(false),
       })
     )
     .mutation(async ({ input }) => {
+      const quickSignalsSchema = input.isMainRfp ? `,
+  "quickSignals": {
+    "agency": "string or null — issuing agency/authority name",
+    "projectType": "string or null — type of work (e.g. Construction Inspection, Traffic Engineering)",
+    "estimatedValue": "string or null — contract value or range as written in the RFP",
+    "dueDate": "string or null — proposal due date in ISO format YYYY-MM-DD or null",
+    "location": "string or null — project location, city or state",
+    "prequalRequired": true or false,
+    "prequalType": "string or null — type of prequalification if required",
+    "immediateRedFlags": ["array of strings — any immediate disqualifiers like sole-source, out-of-state-only, or unrealistic timeline"]
+  }` : "";
+
       const systemPrompt = `You are classifying a document in a government AEC RFP package. Read these pages and return JSON only:
 {
   "documentType": "main_rfp" | "scope" | "appendix" | "form" | "addendum" | "fee_schedule" | "certificate" | "cover_letter" | "reference" | "supplemental",
   "confidence": "high" | "medium" | "low",
   "keyEvidence": "string (what told you this — max 15 words)",
   "suggestedLabel": "string (short human label, max 5 words)",
-  "extractionDepth": "full" | "metadata_only" | "skip"
+  "extractionDepth": "full" | "metadata_only" | "skip"${quickSignalsSchema}
 }`;
 
       const DOCTYPE_TO_LABEL: Record<string, string> = {
@@ -600,7 +613,7 @@ export const rfpSessionsRouter = router({
             type: "json_schema",
             json_schema: {
               name: "file_classification",
-              strict: true,
+              strict: false, // allow optional quickSignals
               schema: {
                 type: "object",
                 properties: {
@@ -609,6 +622,23 @@ export const rfpSessionsRouter = router({
                   keyEvidence:  { type: "string" },
                   suggestedLabel: { type: "string" },
                   extractionDepth: { type: "string" },
+                  ...(input.isMainRfp ? {
+                    quickSignals: {
+                      type: "object",
+                      properties: {
+                        agency:           { type: ["string", "null"] },
+                        projectType:      { type: ["string", "null"] },
+                        estimatedValue:   { type: ["string", "null"] },
+                        dueDate:          { type: ["string", "null"] },
+                        location:         { type: ["string", "null"] },
+                        prequalRequired:  { type: "boolean" },
+                        prequalType:      { type: ["string", "null"] },
+                        immediateRedFlags: { type: "array", items: { type: "string" } },
+                      },
+                      required: ["agency", "projectType", "estimatedValue", "dueDate", "location", "prequalRequired", "prequalType", "immediateRedFlags"],
+                      additionalProperties: false,
+                    },
+                  } : {}),
                 },
                 required: ["documentType", "confidence", "keyEvidence", "suggestedLabel", "extractionDepth"],
                 additionalProperties: false,
@@ -624,6 +654,16 @@ export const rfpSessionsRouter = router({
           keyEvidence: string;
           suggestedLabel: string;
           extractionDepth: string;
+          quickSignals?: {
+            agency: string | null;
+            projectType: string | null;
+            estimatedValue: string | null;
+            dueDate: string | null;
+            location: string | null;
+            prequalRequired: boolean;
+            prequalType: string | null;
+            immediateRedFlags: string[];
+          };
         };
 
         return {
@@ -633,6 +673,7 @@ export const rfpSessionsRouter = router({
           keyEvidence:     parsed.keyEvidence ?? "Could not determine",
           suggestedLabel:  DOCTYPE_TO_LABEL[parsed.documentType] ?? parsed.suggestedLabel ?? "Supplemental",
           extractionDepth: DEPTH_TO_TIER[parsed.extractionDepth] ?? "metadata_only",
+          quickSignals:    parsed.quickSignals ?? null,
         };
       } catch (err) {
         console.error("[classifyFile] Gemini classification failed:", err);
@@ -643,6 +684,7 @@ export const rfpSessionsRouter = router({
           keyEvidence:     "Classification failed — please review manually",
           suggestedLabel:  "Supplemental",
           extractionDepth: "metadata_only",
+          quickSignals:    null,
         };
       }
     }),

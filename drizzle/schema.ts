@@ -1085,3 +1085,27 @@ export const llmUsageLogs = pgTable("llm_usage_logs", {
 
 export type LlmUsageLog = typeof llmUsageLogs.$inferSelect;
 export type InsertLlmUsageLog = typeof llmUsageLogs.$inferInsert;
+
+// ─── Firm Profile Settings ────────────────────────────────────────────────────
+
+export const firmSettings = pgTable("firm_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  firmName: text("firmName"),
+  // JSON array of service line strings e.g. ["Special Inspections","Traffic Engineering"]
+  serviceLines: jsonb("serviceLines").$type<string[]>().default([]),
+  // JSON array of state abbreviations e.g. ["NJ","NY","CT"]
+  states: jsonb("states").$type<string[]>().default([]),
+  typicalValueMin: numeric("typicalValueMin"),
+  typicalValueMax: numeric("typicalValueMax"),
+  // Minimum days needed to prepare a response (default 14)
+  minDaysToRespond: integer("minDaysToRespond").default(14),
+  // JSON array of preferred agency name strings
+  preferredAgencies: jsonb("preferredAgencies").$type<string[]>().default([]),
+  // JSON array of agency names to avoid
+  avoidedAgencies: jsonb("avoidedAgencies").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type FirmSettings = typeof firmSettings.$inferSelect;
+export type InsertFirmSettings = typeof firmSettings.$inferInsert;

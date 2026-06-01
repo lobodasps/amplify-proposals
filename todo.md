@@ -697,3 +697,17 @@
 - [x] Manifest UI: extraction depth badge (Full Extract blue / Metadata Only gray / Skip red)
 - [x] Manifest UI: auto-open label dropdown for low-confidence files
 - [x] Pre-process warning dialog: "X files need review" with Review Now / Process Anyway options
+
+## Quick Signal Pre-Score — Proposal Launchpad (v4.0)
+- [x] Fix docs: update ARCHITECTURE.md and CLAUDE.md LLM default description to say "defaults to models defined in AI Skills settings" not "Manus built-in"
+- [x] Schema: add firm_settings table (id, firmName, serviceLines JSON, states JSON, typicalValueMin, typicalValueMax, minDaysToRespond, preferredAgencies JSON, createdAt, updatedAt)
+- [x] Schema: push migration (pnpm db:push)
+- [x] Server: add firmSettings router (get, upsert procedures)
+- [x] Settings: add Firm Profile tab with service lines multi-select, states multi-select, value range inputs, min days to respond, preferred agencies list
+- [x] Extend classifyFile procedure: for main_rfp files only, add quickSignals object to response (agency, projectType, estimatedValue, dueDate, location, prequalRequired, prequalType, immediateRedFlags[])
+- [x] ProposalLaunchpad: after Pass 2 completes, read quickSignals from main_rfp classification result
+- [x] ProposalLaunchpad: client-side Quick Signal scoring — score 6 factors (agency, projectType, value, dueDate, location, redFlags) as favorable/neutral/unfavorable against firm profile
+- [x] ProposalLaunchpad: Quick Signal card UI — signal strength badge (Strong/Mixed/Weak), 6-factor checklist, red flag chips, extracted values display
+- [x] ProposalLaunchpad: "Process & Full Analysis" and "Archive This RFP" buttons replace existing Process button when Quick Signal card is shown
+- [x] Archive path: create opportunity record with status=archived via trpc.opportunities.create, skip extraction
+- [x] Zero TypeScript errors

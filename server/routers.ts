@@ -11,7 +11,7 @@ import { analyticsRouter } from "./routers/analytics";
 import {
   entitiesRouter, orderTypesRouter, departmentsRouter, serviceTypesRouter,
   form254CodesRouter, organizationsRouter, peopleRouter, glossaryRouter,
-  appSettingsRouter, seedEntitiesRouter,
+  appSettingsRouter, seedEntitiesRouter, firmSettingsRouter,
 } from "./routers/settings";
 import { complianceRouter, activityLogRouter, billingEntriesRouter } from "./routers/compliance";
 import { contractAnalyzerRouter } from "./routers/contractAnalyzer";
@@ -66,6 +66,7 @@ export const appRouter = router({
   rfpSessions: rfpSessionsRouter,
   dam: damRouter,
   userManagement: userManagementRouter,
+  firmSettings: firmSettingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

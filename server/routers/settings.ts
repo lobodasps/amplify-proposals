@@ -568,3 +568,54 @@ export const seedEntitiesRouter = router({
     return { inserted: 8, message: "Service types seeded" };
   }),
 });
+
+// ─── Firm Settings Router ─────────────────────────────────────────────────────
+
+import { firmSettings } from "../../drizzle/schema";
+
+export const firmSettingsRouter = router({
+  get: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select().from(firmSettings).limit(1);
+    return rows[0] ?? null;
+  }),
+
+  upsert: protectedProcedure
+    .input(z.object({
+      firmName: z.string().optional(),
+      serviceLines: z.array(z.string()).optional(),
+      states: z.array(z.string()).optional(),
+      typicalValueMin: z.number().nullable().optional(),
+      typicalValueMax: z.number().nullable().optional(),
+      minDaysToRespond: z.number().int().min(1).default(14),
+      preferredAgencies: z.array(z.string()).optional(),
+      avoidedAgencies: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      const existing = await db.select().from(firmSettings).limit(1);
+      const now = new Date();
+      const values = {
+        firmName: input.firmName,
+        serviceLines: input.serviceLines ?? [],
+        states: input.states ?? [],
+        typicalValueMin: input.typicalValueMin != null ? input.typicalValueMin.toString() : null,
+        typicalValueMax: input.typicalValueMax != null ? input.typicalValueMax.toString() : null,
+        minDaysToRespond: input.minDaysToRespond,
+        preferredAgencies: input.preferredAgencies ?? [],
+        avoidedAgencies: input.avoidedAgencies ?? [],
+        updatedAt: now,
+      };
+      if (existing.length > 0) {
+        await db.update(firmSettings).set(values).where(eq(firmSettings.id, existing[0].id));
+        const rows = await db.select().from(firmSettings).where(eq(firmSettings.id, existing[0].id));
+        return rows[0];
+      } else {
+        const [created] = await db.insert(firmSettings).values({ ...values, createdAt: now }).returning({ id: firmSettings.id });
+        const rows = await db.select().from(firmSettings).where(eq(firmSettings.id, created.id));
+        return rows[0];
+      }
+    }),
+});

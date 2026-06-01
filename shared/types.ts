@@ -193,3 +193,44 @@ export const CONFIDENCE_BADGE: Record<ClassificationConfidence, { icon: string; 
   low:          { icon: "⚠️", label: "Review",       className: "text-red-500" },
   unclassified: { icon: "⚠️", label: "Review needed", className: "text-red-500" },
 };
+
+// ─── Quick Signal Pre-Score ───────────────────────────────────────────────────
+// Extracted from the main_rfp file during Pass 2 classification.
+
+export interface QuickSignals {
+  agency: string | null;
+  projectType: string | null;
+  estimatedValue: string | null;
+  dueDate: string | null; // ISO date string or null
+  location: string | null;
+  prequalRequired: boolean;
+  prequalType: string | null;
+  immediateRedFlags: string[];
+}
+
+export type SignalRating = "favorable" | "neutral" | "unfavorable";
+
+export interface SignalFactor {
+  label: string;
+  rating: SignalRating;
+  detail: string;
+}
+
+export type QuickSignalStrength = "strong" | "mixed" | "weak";
+
+export interface QuickSignalScore {
+  strength: QuickSignalStrength;
+  favorableCount: number;
+  factors: SignalFactor[];
+}
+
+/** Firm profile used for Quick Signal scoring (mirrors firm_settings table). */
+export interface FirmProfile {
+  serviceLines: string[];
+  states: string[];
+  typicalValueMin: number | null;
+  typicalValueMax: number | null;
+  minDaysToRespond: number;
+  preferredAgencies: string[];
+  avoidedAgencies: string[];
+}
