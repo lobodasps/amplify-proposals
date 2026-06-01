@@ -607,4 +607,102 @@ A new client-side pre-score card that appears in the Proposal Launchpad **after 
 |---------|-------------|
 | `b3ed59cb` | Documentation audit: todo.md, ARCHITECTURE.md, CLAUDE.md, SPECIFICATIONS.md reconciled |
 | `4bb9e803` | Quick Signal pre-score + Firm Profile settings (single global profile) |
-| *(next)* | Per-entity Firm Profile + GitHub sync |
+| `68cc0429` | Per-entity Firm Profile + GitHub sync |
+| `b3a67335` | Proposal Workspace Fix v4.2: buildSkillVariables, mapToSkillType, live generation chain |
+| `b29a9839` | AI Skills outputType column (json/prose/json_with_prose) |
+| `62d88087` | Proposal Workspace Output Renderers (SkillOutputRenderer) |
+| `fa3c66f7` | Dynamic outputType lookup from ai_skills at runtime |
+| `aad2b8bd` | Proposal Launchpad Step 3 — Asset Matching panel + DAM hydration |
+
+---
+
+## Architecture Changes — Jun 1, 2026 (Afternoon)
+
+### AI Skills `outputType` Column
+
+The `ai_skills` table now includes an `outputType` column (`text`, default `'prose'`) that controls how the Proposal Workspace renders each skill's output. Three values are supported:
+
+| Value | Behavior |
+|-------|----------|
+| `prose` | Rendered in an inline rich text editor; user edits directly |
+| `json` | Parsed and rendered as structured UI (cards, tables, scorecards) |
+| `json_with_prose` | Prose in main editor, JSON metadata in collapsible sidebar |
+
+All 23 seeded skills have an assigned `outputType`:
+
+| outputType | Skills |
+|------------|--------|
+| `json` | rfp_shredder, go_no_go_advisor, opportunity_scorer, contract_analyzer, asset_tagger, proposal_scorer, opportunity_ingestion, xml_shredder, agent_guidelines, autoExtract, triggerExtract, dam_image_caption, conflict_detector, win_theme_generator, requirements_matrix_builder |
+| `prose` | resume_tailor, proposal_writer, wiki_compiler, executive_summary_writer, technical_approach_writer, firm_qualifications_writer, project_experience_writer, key_personnel_writer |
+
+`seedDefaultSkills()` and the `aiSkills.list` in-memory fallback both include `outputType`. The Settings > AI Skills UI can update it at runtime.
+
+### Proposal Workspace — SkillOutputRenderer
+
+The old `SkillOutputEditor` component was replaced by `SkillOutputRenderer` (`client/src/components/SkillOutputRenderer.tsx`), which routes display based on `outputType`:
+
+**Prose skills** → `ProseEditor` — inline textarea with Edit/Save/Cancel. Save calls `trpc.rfpSessions.updateSkillOutput` (persists to `rfp_sessions.skillOutputs` JSON column in Supabase Postgres). Explicit save only — no autosave-on-blur.
+
+**JSON skills** — skill-specific structured renderers:
+
+| Skill Type | Renderer | Display |
+|------------|----------|--------|
+| `win_theme_generator` | `WinThemeCards` | Styled cards with title, statement, rationale, proof, applicable sections |
+| `proposal_scorer` | `ProposalScorecard` | Overall score ring, per-criterion progress bars, gaps/improvements lists |
+| `requirements_matrix_builder` | `ComplianceChecklist` | Table with status badges, mandatory flags, section mapping |
+| `conflict_detector` | `ConflictCards` | Severity badges (critical/high/medium/low), affected sections, recommendations |
+| Other JSON | `GenericJsonViewer` | Formatted key/value tree |
+
+**json_with_prose** → `JsonWithProseRenderer` — prose in main editor, JSON metadata in collapsible right sidebar.
+
+**Fallback** → `FallbackRenderer` — monospace code block + amber warning banner (for unknown outputType or JSON parse failure).
+
+### Dynamic outputType Resolution
+
+The static `SKILL_OUTPUT_TYPE` map was removed. The workspace now resolves `outputType` at runtime:
+
+1. `trpc.aiSkills.list.useQuery()` fetches all skill records (including `outputType`)
+2. `WORKFLOW_SKILL_TO_SKILL_TYPE` mapping (exported from `shared/workflowTypes.ts`) converts workflow skill names to skill types
+3. `resolveOutputType(workflowSkillName, aiSkillRecords)` looks up the matching record and returns its `outputType`
+
+If someone updates `outputType` in Settings → AI Skills, the workspace picks it up on next render.
+
+### Proposal Launchpad Step 3 — Asset Matching
+
+After the GO decision, the Launchpad now transitions to an **asset_matching** step before navigating to the Proposal Workspace. This step lets the user select DAM assets (project sheets, resumes, past proposals) to feed into the generation chain.
+
+**Schema additions** (pursuits table):
+
+| Column | Type | Purpose |
+|--------|------|--------|
+| `selectedProjectIds` | text (JSON array) | DAM document IDs for project sheets |
+| `selectedPastProposalIds` | text (JSON array) | DAM document IDs for past proposals |
+| `selectedPersonnel` | text (JSON array) | `[{ documentId, role }]` for resumes |
+
+**Server procedures** (added to existing routers, zero new routers):
+
+| Procedure | Router | Behavior |
+|-----------|--------|----------|
+| `matchProjectSheets` | dam | Returns top 10 project_sheet docs by service line tag overlap |
+| `matchResumes` | dam | Returns top 10 resume docs (base version) by tag overlap |
+| `matchPastProposals` | dam | Returns top 5 past_proposal docs by tag overlap |
+| `searchForAssetMatching` | dam | Free-text search filtered by docType |
+| `saveAssetSelections` | pursuits | Writes JSON arrays to pursuit record |
+
+**Client component:** `AssetMatchingPanel` (`client/src/components/AssetMatchingPanel.tsx`) — three sections with checkboxes, search bars, role inputs for personnel, auto-preselects top 3 project sheets + top 1 past proposal.
+
+**Launchpad integration:** After GO click, `step` transitions to `'asset_matching'` instead of navigating directly. User selects assets → Save & Continue → navigates to workspace. "Continue Without Assets" option available.
+
+**Workspace integration:** "Assets" button in toolbar opens a `Sheet` side panel with `AssetMatchingPanel` for editing selections mid-generation.
+
+### buildSkillVariables() — DAM Hydration
+
+`buildSkillVariables()` in `server/routers/rfpSessions.ts` now reads the pursuit's asset selections from the DB and hydrates skill template variables with real DAM content:
+
+| Variable | Source |
+|----------|--------|
+| `selectedProjects` | `pursuit.selectedProjectIds` → `dam_documents.extractedMeta` (project name, client, value, description) |
+| `selectedPersonnel` | `pursuit.selectedPersonnel` → `dam_documents.extractedText` (name, role, resume text) |
+| `pastProposalsSummary` | `pursuit.selectedPastProposalIds` → `dam_documents.extractedText` (title, text summary) |
+
+Fallback: if no DAM selections exist, falls back to legacy `amp_projects` and `personnel` table queries (preserves backward compatibility with sessions created before v4.6).

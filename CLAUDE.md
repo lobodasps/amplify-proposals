@@ -656,4 +656,102 @@ A follow-up audit resolved a tracking discrepancy where `todo.md` still showed v
 |---------|-------------|
 | `b3ed59cb` | Documentation audit: todo.md, ARCHITECTURE.md, CLAUDE.md, SPECIFICATIONS.md reconciled |
 | `4bb9e803` | Quick Signal pre-score + Firm Profile settings (single global profile) |
-| *(next)* | Per-entity Firm Profile + all docs updated + GitHub sync |
+| `68cc0429` | Per-entity Firm Profile + all docs updated + GitHub sync |
+| `b3a67335` | Proposal Workspace Fix v4.2: buildSkillVariables, mapToSkillType, live generation chain |
+| `b29a9839` | AI Skills outputType column (json/prose/json_with_prose) |
+| `62d88087` | Proposal Workspace Output Renderers (SkillOutputRenderer) |
+| `fa3c66f7` | Dynamic outputType lookup from ai_skills at runtime |
+| `aad2b8bd` | Proposal Launchpad Step 3 — Asset Matching panel + DAM hydration |
+
+---
+
+## Session Notes — Jun 1, 2026 (Afternoon)
+
+### Proposal Workspace Fix (v4.2)
+
+The generation chain was broken due to mismatches between workflow skill names and the `ai_skills` DB records. Fixed:
+
+- `mapToSkillType()` now routes workflow skills to dedicated skill types: `win_themes` → `win_theme_generator`, `technical_outline`/`technical_writer` → `technical_approach_writer`, `key_personnel` → `key_personnel_writer`, `past_performance` → `project_experience_writer`, `fee_estimator` → `proposal_writer`, `proposal_scorer` → `proposal_scorer`.
+- `buildSkillVariables()` is now async and queries pursuit, rfpSession, firm_settings, wiki, personnel, and projects from DB.
+- Substitution validator checks for unresolved `{variable}` patterns before LLM call; replaces with `'[Not provided]'` fallback and surfaces `missingVariables` warning in UI.
+- Live generation chain verified: `win_themes` + `technical_writer` ran against real DB data (Claude Sonnet 4), all variables populated, zero fallbacks.
+
+### AI Skills `outputType` Column (v4.3)
+
+New column on `ai_skills` table: `outputType text default 'prose' not null`. Controls how the Proposal Workspace renders each skill's output.
+
+| Value | Rendering behavior |
+|-------|-------------------|
+| `prose` | Inline rich text editor; user edits directly |
+| `json` | Parsed and rendered as structured UI (cards, tables, scorecards) |
+| `json_with_prose` | Prose in main editor, JSON metadata in collapsible sidebar |
+
+All 23 skills assigned:
+- **json**: rfp_shredder, go_no_go_advisor, opportunity_scorer, contract_analyzer, asset_tagger, proposal_scorer, opportunity_ingestion, xml_shredder, agent_guidelines, autoExtract, triggerExtract, dam_image_caption, conflict_detector, win_theme_generator, requirements_matrix_builder
+- **prose**: resume_tailor, proposal_writer, wiki_compiler, executive_summary_writer, technical_approach_writer, firm_qualifications_writer, project_experience_writer, key_personnel_writer
+
+`seedDefaultSkills()` includes `outputType`. Settings > AI Skills can update it at runtime.
+
+### SkillOutputRenderer (v4.4)
+
+Replaced `SkillOutputEditor` with `SkillOutputRenderer` (`client/src/components/SkillOutputRenderer.tsx`). Routes display by `outputType`:
+
+| Skill Type | Renderer | Display |
+|------------|----------|--------|
+| `win_theme_generator` | `WinThemeCards` | Cards with title, statement, rationale, proof, applicable sections |
+| `proposal_scorer` | `ProposalScorecard` | Overall score ring, criterion bars, gaps/improvements |
+| `requirements_matrix_builder` | `ComplianceChecklist` | Table with status badges, mandatory flags, section mapping |
+| `conflict_detector` | `ConflictCards` | Severity badges, affected sections, recommendations |
+| Other JSON | `GenericJsonViewer` | Formatted key/value tree |
+| Prose | `ProseEditor` | Inline textarea, Edit/Save/Cancel, persists via `trpc.rfpSessions.updateSkillOutput` |
+| Fallback | `FallbackRenderer` | Monospace code block + amber warning banner |
+
+**Persistence:** `ProseEditor` saves to `rfp_sessions.skillOutputs` JSON column via `updateSkillOutput` mutation. Explicit save only (no autosave-on-blur).
+
+### Dynamic outputType Resolution (v4.5)
+
+Static `SKILL_OUTPUT_TYPE` map removed. Runtime resolution:
+1. `trpc.aiSkills.list.useQuery()` fetches all skill records (including `outputType`)
+2. `WORKFLOW_SKILL_TO_SKILL_TYPE` (exported from `shared/workflowTypes.ts`) maps workflow names → skill types
+3. `resolveOutputType(workflowSkillName, aiSkillRecords)` returns the live `outputType`
+
+Updating `outputType` in Settings → AI Skills takes effect on next workspace render.
+
+### Proposal Launchpad Step 3 — Asset Matching (v4.6)
+
+New wizard step between GO decision and workspace navigation. Lets user select DAM assets to feed into the generation chain.
+
+**Schema** (pursuits table): `selectedProjectIds` (JSON array), `selectedPastProposalIds` (JSON array), `selectedPersonnel` (JSON array of `{ documentId, role }`).
+
+**Server procedures** (zero new routers):
+- `dam.matchProjectSheets` — top 10 project_sheet docs by service line tag overlap
+- `dam.matchResumes` — top 10 resume docs (base version) by tag overlap
+- `dam.matchPastProposals` — top 5 past_proposal docs by tag overlap
+- `dam.searchForAssetMatching` — free-text search filtered by docType
+- `pursuits.saveAssetSelections` — writes JSON arrays to pursuit record
+
+**Client:** `AssetMatchingPanel` component with 3 sections (project sheets, resumes, past proposals), checkboxes, search bars, role inputs, auto-preselects top 3 + top 1.
+
+**Launchpad flow:** GO → `asset_matching` step → Save & Continue → workspace. "Continue Without Assets" option available.
+
+**Workspace:** "Assets" toolbar button opens `Sheet` side panel with `AssetMatchingPanel` for mid-generation edits.
+
+### buildSkillVariables() — DAM Hydration
+
+`buildSkillVariables()` now reads pursuit asset selections and hydrates skill variables from real DAM content:
+
+| Variable | Source |
+|----------|--------|
+| `selectedProjects` | `pursuit.selectedProjectIds` → `dam_documents.extractedMeta` |
+| `selectedPersonnel` | `pursuit.selectedPersonnel` → `dam_documents.extractedText` |
+| `pastProposalsSummary` | `pursuit.selectedPastProposalIds` → `dam_documents.extractedText` |
+
+Fallback: if no DAM selections exist, falls back to legacy `amp_projects` and `personnel` table queries.
+
+### Key Rules for AI Assistants
+
+1. **Never hardcode provider/model in `seedDefaultSkills()` or `aiSkills.list` seed paths.** Leave null. Settings UI manages provider/model.
+2. **`outputType` must be included** when seeding new skills. Valid values: `json`, `prose`, `json_with_prose`.
+3. **Zero new routers** for asset matching — procedures added to existing `dam` and `pursuits` routers.
+4. **`WORKFLOW_SKILL_TO_SKILL_TYPE`** in `shared/workflowTypes.ts` is the single source of truth for workflow → skill type mapping. Keep it in sync with `mapToSkillType()` on the server.
+5. **ProseEditor persistence** is explicit save (not autosave-on-blur). The `updateSkillOutput` mutation writes to `rfp_sessions.skillOutputs` JSON column.
