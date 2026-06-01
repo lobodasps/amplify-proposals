@@ -747,4 +747,17 @@
 - [x] seedDefaultSkills: include outputType for all 23 skill records per spec
 - [x] SQL: update any existing ai_skills rows in DB with correct outputType values
 - [x] Zero TypeScript errors, 25/25 tests passing
-- [ ] Push to GitHub + checkpoint
+- [x] Push to GitHub + checkpoint
+
+## Proposal Workspace Output Renderers (v4.4)
+- [x] Build SkillOutputRenderer component: routes by outputType (prose | json | json_with_prose | unknown)
+- [x] Prose renderer: inline rich text editor (existing editor), raw text is the proposal content
+- [x] WinThemeCards renderer: styled cards with title, statement, rationale, proof fields
+- [x] ComplianceChecklist renderer: table with requirementId, requirement, proposalSection, status badge
+- [x] ConflictCards renderer: list of conflict cards with severity badge, conflictType, description, recommendation
+- [x] ProposalScorecard renderer: criterion bars with scores, overall score ring, gaps list
+- [x] Fallback renderer: monospace code block + warning banner for unknown outputType or JSON parse failure
+- [x] Wire SkillOutputRenderer into Proposal Workspace section display (replace raw text display)
+- [x] outputType read from SKILL_OUTPUT_TYPE static map (derived from ai_skills.outputType + mapToSkillType)
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint

@@ -17,6 +17,7 @@
  */
 
 import AppLayout from "@/components/AppLayout";
+import { SkillOutputRenderer, type SkillOutputType } from "@/components/SkillOutputRenderer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -61,12 +62,10 @@ import {
   FileText,
   AlertTriangle,
   Pencil,
-  Save,
   Eye,
   ArrowLeft,
   Zap,
   Clock,
-  Cpu,
 } from "lucide-react";
 import {
   ORDERED_SKILLS,
@@ -82,6 +81,20 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ActiveView = "overview" | "full_draft" | WorkflowSkillName;
+
+// ─── Workflow Skill → outputType Map ─────────────────────────────────────────
+// Derived from mapToSkillType() in rfpSessions.ts + ai_skills.outputType column.
+// json skills get structured renderers; prose skills get the inline text editor.
+const SKILL_OUTPUT_TYPE: Record<WorkflowSkillName, SkillOutputType> = {
+  rfp_parser: "json",
+  win_themes: "json",
+  technical_outline: "prose",
+  technical_writer: "prose",
+  key_personnel: "prose",
+  past_performance: "prose",
+  fee_estimator: "prose",
+  proposal_scorer: "json",
+};
 
 // ─── Skill Status Icon ────────────────────────────────────────────────────────
 
@@ -178,151 +191,6 @@ function SkillRow({
         )}
       </div>
     </button>
-  );
-}
-
-// ─── Output Editor ────────────────────────────────────────────────────────────
-
-function SkillOutputEditor({
-  skillName,
-  output,
-  sessionId,
-  isComplete,
-  onSaved,
-}: {
-  skillName: WorkflowSkillName;
-  output: string;
-  sessionId: string;
-  isComplete: boolean;
-  onSaved: (newOutput: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(output);
-
-  const updateMutation = trpc.rfpSessions.updateSkillOutput.useMutation({
-    onSuccess: () => {
-      onSaved(draft);
-      setEditing(false);
-      toast.success("Output saved");
-    },
-    onError: (err) => toast.error(`Save failed: ${err.message}`),
-  });
-
-  useEffect(() => {
-    if (!editing) setDraft(output);
-  }, [output, editing]);
-
-  const isJson = (() => {
-    try {
-      JSON.parse(output);
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-
-  const formattedJson = (() => {
-    if (!isJson) return output;
-    try {
-      return JSON.stringify(JSON.parse(output), null, 2);
-    } catch {
-      return output;
-    }
-  })();
-
-  return (
-    <div className="flex flex-col gap-3">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          {isComplete && (
-            <Badge
-              variant="secondary"
-              className="text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
-            >
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              Complete
-            </Badge>
-          )}
-          {isJson && (
-            <Badge variant="outline" className="text-xs">
-              <Cpu className="h-2.5 w-2.5 mr-1" />
-              Structured JSON
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {editing ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setDraft(output);
-                  setEditing(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() =>
-                  updateMutation.mutate({
-                    sessionId,
-                    skillName,
-                    output: draft,
-                  })
-                }
-                disabled={updateMutation.isPending}
-              >
-                {updateMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                ) : (
-                  <Save className="h-3.5 w-3.5 mr-1.5" />
-                )}
-                Save
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing(true)}
-              disabled={!isComplete}
-            >
-              <Pencil className="h-3.5 w-3.5 mr-1.5" />
-              Edit
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      {editing ? (
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          className="flex-1 font-mono text-sm resize-none min-h-[400px]"
-          placeholder="Edit the AI output here..."
-        />
-      ) : (
-        <ScrollArea className="rounded-md border bg-muted/20 p-4 min-h-[200px]">
-          {isJson ? (
-            <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed">
-              {formattedJson}
-            </pre>
-          ) : (
-            <div className="space-y-2">
-              {output.split("\n").map((line, i) => (
-                <p key={i} className="text-sm leading-relaxed">
-                  {line || <span className="block h-2" />}
-                </p>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-      )}
-    </div>
   );
 }
 
@@ -1413,10 +1281,11 @@ export default function ProposalWorkspace() {
                         </Button>
                       </div>
                     ) : selectedOutput ? (
-                      /* Has output — show editor */
-                      <SkillOutputEditor
+                      /* Has output — render based on outputType */
+                      <SkillOutputRenderer
                         skillName={selectedSkill.name}
                         output={selectedOutput}
+                        outputType={SKILL_OUTPUT_TYPE[selectedSkill.name]}
                         sessionId={activeSessionId!}
                         isComplete={selectedState?.status === "complete"}
                         onSaved={(newOutput) =>
