@@ -136,7 +136,7 @@ The Opportunities module tracks public-sector bid opportunities from identificat
 
 ### 3.10 Settings (`/settings`)
 
-The Settings module has thirteen tabs:
+The Settings module has fourteen tabs:
 
 | Tab | Contents |
 |-----|----------|
@@ -152,6 +152,7 @@ The Settings module has thirteen tabs:
 | **Reminders** | COI expiration and contract end date reminder configuration |
 | **App Settings** | App name, logo, default entity, reminder lead times |
 | **AI Skills** | Per-skill system prompt and user prompt editor; provider/model selector per task; global provider API keys; monthly token usage |
+| **Firm Profile** | Per-entity firm profile for Quick Signal scoring: service lines, licensed states, typical value range, min days to respond, preferred/avoided agencies. Entity toggle (JPCL / Strans) in card header. |
 | **Import** | CSV/Excel bulk import for 8 data types with downloadable templates |
 
 ---
@@ -170,7 +171,7 @@ The Settings module has thirteen tabs:
 | Database | Supabase Postgres | Session pooler, port 6543 |
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
-| LLM | Configurable | Manus built-in default; OpenAI, Anthropic, Gemini supported |
+| LLM | Configurable | Defaults to models defined in Settings > AI Skills; OpenAI, Anthropic, Gemini, Manus built-in supported |
 | Vision | Google Gemini Flash | AEC image captioning via `dam_image_caption` skill |
 | ZIP | fflate 0.8.3 | Client-side extraction |
 | Excel | SheetJS 0.18.5 | Client-side parsing |
@@ -179,13 +180,13 @@ The Settings module has thirteen tabs:
 
 ### 4.2 Database
 
-The Supabase Postgres instance contains 43 Amplify-managed tables (defined in `drizzle/schema.ts`, all UUID primary keys) alongside 66 pre-existing v0/timekeeping tables. Cross-app references use soft FK columns (no hard Postgres constraints) to avoid migration coupling.
+The Supabase Postgres instance contains 44 Amplify-managed tables (defined in `drizzle/schema.ts`, all UUID primary keys) alongside 66 pre-existing v0/timekeeping tables. Cross-app references use soft FK columns (no hard Postgres constraints) to avoid migration coupling.
 
-Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billing_entries`, `personnel`, `amp_projects`, `pursuits`, `proposals`, `rfp_sessions`, `opportunities`, `ai_skill_configs`, `document_shreds`, `rfp_wikis`, `assets`, `asset_tags`, `order_types`, `organizations`, `people`, `glossary_terms`.
+Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billing_entries`, `personnel`, `amp_projects`, `pursuits`, `proposals`, `rfp_sessions`, `opportunities`, `ai_skill_configs`, `document_shreds`, `rfp_wikis`, `assets`, `asset_tags`, `order_types`, `organizations`, `people`, `glossary_terms`, `firm_settings`.
 
 ### 4.3 LLM Architecture
 
-All LLM calls route through `invokeLLM()` in `server/_core/llm.ts`. The system is designed for per-task provider configuration: the `ai_skill_configs` table stores system prompt, user prompt template, provider, model, and API key per named skill. When a skill config is found in the DB, it overrides the built-in default. This means no existing procedure call signatures change when a user switches providers.
+All LLM calls route through `invokeLLM()` in `server/_core/llm.ts`. The system defaults to models configured in Settings > AI Skills (`ai_skill_configs` table, which stores system prompt, user prompt template, provider, model, and API key per named skill). When no config is found for a skill, the helper falls back to the Manus built-in API. No existing procedure call signatures change when a user switches providers.
 
 Named skills currently in production: `rfp_parser`, `compliance_matrix`, `scope_analysis`, `win_themes`, `key_personnel`, `past_performance`, `fee_estimator`, `executive_summary`, `technical_approach`, `management_plan`, `quality_control`, `final_review`, `go_no_go_scorer`, `dam_image_caption`, `xml_shredder`, `wiki_compiler`, `conflict_detector`, `contract_analyzer`.
 

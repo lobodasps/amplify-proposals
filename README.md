@@ -18,8 +18,8 @@ Purpose-built for Architecture, Engineering, and Construction firms operating in
 | **AI Tools Suite** | Document Shredder, RFP Wiki, Conflict Detector, Contract Analyzer, Agent Guidelines, Proposal Scorer |
 | **Contract Management** | Three-tier contract hierarchy (Primary → Task Order → Sub-Project), NTE vs. Authorized financial model, amendment tracking, QuickBooks CSV import, compliance tracking |
 | **Opportunities** | Manual entry + planned portal scraping; Go/No-Go → Pursuit conversion |
-| **Firm Records** | Staff, Projects, Glossary, Resource Library — all linked to Knowledge Hub documents |
-| **Settings** | User management, lookup tables, AI skill prompt editor, bulk import (9 data types) |
+| **Firm Records** | Staff, Projects, Glossary — all linked to Knowledge Hub documents (Resource Library retired, redirects to Knowledge Hub) |
+| **Settings** | User management, lookup tables, AI skill prompt editor, Firm Profile (per-entity Quick Signal config), bulk import (9 data types) |
 
 ---
 
@@ -34,7 +34,7 @@ Purpose-built for Architecture, Engineering, and Construction firms operating in
 | Database | Supabase Postgres (session pooler, port 6543) |
 | Auth | Supabase Auth (email/password + JWT) |
 | Storage | Supabase Storage (private `dam` bucket) |
-| LLM | Configurable per skill — Manus built-in default; OpenAI, Anthropic, Gemini supported |
+| LLM | Configurable per skill — defaults to models in Settings > AI Skills; OpenAI, Anthropic, Gemini, Manus built-in supported |
 | Vision | Google Gemini Flash (AEC image captioning via `dam_image_caption` skill) |
 | Testing | Vitest |
 | Language | TypeScript (strict mode, zero errors enforced) |
@@ -104,7 +104,7 @@ pnpm test
 ## Key Files
 
 ```
-drizzle/schema.ts              <- 45 Amplify DB tables (UUID PKs throughout)
+drizzle/schema.ts              <- 44 Amplify DB tables (UUID PKs throughout)
 server/routers.ts              <- tRPC router registry (19 feature routers)
 server/routers/dam.ts          <- Knowledge Hub + image upload pipeline
 server/routers/proposals.ts    <- Proposal Workspace skill orchestrator

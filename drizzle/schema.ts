@@ -1090,6 +1090,8 @@ export type InsertLlmUsageLog = typeof llmUsageLogs.$inferInsert;
 
 export const firmSettings = pgTable("firm_settings", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // FK to entities table — one profile per entity (e.g. JPCL, Strans). Null = legacy single-entity row.
+  entityId: uuid("entityId"),
   firmName: text("firmName"),
   // JSON array of service line strings e.g. ["Special Inspections","Traffic Engineering"]
   serviceLines: jsonb("serviceLines").$type<string[]>().default([]),

@@ -78,6 +78,13 @@
       "when": 1780336796120,
       "tag": "0010_late_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780338002452,
+      "tag": "0011_thin_genesis",
+      "breakpoints": true
     }
   ]
 }

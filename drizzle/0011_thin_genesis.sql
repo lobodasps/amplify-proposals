@@ -1,0 +1,1 @@
+ALTER TABLE "firm_settings" ADD COLUMN "entityId" uuid;

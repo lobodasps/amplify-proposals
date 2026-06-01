@@ -30,7 +30,7 @@ This document describes the current technical architecture of the Amplify Propos
 
 The Supabase Postgres instance contains **two sets of tables** in the same `public` schema:
 
-### Amplify Tables (43 tables, managed by Drizzle ORM)
+### Amplify Tables (44 tables, managed by Drizzle ORM)
 
 These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which runs `drizzle-kit generate && drizzle-kit migrate`). All primary keys are UUID strings generated with `gen_random_uuid()`. Key tables include:
 
@@ -57,6 +57,7 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `organizations` | Companies/firms for contracts |
 | `people` | Contact/personnel for contracts |
 | `glossary_terms` | Industry glossary |
+| `firm_settings` | Per-entity firm profile for Quick Signal scoring (one row per entity) |
 
 ### v0 / Timekeeping Tables (66 tables, managed externally)
 
@@ -139,7 +140,7 @@ All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function 
 | DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 | DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 
-When implementing the LLM config system, `invokeLLM()` should first check the `llmConfigs` table for a task-specific config and use that provider/model/key; if none is found, fall back to the Manus built-in. This means **no existing AI procedures need to change their call signatures** — only the helper itself needs to route correctly.
+The `invokeLLM()` helper checks `ai_skill_configs` for a task-specific config (provider, model, API key, prompts). If no config is found, it falls back to the Manus built-in API. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
 
 ---
 
@@ -167,7 +168,7 @@ amplify-proposals/
 │   ├── storage.ts         # Supabase Storage helpers
 │   └── supabase.ts        # Supabase admin client
 ├── drizzle/
-│   ├── schema.ts          # All 43 Amplify table definitions (pgTable)
+│   ├── schema.ts          # All 44 Amplify table definitions (pgTable)
 │   └── relations.ts       # Drizzle relation definitions
 ├── shared/
 │   ├── workflowTypes.ts   # Proposal Workspace skill types
@@ -438,7 +439,7 @@ The following major features are planned but not yet implemented. See `todo.md` 
 
 ### Near-Term
 
-- **LLM Configuration System**: Admin UI for per-task LLM provider/model/prompt selection (currently hardcoded to Manus built-in)
+- **Replit Parity — Contract Fields**: QB Name, Client Project Ref, Department, Service Types, Form 254 Code, Project Manager/Accountant fields on contracts; QB Bulk Import page; Analytics module with pre-built reports and query builder
 - **Opportunities Ingestion**: Settings-based portal scraping with cheerio, real DB wiring
 - **Pursuit Detail**: Wire mock data to real tRPC queries (tasks, requirements, team)
 - **Proposals**: Real DB integration, section CRUD, resume tailoring
@@ -618,3 +619,39 @@ A follow-up audit resolved a tracking discrepancy where `todo.md` still showed v
 **Validation:** `pnpm check` passed after the implementation updates.
 
 **Remaining caveat:** The separate `/file-library` route and `server/routers/assets.ts` legacy asset/tag system are still live and remain separate from Knowledge Hub. They were not removed in this pass because they support a broader cross-module file library surface, not just the retired `ResourceLibrary.tsx` page.
+
+---
+
+## Session Notes — Jun 1, 2026
+
+### Quick Signal Pre-Score + Per-Entity Firm Profile
+
+**New feature:** Quick Signal pre-score card in Proposal Launchpad, appearing after Pass 2 classification completes and before the user clicks Process.
+
+**Pass 2 extension:** `rfpSessions.classifyFile` now accepts `isMainRfp: boolean`. When true, the Gemini Flash prompt returns a `quickSignals` object: `agency`, `projectType`, `estimatedValue`, `dueDate`, `location`, `prequalRequired`, `prequalType`, `immediateRedFlags[]`.
+
+**`firm_settings` table (new, 44th Amplify table):** One row per entity. Fields: `firmName`, `serviceLines` (JSON), `states` (JSON), `typicalValueMin`, `typicalValueMax`, `minDaysToRespond` (default 14), `preferredAgencies` (JSON), `avoidedAgencies` (JSON), `entityId` (UUID, unique). Router: `firmSettings.get({ entityId? })` and `firmSettings.upsert({ entityId?, ...fields })`.
+
+**Settings > Firm Profile tab:** Entity toggle buttons (JPCL / Strans) in the card header when multiple entities exist. Switching entity reloads the form from the correct DB row. Each entity's profile is saved independently.
+
+**`client/src/lib/quickSignal.ts`:** Pure client-side scoring utility. `computeQuickSignal(signals, profile)` scores 6 factors (agency, project type, value, due date, location, red flags) as favorable/neutral/unfavorable. Returns `{ strength, favorableCount, factors[] }`. Thresholds: strong ≥ 5, mixed ≥ 3, else weak. No API call.
+
+**Quick Signal card UI:** Strength badge (🟢/🟡/🔴), extracted values row, 6-factor checklist, red flag chips, "Process & Full Analysis" button, "Archive This RFP" button (creates `opportunities` record with `status=archived`).
+
+**Entity scoping:** `ProposalLaunchpad.tsx` uses `useEntityContext().activeEntityId` to pass to `firmSettings.get` so the scorer always uses the active entity's profile.
+
+**New shared types:** `QuickSignals`, `SignalRating`, `SignalFactor`, `QuickSignalStrength`, `QuickSignalScore`, `FirmProfile` in `shared/types.ts`.
+
+**Documentation corrections this session:**
+- ARCHITECTURE.md, CLAUDE.md, SPECIFICATIONS.md, FEATURE_CATALOG.md, README.md: corrected LLM default description from "Manus built-in" to "defaults to models defined in Settings > AI Skills"
+- All docs: updated test count from 16/25 to 25, table count from 43 to 44
+- SPECIFICATIONS.md: corrected Settings tab count to 14 (added Firm Profile), corrected AI tool routes
+- Removed "LLM Configuration System" from Near-Term Remaining Work (it is live as `ai_skill_configs`)
+
+### Checkpoints This Session
+
+| Version | Description |
+|---------|-------------|
+| `b3ed59cb` | Documentation audit: todo.md, ARCHITECTURE.md, CLAUDE.md, SPECIFICATIONS.md reconciled |
+| `4bb9e803` | Quick Signal pre-score + Firm Profile settings (single global profile) |
+| *(next)* | Per-entity Firm Profile + all docs updated + GitHub sync |

@@ -5,7 +5,7 @@ import {
   entities, orderTypes, departments, serviceTypes, form254Codes,
   organizations, people, glossaryTerms, appSettings,
 } from "../../drizzle/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, isNull } from "drizzle-orm";
 
 // ─── Entities Router ──────────────────────────────────────────────────────────
 
@@ -574,15 +574,32 @@ export const seedEntitiesRouter = router({
 import { firmSettings } from "../../drizzle/schema";
 
 export const firmSettingsRouter = router({
-  get: protectedProcedure.query(async () => {
+  // Get firm profile for a specific entity. Pass entityId to scope by entity;
+  // omit to get the legacy single-entity row (entityId IS NULL).
+  get: protectedProcedure
+    .input(z.object({ entityId: z.string().uuid().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      if (input.entityId) {
+        const rows = await db.select().from(firmSettings).where(eq(firmSettings.entityId, input.entityId)).limit(1);
+        return rows[0] ?? null;
+      }
+      // Legacy: return first row with no entityId
+      const rows = await db.select().from(firmSettings).where(isNull(firmSettings.entityId)).limit(1);
+      return rows[0] ?? null;
+    }),
+
+  // List all entity profiles (for the switcher to know which entities have profiles)
+  list: protectedProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return null;
-    const rows = await db.select().from(firmSettings).limit(1);
-    return rows[0] ?? null;
+    if (!db) return [];
+    return db.select().from(firmSettings);
   }),
 
   upsert: protectedProcedure
     .input(z.object({
+      entityId: z.string().uuid().optional(),
       firmName: z.string().optional(),
       serviceLines: z.array(z.string()).optional(),
       states: z.array(z.string()).optional(),
@@ -595,9 +612,13 @@ export const firmSettingsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      const existing = await db.select().from(firmSettings).limit(1);
+      // Find existing row scoped to this entityId (or null for legacy)
+      const existing = input.entityId
+        ? await db.select().from(firmSettings).where(eq(firmSettings.entityId, input.entityId)).limit(1)
+        : await db.select().from(firmSettings).where(isNull(firmSettings.entityId)).limit(1);
       const now = new Date();
       const values = {
+        entityId: input.entityId ?? null,
         firmName: input.firmName,
         serviceLines: input.serviceLines ?? [],
         states: input.states ?? [],

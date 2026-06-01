@@ -1,6 +1,6 @@
 # Amplify Proposals — Feature Catalog
 
-**Version:** 3.7 (May 31, 2026)
+**Version:** 4.0 (Jun 1, 2026)
 **Status:** Features marked **[LIVE]** are fully implemented and deployed. Features marked **[PLANNED]** are designed but not yet built.
 
 ---
@@ -17,7 +17,7 @@ The Launchpad is a two-step wizard that converts a raw RFP package into a struct
 |---------|--------|-------|
 | Multi-file RFP package upload (PDF, DOCX, XLSX, ZIP) | LIVE | Up to unlimited files per package |
 | Client-side ZIP extraction (fflate) | LIVE | Inner files queued individually |
-| Per-file label selector with keyword auto-guess | LIVE | 7 labels: Main RFP, Scope of Work, Appendix, Addendum, Fee Schedule, Reference Doc, Other |
+| Per-file label selector with keyword auto-guess | LIVE | 12 labels: Main RFP, Scope of Work, Appendix, Addendum, Fee Schedule, Reference Doc, Cover Letter, Forms, Certificate, Supplemental, Other |
 | XLSX client-side parsing (SheetJS, 5 sheets × 30 rows) | LIVE | Structured data injected into rfp_parser context |
 | Multi-file manifest stored in rfp_sessions.extractedData | LIVE | Full file list with labels, keys, and URLs |
 | Manual entry path (no file upload required) | LIVE | Title, agency, RFP#, due date, value, service lines, scope |
@@ -25,6 +25,10 @@ The Launchpad is a two-step wizard that converts a raw RFP package into a struct
 | Structured strengths, risks, and win themes output | LIVE | Editable before pursuit creation |
 | Automatic pursuit record creation on GO | LIVE | Redirects to Pursuit Detail |
 | Granular per-file processing progress indicators | LIVE | Per-file status icons + animated progress bar |
+| Two-pass pre-classification (Pass 1 heuristics + Pass 2 Gemini Flash) | LIVE | Confidence badges, key evidence, amber warnings for low-confidence files |
+| Extraction tier control (Full Extract / Metadata Only / SheetJS) | LIVE | Reduces LLM calls from 15 to 3–4 on typical packages |
+| Quick Signal pre-score card | LIVE | Client-side only; scores 6 factors against firm profile; 🟢/🟡/🔴 strength badge |
+| Archive This RFP shortcut | LIVE | Creates archived opportunity record, skips extraction |
 
 ### 1.2 Document Shredder **[LIVE]**
 
@@ -250,7 +254,7 @@ This category covers the firm's institutional memory — every document, resume,
 | Named AI skills with editable system + user prompts | LIVE | Stored in ai_skill_configs table |
 | Per-skill provider/model selector in Settings | LIVE | UI built |
 | Global API key management (OpenAI, Anthropic, Gemini) | LIVE | Settings → AI Skills tab |
-| Fallback to Manus built-in when no config found | LIVE | |
+| Default to models configured in Settings > AI Skills | LIVE | Falls back to Manus built-in when no skill config found |
 | Token usage logging per skill invocation | PLANNED | |
 | Token usage visibility dashboard | PLANNED | |
 | Per-task LLM routing (different model per skill) | LIVE | |
@@ -270,7 +274,7 @@ This category covers the firm's institutional memory — every document, resume,
 | Auto-create project record on project sheet upload | LIVE | |
 | Linked Knowledge Hub documents on Staff/Projects pages | LIVE | |
 | Glossary with CSV import | LIVE | |
-| Resource Library (boilerplate text, content library) | LIVE | |
+| Resource Library (boilerplate text, content library) | RETIRED | Route redirects to /knowledge-hub |
 
 ---
 
@@ -283,6 +287,7 @@ This category covers the firm's institutional memory — every document, resume,
 | Lookup table management (Order Types, Departments, Service Types, Form 254 Codes) | LIVE | |
 | Organizations and People management | LIVE | |
 | Bulk import (9 data types, CSV/Excel) | LIVE | Per-row error reporting, downloadable templates |
+| Firm Profile (per-entity: service lines, states, value range, min days, agencies) | LIVE | Settings > Firm Profile tab; entity toggle for JPCL/Strans |
 | QB Sync configuration | PLANNED | |
 
 ---
@@ -299,7 +304,7 @@ This category covers the firm's institutional memory — every document, resume,
 | Superjson serialization (Date stays Date) | LIVE | |
 | UUID primary keys throughout | LIVE | |
 | TypeScript strict mode, zero errors | LIVE | Enforced at every checkpoint |
-| Vitest test suite (16 tests) | LIVE | |
+| Vitest test suite (25 tests) | LIVE | |
 | GitHub sync | LIVE | Auto-push on checkpoint |
 | Manus hosting (Cloud Run + CDN) | LIVE | amplifypro-nzkhudzp.manus.space |
 | Mobile-responsive optimization | PLANNED | |
@@ -307,4 +312,4 @@ This category covers the firm's institutional memory — every document, resume,
 
 ---
 
-*Last updated: May 31, 2026*
+*Last updated: Jun 1, 2026*

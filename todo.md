@@ -711,3 +711,14 @@
 - [x] ProposalLaunchpad: "Process & Full Analysis" and "Archive This RFP" buttons replace existing Process button when Quick Signal card is shown
 - [x] Archive path: create opportunity record with status=archived via trpc.opportunities.create, skip extraction
 - [x] Zero TypeScript errors
+
+## Per-Entity Firm Profile (v4.1)
+- [x] Schema: add entityId (text, nullable FK to entities) to firm_settings table; unique constraint on entityId
+- [x] Schema: push migration (pnpm db:push)
+- [x] Server: update firmSettingsRouter.get to accept optional entityId param; return row matching entityId (or null)
+- [x] Server: update firmSettingsRouter.upsert to accept entityId; upsert by entityId
+- [x] Settings Firm Profile tab: add entity switcher (JPCL / Strans toggle) at top; load/save profile per entity
+- [x] ProposalLaunchpad: read active entity from EntitySwitcher context or local state; pass correct entity's firm profile to Quick Signal scorer
+- [x] Docs: update ARCHITECTURE.md, SPECIFICATIONS.md, CLAUDE.md, FEATURE_CATALOG.md, README.md with per-entity firm profile notes
+- [x] Push all changes to GitHub
+- [x] Zero TypeScript errors, 25/25 tests passing

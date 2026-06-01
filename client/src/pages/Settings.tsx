@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle, Upload } from "lucide-react";
 import { ImportTab } from "@/components/ImportTab";
 import AppLayout from "@/components/AppLayout";
+import { useEntityContext } from "@/contexts/EntityContext";
 
 interface Column { key: string; label: string; render?: (row: any) => React.ReactNode; }
 
@@ -1146,7 +1147,10 @@ function TagInput({
 import React from "react";
 
 function FirmProfileTab() {
-  const { data: profile, isLoading } = trpc.firmSettings.get.useQuery();
+  const { activeEntityId, allowedEntities, setActiveEntityId } = useEntityContext();
+  // Use the app-wide active entity as the selected entity for this tab
+  const selectedEntityId = activeEntityId ?? undefined;
+  const { data: profile, isLoading } = trpc.firmSettings.get.useQuery({ entityId: selectedEntityId });
   const upsert = trpc.firmSettings.upsert.useMutation();
   const utils = trpc.useUtils();
 
@@ -1158,10 +1162,15 @@ function FirmProfileTab() {
   const [minDaysToRespond, setMinDaysToRespond] = React.useState("14");
   const [preferredAgencies, setPreferredAgencies] = React.useState<string[]>([]);
   const [avoidedAgencies, setAvoidedAgencies] = React.useState<string[]>([]);
-  const [initialized, setInitialized] = React.useState(false);
+  const [initialized, setInitialized] = React.useState<string | null | undefined>(undefined);
+
+  // Reset form when entity changes
+  React.useEffect(() => {
+    setInitialized(undefined);
+  }, [selectedEntityId]);
 
   React.useEffect(() => {
-    if (profile && !initialized) {
+    if (profile && initialized !== selectedEntityId) {
       setFirmName(profile.firmName ?? "");
       setServiceLines((profile.serviceLines as string[]) ?? []);
       setStates((profile.states as string[]) ?? []);
@@ -1170,13 +1179,14 @@ function FirmProfileTab() {
       setMinDaysToRespond(String(profile.minDaysToRespond ?? 14));
       setPreferredAgencies((profile.preferredAgencies as string[]) ?? []);
       setAvoidedAgencies((profile.avoidedAgencies as string[]) ?? []);
-      setInitialized(true);
+      setInitialized(selectedEntityId);
     }
-  }, [profile, initialized]);
+  }, [profile, initialized, selectedEntityId]);
 
   const handleSave = async () => {
     try {
       await upsert.mutateAsync({
+        entityId: selectedEntityId,
         firmName: firmName || undefined,
         serviceLines,
         states,
@@ -1205,12 +1215,33 @@ function FirmProfileTab() {
     <div className="space-y-6 max-w-2xl">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="h-4 w-4" />
-            Firm Profile
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4" />
+              Firm Profile
+            </CardTitle>
+            {allowedEntities.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                {allowedEntities.map((e: any) => {
+                  const isActive = e.id === selectedEntityId;
+                  const colorMap: Record<string, string> = { blue: "bg-blue-600", emerald: "bg-emerald-600", violet: "bg-violet-600", amber: "bg-amber-600", rose: "bg-rose-600", slate: "bg-slate-600" };
+                  const color = colorMap[e.badgeColor ?? "slate"] ?? "bg-slate-600";
+                  return (
+                    <button
+                      key={e.id}
+                      onClick={() => setActiveEntityId(e.id)}
+                      className={`h-7 px-2 text-xs rounded font-bold text-white transition-opacity ${color} ${isActive ? "opacity-100 ring-2 ring-offset-1 ring-current" : "opacity-50 hover:opacity-80"}`}
+                    >
+                      {e.shortName || e.name.slice(0, 4).toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Used by the Quick Signal pre-score to evaluate RFP fit before committing to full analysis.
+            {allowedEntities.length > 1 && " Each entity maintains a separate profile."}
           </p>
         </CardHeader>
         <CardContent className="space-y-6">

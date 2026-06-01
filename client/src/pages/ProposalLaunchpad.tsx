@@ -72,6 +72,7 @@ import {
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
 import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence, type QuickSignals, type FirmProfile } from "../../../shared/types";
 import { computeQuickSignal, SIGNAL_STRENGTH_CONFIG, SIGNAL_RATING_CONFIG } from "@/lib/quickSignal";
+import { useEntityContext } from "@/contexts/EntityContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -383,6 +384,7 @@ function FileTypeBadge({ type }: { type: FileType }) {
 
 export default function ProposalLaunchpad() {
   const [, navigate] = useLocation();
+  const { activeEntityId } = useEntityContext();
 
   // ── Entry mode ────────────────────────────────────────────────────────────
   const [entryMode, setEntryMode] = useState<EntryMode>("choose");
@@ -432,7 +434,7 @@ export default function ProposalLaunchpad() {
   const utils = trpc.useUtils();
 
   // ── Firm profile for Quick Signal scoring ───────────────────────────────
-  const { data: firmProfileData } = trpc.firmSettings.get.useQuery();
+  const { data: firmProfileData } = trpc.firmSettings.get.useQuery({ entityId: activeEntityId ?? undefined });
   const firmProfile: FirmProfile = {
     serviceLines: (firmProfileData?.serviceLines as string[]) ?? [],
     states: (firmProfileData?.states as string[]) ?? [],

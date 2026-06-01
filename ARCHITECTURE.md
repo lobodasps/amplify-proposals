@@ -30,7 +30,7 @@ This document describes the current technical architecture of the Amplify Propos
 
 The Supabase Postgres instance contains **two sets of tables** in the same `public` schema:
 
-### Amplify Tables (43 tables, managed by Drizzle ORM)
+### Amplify Tables (44 tables, managed by Drizzle ORM)
 
 These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which runs `drizzle-kit generate && drizzle-kit migrate`). All primary keys are UUID strings generated with `gen_random_uuid()`. Key tables include:
 
@@ -57,6 +57,7 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `organizations` | Companies/firms for contracts |
 | `people` | Contact/personnel for contracts |
 | `glossary_terms` | Industry glossary |
+| `firm_settings` | Per-entity firm profile for Quick Signal scoring (one row per entity) |
 
 ### v0 / Timekeeping Tables (66 tables, managed externally)
 
@@ -139,7 +140,7 @@ All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function 
 | DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 | DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
 
-When implementing the LLM config system, `invokeLLM()` should first check the `llmConfigs` table for a task-specific config and use that provider/model/key; if none is found, fall back to the Manus built-in. This means **no existing AI procedures need to change their call signatures** — only the helper itself needs to route correctly.
+The `invokeLLM()` helper checks `ai_skill_configs` for a task-specific config (provider, model, API key, prompts). If no config is found, it falls back to the Manus built-in API. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
 
 ---
 
@@ -167,7 +168,7 @@ amplify-proposals/
 │   ├── storage.ts         # Supabase Storage helpers
 │   └── supabase.ts        # Supabase admin client
 ├── drizzle/
-│   ├── schema.ts          # All 43 Amplify table definitions (pgTable)
+│   ├── schema.ts          # All 44 Amplify table definitions (pgTable)
 │   └── relations.ts       # Drizzle relation definitions
 ├── shared/
 │   ├── workflowTypes.ts   # Proposal Workspace skill types
@@ -551,3 +552,57 @@ Validation: Process blocked if no file labeled `main_rfp`.
 | `147a854c` | Extraction tier control: Full Extract / Metadata Only / SheetJS badges |
 | `175b925c` | File auto-classification fix: new keyword rules, Supplemental default |
 | `b3846c96` | Two-pass pre-classification: Pass 1 heuristics + Pass 2 Gemini Flash skim |
+
+---
+
+## Architecture Changes — Jun 1, 2026
+
+### Quick Signal Pre-Score (Proposal Launchpad)
+
+A new client-side pre-score card that appears in the Proposal Launchpad **after Pass 2 classification completes, before the user clicks Process**. Zero new routers beyond `firmSettings`.
+
+**Pass 2 extension:**
+- `rfpSessions.classifyFile` now accepts an optional `isMainRfp: boolean` flag.
+- When `true`, the Gemini Flash prompt returns an additional `quickSignals` object alongside the existing classification fields:
+  - `agency`, `projectType`, `estimatedValue`, `dueDate`, `location` (extracted strings)
+  - `prequalRequired: boolean`, `prequalType: string | null`
+  - `immediateRedFlags: string[]`
+
+**Firm Profile (`firm_settings` table):**
+- New table with one row per entity (scoped by `entityId` UUID, unique constraint).
+- Fields: `firmName`, `serviceLines` (JSON array), `states` (JSON array), `typicalValueMin`, `typicalValueMax`, `minDaysToRespond` (default 14), `preferredAgencies` (JSON array), `avoidedAgencies` (JSON array).
+- Router: `firmSettings.get({ entityId? })` and `firmSettings.upsert({ entityId?, ...fields })` in `server/routers/settings.ts`.
+- **Settings > Firm Profile tab**: entity toggle buttons in the card header (JPCL / Strans) when multiple entities exist. Switching entity reloads the form from the correct DB row. Each entity's profile is saved independently.
+
+**Client-side scoring (`client/src/lib/quickSignal.ts`):**
+- `computeQuickSignal(signals: QuickSignals, profile: FirmProfile)` scores 6 factors as `favorable | neutral | unfavorable`:
+  1. **Agency** — favorable if in `preferredAgencies`, unfavorable if in `avoidedAgencies`
+  2. **Project type** — favorable if matches `firmServiceLines`
+  3. **Value** — favorable if within `typicalValueMin/Max` range
+  4. **Due date** — favorable if > 21 days, neutral if 14–21, unfavorable if < 14
+  5. **Location** — favorable if state in `firmStates`
+  6. **Red flags** — unfavorable if `immediateRedFlags` array is non-empty
+- Returns `{ strength: "strong" | "mixed" | "weak", favorableCount, factors[] }`
+- Thresholds: strong ≥ 5 favorable, mixed ≥ 3, else weak.
+
+**Quick Signal card UI:**
+- Strength badge: 🟢 Strong Signal / 🟡 Mixed Signal / 🔴 Weak Signal
+- Extracted values row (agency, type, value, due date, location, prequal)
+- 6-factor checklist with favorable/neutral/unfavorable icons
+- Amber warning chips for `immediateRedFlags`
+- **"Process & Full Analysis"** — proceeds with existing full extraction + Go/No-Go flow
+- **"Archive This RFP"** — creates an `opportunities` record with `status = "archived"`, skips extraction
+
+**Entity scoping in `ProposalLaunchpad.tsx`:**
+- `useEntityContext().activeEntityId` is passed to `trpc.firmSettings.get.useQuery({ entityId })` so the scorer always uses the currently active entity's profile.
+
+**New shared types (`shared/types.ts`):**
+- `QuickSignals`, `SignalRating`, `SignalFactor`, `QuickSignalStrength`, `QuickSignalScore`, `FirmProfile`
+
+### Checkpoints This Session
+
+| Version | Description |
+|---------|-------------|
+| `b3ed59cb` | Documentation audit: todo.md, ARCHITECTURE.md, CLAUDE.md, SPECIFICATIONS.md reconciled |
+| `4bb9e803` | Quick Signal pre-score + Firm Profile settings (single global profile) |
+| *(next)* | Per-entity Firm Profile + GitHub sync |
