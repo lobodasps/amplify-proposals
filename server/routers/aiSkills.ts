@@ -21,6 +21,7 @@ export const aiSkillsRouter = router({
       systemPrompt: def.systemPrompt,
       userPromptTemplate: def.userPromptTemplate,
       templateVariables: JSON.stringify(def.templateVariables),
+      outputType: def.outputType ?? "prose",
       enabled: true,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -38,6 +39,7 @@ export const aiSkillsRouter = router({
         systemPrompt: def.systemPrompt,
         userPromptTemplate: def.userPromptTemplate,
         templateVariables: JSON.stringify(def.templateVariables),
+        outputType: def.outputType ?? "prose",
         enabled: true,
       }));
       await db.insert(aiSkills).values(toInsert);
@@ -55,6 +57,7 @@ export const aiSkillsRouter = router({
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),
+          outputType: def.outputType ?? "prose",
           enabled: true,
         });
       }

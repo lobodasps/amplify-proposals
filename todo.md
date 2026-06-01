@@ -761,3 +761,13 @@
 - [x] outputType read from SKILL_OUTPUT_TYPE static map (derived from ai_skills.outputType + mapToSkillType)
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Dynamic outputType + Renderer Backlog (v4.5)
+- [x] Replace static SKILL_OUTPUT_TYPE map in ProposalWorkspace.tsx with dynamic lookup from ai_skills records fetched at runtime
+- [x] Verify ProseEditor onSaved callback writes to DB (trpc.rfpSessions.updateSkillOutput), not just local React state
+- [x] Add WORKFLOW_SKILL_TO_SKILL_TYPE mapping to shared/workflowTypes.ts (mirrors server mapToSkillType)
+- [x] Add outputType to aiSkills.list in-memory fallback and both seed paths
+- [ ] Backlog: RequirementsMatrixViewer renderer — table with status badges, mandatory flags, section mapping (for requirements_matrix_builder skill)
+- [ ] Backlog: ConflictDetectorViewer renderer — conflict cards with severity badges, affected sections (for conflict_detector skill)
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint

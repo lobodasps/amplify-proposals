@@ -208,6 +208,22 @@ export interface ResumeState {
   erroredSkill: WorkflowSkillName | null;
 }
 
+// ─── Workflow Skill → ai_skills.skillType Mapping ────────────────────────────
+// Maps each workflow step name to the ai_skills.skillType it uses.
+// Mirrors mapToSkillType() in server/routers/rfpSessions.ts.
+// Exported here so the client can resolve outputType dynamically from
+// the ai_skills records fetched at runtime.
+export const WORKFLOW_SKILL_TO_SKILL_TYPE: Record<WorkflowSkillName, string> = {
+  rfp_parser:        "rfp_shredder",
+  win_themes:        "win_theme_generator",
+  technical_outline: "technical_approach_writer",
+  technical_writer:  "technical_approach_writer",
+  key_personnel:     "key_personnel_writer",
+  past_performance:  "project_experience_writer",
+  fee_estimator:     "proposal_writer",
+  proposal_scorer:   "proposal_scorer",
+};
+
 /**
  * Computes resume state from a workflowState record.
  * Used by the frontend orchestrator to determine where to resume.

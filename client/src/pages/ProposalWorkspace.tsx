@@ -70,6 +70,7 @@ import {
 import {
   ORDERED_SKILLS,
   WORKFLOW_SKILL_NAMES,
+  WORKFLOW_SKILL_TO_SKILL_TYPE,
   computeResumeState,
   type WorkflowSkillName,
   type WorkflowState,
@@ -82,19 +83,21 @@ import {
 
 type ActiveView = "overview" | "full_draft" | WorkflowSkillName;
 
-// ─── Workflow Skill → outputType Map ─────────────────────────────────────────
-// Derived from mapToSkillType() in rfpSessions.ts + ai_skills.outputType column.
-// json skills get structured renderers; prose skills get the inline text editor.
-const SKILL_OUTPUT_TYPE: Record<WorkflowSkillName, SkillOutputType> = {
-  rfp_parser: "json",
-  win_themes: "json",
-  technical_outline: "prose",
-  technical_writer: "prose",
-  key_personnel: "prose",
-  past_performance: "prose",
-  fee_estimator: "prose",
-  proposal_scorer: "json",
-};
+// ─── Dynamic outputType resolver ────────────────────────────────────────────────────
+// Reads outputType from the live ai_skills records fetched at runtime.
+// Falls back to 'prose' if the record is not yet loaded or the skill type
+// is not found — this prevents showing raw JSON while the query loads.
+function resolveOutputType(
+  skillName: WorkflowSkillName,
+  skillRecords: Array<{ skillType: string; outputType: string | null }> | undefined
+): SkillOutputType {
+  if (!skillRecords || skillRecords.length === 0) return "prose";
+  const skillType = WORKFLOW_SKILL_TO_SKILL_TYPE[skillName];
+  const record = skillRecords.find((r) => r.skillType === skillType);
+  const ot = record?.outputType;
+  if (ot === "json" || ot === "prose" || ot === "json_with_prose") return ot;
+  return "prose"; // safe fallback
+}
 
 // ─── Skill Status Icon ────────────────────────────────────────────────────────
 
@@ -455,6 +458,9 @@ export default function ProposalWorkspace() {
   }, [session]);
 
   // ── tRPC mutations ─────────────────────────────────────────────────────────
+  // ── AI Skills records — for dynamic outputType resolution ─────────────────
+  const { data: aiSkillRecords } = trpc.aiSkills.list.useQuery();
+
   // ── Full Draft: load proposal sections ──────────────────────────────────────
   const { data: proposalSections, refetch: refetchSections } =
     trpc.proposals.getSections.useQuery(
@@ -1285,7 +1291,7 @@ export default function ProposalWorkspace() {
                       <SkillOutputRenderer
                         skillName={selectedSkill.name}
                         output={selectedOutput}
-                        outputType={SKILL_OUTPUT_TYPE[selectedSkill.name]}
+                        outputType={resolveOutputType(selectedSkill.name, aiSkillRecords)}
                         sessionId={activeSessionId!}
                         isComplete={selectedState?.status === "complete"}
                         onSaved={(newOutput) =>
