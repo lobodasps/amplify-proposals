@@ -740,3 +740,11 @@
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub
 - [x] Live generation chain verified: win_themes + technical_writer ran against real DB data (Claude Sonnet 4), all variables populated, no fallbacks
+
+## AI Skills outputType Column (v4.3)
+- [x] Schema: add outputType column to ai_skills table (text, default 'prose', values: json | prose | json_with_prose)
+- [x] Schema: push migration (pnpm db:push)
+- [x] seedDefaultSkills: include outputType for all 23 skill records per spec
+- [x] SQL: update any existing ai_skills rows in DB with correct outputType values
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [ ] Push to GitHub + checkpoint

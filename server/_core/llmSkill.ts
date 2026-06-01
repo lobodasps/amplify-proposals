@@ -145,6 +145,8 @@ interface SkillDefinition {
   systemPrompt: string;
   userPromptTemplate: string;
   templateVariables: string[];
+  /** Expected output format: json | prose | json_with_prose */
+  outputType: "json" | "prose" | "json_with_prose";
 }
 
 export const DEFAULT_SKILLS: Record<SkillType, SkillDefinition> = {
@@ -166,6 +168,7 @@ RFP TEXT:
 
 Return a complete requirements matrix.`,
     templateVariables: ["rfpText", "firmProfile"],
+    outputType: "json",
   },
 
   resume_tailor: {
@@ -201,6 +204,7 @@ Rewrite the resume to:
 5. Format for SF-330 Section E (professional AEC proposal submission)
 6. Emphasize relevance to this specific pursuit`,
     templateVariables: ["personnelName", "targetRole", "rfpRequirements", "winThemes", "resumeText"],
+    outputType: "prose",
   },
 
   go_no_go_advisor: {
@@ -223,6 +227,7 @@ SUMMARY: {{rfpSummary}}
 
 Score 0-100 and provide recommendation with strengths, risks, and win themes.`,
     templateVariables: ["pursuitTitle", "agency", "serviceLines", "value", "dueDate", "rfpSummary"],
+    outputType: "json",
   },
 
   opportunity_scorer: {
@@ -245,6 +250,7 @@ SOURCE: {{source}}
 
 Provide a fit score (0-100), recommendation, and key reasons.`,
     templateVariables: ["title", "agency", "description", "value", "serviceLines", "source"],
+    outputType: "json",
   },
 
   contract_analyzer: {
@@ -260,6 +266,7 @@ Return structured JSON only. Be thorough — missing a clause or risk flag could
 
 Extract all parties, dates, financial values, contract type, billing method, key clauses, risk flags, and compliance requirements.`,
     templateVariables: ["fileName", "fileUrl"],
+    outputType: "json",
   },
 
   conflict_detector: {
@@ -303,6 +310,7 @@ RFP WIKI:
 
 Identify all conflicts and return the structured JSON.`,
     templateVariables: ["rfpTitle", "agency", "rfpWiki"],
+    outputType: "json",
   },
 
   asset_tagger: {
@@ -323,6 +331,7 @@ SERVICE LINE: {{serviceLine}}
 
 Return altText (1-2 sentences) and 5-8 specific search tags.`,
     templateVariables: ["assetName", "description", "assetType", "serviceLine"],
+    outputType: "json",
   },
 
   proposal_writer: {
@@ -348,6 +357,7 @@ WORD LIMIT: {{wordLimit}}
 
 Write a compelling, compliant section that directly addresses all evaluation criteria.`,
     templateVariables: ["sectionType", "agency", "rfpRequirements", "firmExperience", "wordLimit"],
+    outputType: "prose",
   },
 
   proposal_scorer: {
@@ -379,6 +389,7 @@ For each criterion:
 
 Also provide an overall compliance score and a priority list of the top 3 most critical gaps to fix first.`,
     templateVariables: ["scoreTarget", "agency", "rfpTitle", "evaluationCriteria", "contentToScore"],
+    outputType: "json",
   },
 
   opportunity_ingestion: {
@@ -397,6 +408,7 @@ RAW TEXT:
 
 Extract: title, agency name, RFP/solicitation number, estimated value, due date, service lines required, description summary, and whether it is relevant to an AEC firm.`,
     templateVariables: ["portalName", "rawText"],
+    outputType: "json",
   },
 
   // ─── Karpathy Pattern 1: XML Shredder ────────────────────────────────────────
@@ -434,6 +446,7 @@ Use this XML structure:
   <compliance_checklist><item id="C1" mandatory="true">...</item></compliance_checklist>
 </document>`,
     templateVariables: ["fileName", "fileUrl", "documentType", "rawText"],
+    outputType: "json",
   },
 
   // ─── Karpathy Pattern 2: Wiki Compiler ───────────────────────────────────────
@@ -463,6 +476,7 @@ Produce a wiki with these sections:
 ## Compliance Checklist (every mandatory submission item)
 ## Strategic Notes (win themes, differentiators, red flags)`,
     templateVariables: ["fileName", "xmlContent", "firmContext"],
+    outputType: "prose",
   },
 
   // ─── Karpathy Pattern 3: Agent Guidelines ────────────────────────────────────
@@ -490,6 +504,7 @@ FIRM CONTEXT:
 For each approach: title, description (2-3 sentences), pros (3 items), cons (3 items), recommended (true/false), rationale (1 sentence).
 Also provide an overallRecommendation.`,
     templateVariables: ["taskDescription", "sectionType", "rfpContext", "firmContext", "successCriteria", "avoidApproaches"],
+    outputType: "json",
   },
 
   // ─── DAM Extraction Skills ─────────────────────────────────────────────────────
@@ -530,6 +545,7 @@ FILE: {{fileName}}
 {{fileContent}}
 Return the complete metadata JSON object.`,
     templateVariables: ["docType", "fileName", "fileContent"],
+    outputType: "json",
   },
 
   triggerExtract: {
@@ -572,6 +588,7 @@ FILE: {{fileName}}
 {{fileContent}}
 Return the complete structured JSON for this document type.`,
     templateVariables: ["docType", "fileName", "fileContent"],
+    outputType: "json",
   },
 
   dam_image_caption: {
@@ -598,6 +615,7 @@ CONTEXT FROM FOLDER/FILENAME: {{folderContext}}
 PROJECT CONTEXT: {{projectContext}}
 Caption and classify this image for the AEC DAM.`,
     templateVariables: ["folderContext", "projectContext"],
+    outputType: "json",
   },
 
   // ─── Proposal Workspace Skills ─────────────────────────────────────────────────
@@ -642,6 +660,7 @@ FIRM STRENGTHS: {{firmStrengths}}
 
 Generate 3-5 specific win themes.`,
     templateVariables: ["pursuitTitle", "agency", "serviceLines", "value", "dueDate", "rfpSummary", "evaluationCriteria", "firmStrengths"],
+    outputType: "json",
   },
 
   requirements_matrix_builder: {
@@ -684,6 +703,7 @@ RFP WIKI:
 
 Extract every requirement and map to proposal sections.`,
     templateVariables: ["rfpTitle", "agency", "rfpWiki", "proposalSections"],
+    outputType: "json",
   },
 
   executive_summary_writer: {
@@ -717,6 +737,7 @@ KEY PERSONNEL: {{keyPersonnel}}
 
 Write a 400-600 word executive summary.`,
     templateVariables: ["agency", "pursuitTitle", "firmName", "serviceLines", "rfpSummary", "evaluationCriteria", "winThemes", "relevantProjects", "keyPersonnel"],
+    outputType: "prose",
   },
 
   technical_approach_writer: {
@@ -751,6 +772,7 @@ RFP SECTION REQUIREMENTS:
 
 Write a 600-900 word technical approach with headers.`,
     templateVariables: ["agency", "pursuitTitle", "scopeSummary", "serviceLines", "evaluationCriteria", "winThemes", "relevantProjects", "rfpRequirements"],
+    outputType: "prose",
   },
 
   firm_qualifications_writer: {
@@ -784,6 +806,7 @@ EVALUATION CRITERIA: {{evaluationCriteria}}
 
 Write a 400-600 word firm qualifications section.`,
     templateVariables: ["agency", "pursuitTitle", "firmName", "firmDescription", "serviceLines", "firmRole", "teamingPartners", "certifications", "relevantProjects", "evaluationCriteria"],
+    outputType: "prose",
   },
 
   project_experience_writer: {
@@ -818,6 +841,7 @@ SELECTED PROJECTS:
 
 Write a 150-200 word narrative for each project.`,
     templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "selectedProjects"],
+    outputType: "prose",
   },
 
   key_personnel_writer: {
@@ -852,6 +876,7 @@ SELECTED PERSONNEL:
 
 Write a 100-150 word narrative for each person.`,
     templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "rfpPersonnelRequirements", "selectedPersonnel"],
+    outputType: "prose",
   },
 };
 
@@ -1508,6 +1533,7 @@ export async function seedDefaultSkills(): Promise<void> {
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
           templateVariables: JSON.stringify(def.templateVariables),
+          outputType: def.outputType,
           enabled: true,
         });
       }

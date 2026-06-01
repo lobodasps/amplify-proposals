@@ -798,6 +798,8 @@ export const aiSkills = pgTable("ai_skills", {
   userPromptTemplate: text("userPromptTemplate").notNull(),
   templateVariables: text("templateVariables"),
   enabled: boolean("enabled").default(true).notNull(),
+  // Valid values: json | prose | json_with_prose
+  outputType: text("outputType").default("prose").notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 });

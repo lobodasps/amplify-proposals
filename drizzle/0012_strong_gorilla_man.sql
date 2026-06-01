@@ -1,0 +1,1 @@
+ALTER TABLE "ai_skills" ADD COLUMN "outputType" text DEFAULT 'prose' NOT NULL;
