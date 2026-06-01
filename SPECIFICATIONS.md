@@ -99,9 +99,9 @@ The platform includes six standalone AI tools accessible from the sidebar:
 
 | Tool | Route | Function |
 |------|-------|----------|
-| **Document Shredder** | `/shredder` | Parses RFP documents into structured XML sections for downstream processing |
+| **Document Shredder** | `/document-shredder` | Parses RFP documents into structured XML sections for downstream processing |
 | **RFP Wiki** | `/rfp-wiki` | Compiles a cross-referenced wiki document from shredded RFP sections |
-| **Conflict Detector** | `/conflicts` | Identifies contradictions within an RFP (differing due dates, conflicting scope language) |
+| **Conflict Detector** | `/conflict-detector` | Identifies contradictions within an RFP (differing due dates, conflicting scope language) |
 | **Contract Analyzer** | `/contract-analyzer` | Extracts key terms, obligations, and risk flags from contract documents |
 | **Agent Guidelines** | `/agent-guidelines` | Defines per-section success criteria and multi-approach advisor for proposal generation |
 | **Proposal Scorer** | `/proposal-scorer` | Scores draft proposal sections against RFP evaluation criteria |
@@ -132,20 +132,27 @@ The Opportunities module tracks public-sector bid opportunities from identificat
 
 **Glossary** (`/glossary`): Firm-specific terminology and acronym definitions, importable via CSV.
 
-**Resource Library** (`/resource-library`): Boilerplate text blocks and content library items (merged into Knowledge Hub docType filter).
+**Resource Library** (`/resource-library`): Retired page — route now redirects to `/knowledge-hub`. Boilerplate text blocks and content library items are accessible via the Knowledge Hub docType filter.
 
 ### 3.10 Settings (`/settings`)
 
-The Settings module has six tabs:
+The Settings module has thirteen tabs:
 
 | Tab | Contents |
 |-----|----------|
-| **General** | App name, logo, default entity |
+| **Entities** | Company entity records (JPCL, Strans) |
+| **Organizations** | External organizations/firms for contracts |
+| **People** | Contact/personnel records for contracts |
+| **Order Types** | Contract hierarchy tier labels (Task Order, Purchase Order, Phase, etc.) |
+| **Departments** | Internal department lookup |
+| **Service Types** | Service type lookup for contracts |
+| **Form 254 Codes** | ACEC Form 254 service classification codes |
+| **Glossary** | Firm-specific terminology and acronym definitions |
 | **Users** | User list from `profiles` table; Invite User dialog (Supabase Auth admin invite) |
-| **Lookup Tables** | Order Types, Departments, Service Types, Form 254 Codes, Organizations, People |
-| **AI Skills** | Per-skill system prompt and user prompt editor; provider/model selector per task |
-| **Import** | CSV/Excel bulk import for 9 data types with downloadable templates |
-| **Integrations** | QB sync configuration (planned) |
+| **Reminders** | COI expiration and contract end date reminder configuration |
+| **App Settings** | App name, logo, default entity, reminder lead times |
+| **AI Skills** | Per-skill system prompt and user prompt editor; provider/model selector per task; global provider API keys; monthly token usage |
+| **Import** | CSV/Excel bulk import for 8 data types with downloadable templates |
 
 ---
 
@@ -167,12 +174,12 @@ The Settings module has six tabs:
 | Vision | Google Gemini Flash | AEC image captioning via `dam_image_caption` skill |
 | ZIP | fflate 0.8.3 | Client-side extraction |
 | Excel | SheetJS 0.18.5 | Client-side parsing |
-| Testing | Vitest | 16 tests across 3 files |
+| Testing | Vitest | 25 tests across 4 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
 ### 4.2 Database
 
-The Supabase Postgres instance contains 45 Amplify-managed tables (defined in `drizzle/schema.ts`, all UUID primary keys) alongside 66 pre-existing v0/timekeeping tables. Cross-app references use soft FK columns (no hard Postgres constraints) to avoid migration coupling.
+The Supabase Postgres instance contains 43 Amplify-managed tables (defined in `drizzle/schema.ts`, all UUID primary keys) alongside 66 pre-existing v0/timekeeping tables. Cross-app references use soft FK columns (no hard Postgres constraints) to avoid migration coupling.
 
 Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billing_entries`, `personnel`, `amp_projects`, `pursuits`, `proposals`, `rfp_sessions`, `opportunities`, `ai_skill_configs`, `document_shreds`, `rfp_wikis`, `assets`, `asset_tags`, `order_types`, `organizations`, `people`, `glossary_terms`.
 

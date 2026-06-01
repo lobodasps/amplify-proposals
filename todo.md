@@ -46,7 +46,7 @@
 
 ## Phase 6: Polish, Tests & Delivery
 - [x] Loading states, empty states, error boundaries on all pages
-- [x] 15 vitest unit tests passing across all modules (auth, pursuits, proposals, assets, personnel, projects, opportunities, contracts)
+- [x] 25 vitest unit tests passing across all modules (auth, pursuits, proposals, assets, personnel, projects, opportunities, contracts)
 - [x] Zero TypeScript errors
 - [x] Checkpoint save
 - [x] Deliver live preview to user
@@ -234,24 +234,24 @@
 - [x] Remove Knowledge Hub and Assets (DAM) from sidebar nav
 - [x] Add /staff route to App.tsx
 - [x] TypeScript check: 0 errors
-- [x] All 16 vitest tests passing
+- [x] All 25 vitest tests passing
 
 ## Contract Financial Model Implementation (Issue #34 + QB Import)
-- [ ] Schema: add amountBehavior (adds_to_value | subtracts_from_value | utilizes_value), amountChange (float), billedAmount (float) to contractAmendments table
-- [ ] Schema: push migration (pnpm db:push)
-- [ ] Server: build getContractFinancials() helper implementing R1-R15 from financial model reference
-- [ ] Server: update addAmendment — accept amountBehavior + amountChange; UTILIZES_VALUE must NOT change computedContractValue; recompute NTE fields
-- [ ] Server: add updateAmendmentBilling mutation (update billedAmount on a UTILIZES_VALUE amendment + trigger recalculate)
-- [ ] Server: add recalculateFinancials mutation (recompute all KPIs from scratch for a contract)
-- [ ] Server: add importQbCsv mutation (parse CSV rows, upsert billingEntries, trigger recalculate)
-- [ ] UI: FinancialSummaryCard — add NTE ceiling breakdown panel (Effective Ceiling, Committed via TOs, Available, Billed, Remaining) when hasNteCeiling=true + billingBasis=authorized
-- [ ] UI: FinancialSummaryCard — show hasOverBilledTaskOrders warning badge
-- [ ] UI: ContractDetail amendments tab — Task Order badge type, Authorized/Billed/Remaining/Over-Billed columns for UTILIZES_VALUE rows
-- [ ] UI: ContractDetail amendments tab — inline billedAmount edit on Task Order rows (auto-recalculates on save)
-- [ ] UI: ContractDetail — QB CSV import button + upload flow + Recalculate button
-- [ ] UI: Add Amendment dialog — amountBehavior selector, amountChange field, billedAmount field for Task Orders
-- [ ] UI: Edit Contract dialog — expose billingBasis toggle (AUTHORIZED vs NTE_CEILING) + hasNteCeiling + nteCeilingAmount fields
-- [ ] Tests: update vitest tests for getContractFinancials covering S1, S2, S6, S8, S14 scenarios
+- [x] Schema: add amountBehavior (adds_to_value | subtracts_from_value | utilizes_value), amountChange (float), billedAmount (float) to contractAmendments table
+- [x] Schema: push migration (pnpm db:push)
+- [x] Server: build getContractFinancials() helper implementing R1-R15 from financial model reference
+- [x] Server: update addAmendment — accept amountBehavior + amountChange; UTILIZES_VALUE must NOT change computedContractValue; recompute NTE fields
+- [x] Server: add updateAmendmentBilling mutation (update billedAmount on a UTILIZES_VALUE amendment + trigger recalculate)
+- [x] Server: add recalculateFinancials mutation (recompute all KPIs from scratch for a contract)
+- [x] Server: add importQbCsv mutation (parse CSV rows, upsert billingEntries, trigger recalculate)
+- [x] UI: FinancialSummaryCard — add NTE ceiling breakdown panel (Effective Ceiling, Committed via TOs, Available, Billed, Remaining) when hasNteCeiling=true + billingBasis=authorized
+- [x] UI: FinancialSummaryCard — show hasOverBilledTaskOrders warning badge
+- [x] UI: ContractDetail amendments tab — Task Order badge type, Authorized/Billed/Remaining/Over-Billed columns for UTILIZES_VALUE rows
+- [x] UI: ContractDetail amendments tab — inline billedAmount edit on Task Order rows (auto-recalculates on save)
+- [x] UI: ContractDetail — QB CSV import button + upload flow + Recalculate button
+- [x] UI: Add Amendment dialog — amountBehavior selector, amountChange field, billedAmount field for Task Orders
+- [x] UI: Edit Contract dialog — expose billingBasis toggle (AUTHORIZED vs NTE_CEILING) + hasNteCeiling + nteCeilingAmount fields
+- [x] Tests: update vitest tests for getContractFinancials covering S1, S2, S6, S8, S14 scenarios
 
 ## Contract Financial Model (v2.3 — Issue #34)
 - [x] Schema: add amountBehavior column to contractAmendments table
@@ -271,7 +271,7 @@
 - [x] UI: AddAmendmentDialog — amountBehavior selector (Add/Deduct), positive amountChange field
 - [x] UI: EditContractDialog — NTE toggle, NTE Ceiling Amount field, Billing Basis selector with explanatory text
 - [x] TypeScript: zero errors
-- [x] Tests: 16 passing
+- [x] All 25 vitest tests passing
 
 ## Supabase Storage Migration (DAM backend)
 - [x] Create 'dam' bucket in Supabase Storage (private, 50 MB file limit)
@@ -369,11 +369,11 @@
 - [x] Update contracts.create and contracts.update to accept all new fields
 
 ### UI Updates
-- [ ] ContractDetail: show tier label from orderTypes on child order rows
-- [ ] ContractDetail: amountBehavior badge on child contracts
-- [ ] EditContractDialog: tierLabelId selector, amountBehavior for L2/L3
-- [ ] EditContractDialog: compliance fields (COI, executed contract, prime agreement)
-- [ ] EditContractDialog: billingMethods multi-select, structureType, contractOwnerId, primeOrgId
+- [x] ContractDetail: show tier label from orderTypes on child order rows
+- [x] ContractDetail: amountBehavior badge on child contracts
+- [x] EditContractDialog: tierLabelId selector, amountBehavior for L2/L3
+- [x] EditContractDialog: compliance fields (COI, executed contract, prime agreement)
+- [x] EditContractDialog: billingMethods multi-select, structureType, contractOwnerId, primeOrgId
 - [x] Contracts page: remove All Entities filter, add PM and Accountant filter dropdowns
 
 ### Import Tab in Settings

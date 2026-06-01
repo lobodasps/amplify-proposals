@@ -21,7 +21,7 @@ This document describes the current technical architecture of the Amplify Propos
 | LLM | Configurable | Currently defaults to Manus Built-in via `invokeLLM()`; designed to support OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API per task type |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
-| Testing | Vitest | 16 tests across 3 files |
+| Testing | Vitest | 25 tests across 4 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
 ---
@@ -127,7 +127,7 @@ Postgres `numeric` columns return strings from Drizzle ORM. All arithmetic on th
 
 All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function accepts a `messages` array (system + user roles) and optional `response_format`. There is **no top-level `system` parameter** — system prompts must be passed as `{ role: "system", content: "..." }` in the messages array. For document analysis, use `file_url` content type with a signed URL from `storageGet()`.
 
-**The LLM layer is intentionally configurable.** The current default is the Manus built-in model, but the system is designed so that Gregg can supply his own API keys and select different providers per feature. The planned `llmConfigs` table (see Phase 4 in todo.md) will allow per-task configuration:
+**The LLM layer is now fully configurable.** The `ai_skill_configs` table stores per-task provider, model, system prompt, and user prompt template. Global provider API keys (OpenAI, Anthropic, Google Gemini) are stored in `app_settings` and resolved at call time. The Settings > AI Skills tab exposes the full configuration UI. The planned `llmConfigs` table referenced in earlier sessions has been superseded by this implementation.
 
 | Task | Configurable? | Planned Providers |
 |------|--------------|-------------------|
@@ -208,7 +208,7 @@ amplify-proposals/
 ```bash
 pnpm dev              # Start dev server (tsx watch)
 pnpm db:push          # Push schema changes (drizzle-kit generate + migrate)
-pnpm test             # Run vitest (16 tests)
+pnpm test             # Run vitest (25 tests)
 npx tsc --noEmit      # TypeScript check (must be zero errors)
 ```
 
@@ -438,11 +438,11 @@ The following major features are planned but not yet implemented. See `todo.md` 
 
 ### Near-Term
 
-- **LLM Configuration System**: Admin UI for per-task LLM provider/model/prompt selection (currently hardcoded to Manus built-in)
 - **Opportunities Ingestion**: Settings-based portal scraping with cheerio, real DB wiring
 - **Pursuit Detail**: Wire mock data to real tRPC queries (tasks, requirements, team)
 - **Proposals**: Real DB integration, section CRUD, resume tailoring
 - **Image Extraction from PDFs**: PDF page rendering to thumbnails, vision LLM pass for photo extraction from DAM documents
+- **Replit Parity — Contract Fields**: QB Name, Client Project Ref, Department, Service Types, Form 254 Code, Project Manager/Accountant fields on contracts; QB Bulk Import page; Analytics module with pre-built reports and query builder
 
 ### Medium-Term
 
