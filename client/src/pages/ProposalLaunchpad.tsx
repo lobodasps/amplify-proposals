@@ -68,6 +68,7 @@ import {
   X,
   Package,
   PenLine,
+  Crown,
 } from "lucide-react";
 import type { ParsedRfpData } from "../../../shared/workflowTypes";
 import { LABEL_TIER_MAP, TIER_BADGE, CONFIDENCE_BADGE, type RfpFileLabel, type ClassificationConfidence, type QuickSignals, type FirmProfile } from "../../../shared/types";
@@ -218,11 +219,9 @@ function guessClassification(file: File, pageCount?: number): Pass1Result {
   if (name.includes("cover letter") || name.includes("cover sheet") || name.includes("transmittal")) {
     return { label: "Cover Letter", confidence: "high", keyEvidence: "Filename contains cover letter/transmittal" };
   }
-  // Main RFP — explicit keywords only
+  // Main RFP keyword detected — suggest as candidate, never auto-confirm
   if (name.includes("rfp") || name.includes("solicitation") || name.includes("invitation for bid") || name.includes("ifb") || name.includes("request for proposal")) {
-    // Size heuristic: 20+ pages + rfp keyword → high confidence
-    const conf: ClassificationConfidence = (pageCount !== undefined && pageCount >= 20) ? "high" : "medium";
-    return { label: "Main RFP", confidence: conf, keyEvidence: `RFP keyword in filename${pageCount !== undefined ? `, ${pageCount}pp` : ""}` };
+    return { label: "Supplemental", confidence: "medium", keyEvidence: `RFP keyword in filename — designate Main RFP manually${pageCount !== undefined ? `, ${pageCount}pp` : ""}` };
   }
   // Scope of Work
   if (name.includes("scope") || name.includes("sow") || name.includes("scope of work")) {
@@ -261,7 +260,8 @@ function guessClassification(file: File, pageCount?: number): Pass1Result {
       return { label: "Supplemental", confidence: "unclassified", keyEvidence: `${pageCount}-page PDF — needs Gemini review` };
     }
     if (pageCount > 20) {
-      return { label: "Main RFP", confidence: "medium", keyEvidence: `${pageCount}-page document — likely main RFP` };
+      // Large document — likely main RFP, but user must designate explicitly
+      return { label: "Supplemental", confidence: "unclassified", keyEvidence: `${pageCount}-page document — likely main RFP, please designate` };
     }
   }
 
@@ -417,6 +417,9 @@ export default function ProposalLaunchpad() {
 
   // ── Quick Signal pre-score ────────────────────────────────────────────────
   const [quickSignals, setQuickSignals] = useState<QuickSignals | null>(null);
+
+  // ── Main RFP explicit designation (Fix: never auto-confirm) ──────────────
+  const [mainRfpFileId, setMainRfpFileId] = useState<string | null>(null);
 
   // ── Pre-process warning state ─────────────────────────────────────────────
   const [showProcessWarning, setShowProcessWarning] = useState(false);
@@ -623,10 +626,9 @@ export default function ProposalLaunchpad() {
       toast.error("Please add at least one file.");
       return;
     }
-    // Require at least one file labeled Main RFP
-    const hasMainRfp = queue.some((f) => f.label === "Main RFP");
-    if (!hasMainRfp) {
-      toast.error("No Main RFP document designated — please label at least one file as Main RFP before processing.");
+    // Require explicit user designation of Main RFP
+    if (!mainRfpFileId || !queue.some((f) => f.id === mainRfpFileId)) {
+      toast.error("Please designate the Main RFP document before processing.");
       return;
     }
 
@@ -671,8 +673,8 @@ export default function ProposalLaunchpad() {
         setProcessingProgress(uploadPct);
       }
 
-      // 3. Save primary file (first PDF/DOCX, or first file) to rfpSessions
-      const primary = uploadedFiles.find((f) => f.type === "pdf" || f.type === "docx") ?? uploadedFiles[0];
+      // 3. Save primary file — use user-designated Main RFP (guaranteed to exist by handleProcess gate)
+      const primary = uploadedFiles.find((f) => f.id === mainRfpFileId) ?? uploadedFiles.find((f) => f.type === "pdf" || f.type === "docx") ?? uploadedFiles[0];
       await saveRfpFile.mutateAsync({
         sessionId: sid,
         rfpFileName: primary.file.name,
@@ -1245,22 +1247,61 @@ export default function ProposalLaunchpad() {
                         </span>
                       )}
                     </div>
+                    {/* Designate Main RFP — required before processing */}
+                    {queue.length > 0 && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2.5 flex items-start gap-2">
+                        <Crown className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-blue-800">Designate Main RFP <span className="text-red-500">*</span></p>
+                          <p className="text-[11px] text-blue-600 mt-0.5">Select the primary solicitation document. Required before processing.</p>
+                          <div className="mt-2 space-y-1">
+                            {queue.map((entry) => (
+                              <label key={entry.id} className="flex items-center gap-2 cursor-pointer group">
+                                <input
+                                  type="radio"
+                                  name="mainRfpFile"
+                                  value={entry.id}
+                                  checked={mainRfpFileId === entry.id}
+                                  onChange={() => setMainRfpFileId(entry.id)}
+                                  className="accent-blue-600"
+                                />
+                                <span className={`text-xs truncate max-w-[240px] group-hover:text-blue-700 transition-colors ${
+                                  mainRfpFileId === entry.id ? "font-semibold text-blue-700" : "text-foreground"
+                                }`}>
+                                  {entry.file.name}
+                                </span>
+                                {mainRfpFileId === entry.id && (
+                                  <Crown className="w-3 h-3 text-blue-600 shrink-0" />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {queue.map((entry) => {
                         const conf = entry.confidence ?? "medium";
                         const badge = CONFIDENCE_BADGE[conf];
                         const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
                         const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
+                        const isMainRfp = mainRfpFileId === entry.id;
                         return (
                           <div
                             key={entry.id}
                             className={`flex items-start gap-3 p-3 rounded-lg border bg-background transition-colors ${
-                              conf === "low" || conf === "unclassified"
+                              isMainRfp
+                                ? "border-blue-400 bg-blue-50/30"
+                                : conf === "low" || conf === "unclassified"
                                 ? "border-amber-300 bg-amber-50/40"
                                 : "border-border"
                             }`}
                           >
+                            {isMainRfp ? (
+                              <Crown className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                            ) : (
                             <FileTypeIcon type={entry.type} className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium truncate max-w-[200px]">{entry.file.name}</span>
@@ -1385,7 +1426,8 @@ export default function ProposalLaunchpad() {
                     <Button
                       size="sm"
                       onClick={handleProcess}
-                      disabled={queue.length === 0}
+                      disabled={queue.length === 0 || !mainRfpFileId}
+                      title={!mainRfpFileId ? "Designate the Main RFP above before processing" : undefined}
                       className="flex-1 gap-1.5"
                     >
                       <ChevronRight className="w-4 h-4" />
@@ -1416,11 +1458,21 @@ export default function ProposalLaunchpad() {
                 <Button
                   size="lg"
                   onClick={handleProcess}
-                  disabled={queue.length === 0}
+                  disabled={queue.length === 0 || !mainRfpFileId}
+                  title={!mainRfpFileId ? "Designate the Main RFP above before processing" : undefined}
                   className="gap-2"
                 >
-                  Process Package
-                  <ChevronRight className="w-4 h-4" />
+                  {!mainRfpFileId ? (
+                    <>
+                      <Crown className="w-4 h-4 text-blue-300" />
+                      Designate Main RFP First
+                    </>
+                  ) : (
+                    <>
+                      Process Package
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
                 </Button>
               )}
             </div>

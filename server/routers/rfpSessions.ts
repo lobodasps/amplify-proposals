@@ -702,7 +702,8 @@ export const rfpSessionsRouter = router({
 
       const systemPrompt = `You are classifying a document in a government AEC RFP package. Read these pages and return JSON only:
 {
-  "documentType": "main_rfp" | "scope" | "appendix" | "form" | "addendum" | "fee_schedule" | "certificate" | "cover_letter" | "reference" | "supplemental",
+  "documentType": "main_rfp_candidate" | "scope" | "appendix" | "form" | "addendum" | "fee_schedule" | "certificate" | "cover_letter" | "reference" | "supplemental",
+  // NOTE: main_rfp_candidate is a suggestion only — never auto-confirmed. User must explicitly designate the Main RFP.
   "confidence": "high" | "medium" | "low",
   "keyEvidence": "string (what told you this — max 15 words)",
   "suggestedLabel": "string (short human label, max 5 words)",
@@ -710,7 +711,8 @@ export const rfpSessionsRouter = router({
 }`;
 
       const DOCTYPE_TO_LABEL: Record<string, string> = {
-        main_rfp:     "Main RFP",
+        main_rfp_candidate: "Supplemental", // suggestion only — user must designate Main RFP explicitly
+        main_rfp:     "Supplemental",       // legacy fallback — also demoted to Supplemental
         scope:        "Scope of Work",
         appendix:     "Appendix",
         form:         "Forms",

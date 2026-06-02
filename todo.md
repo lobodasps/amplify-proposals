@@ -808,3 +808,10 @@
 - [ ] Report: section statuses, scores, overall compliance, first 100 words of executive summary
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Proposal Launchpad — Main RFP Designation Fixes (v4.8)
+- [x] Fix 1: guessClassification: RFP keyword path → 'Supplemental' (not 'Main RFP'); >20-page heuristic → 'Supplemental' (not 'Main RFP'); server classifyFile already maps main_rfp_candidate → Supplemental (no server change needed)
+- [x] Fix 2: mainRfpFileId state added; Designate Main RFP blue panel with radio buttons appears in manifest; selected file shows Crown icon; both Process buttons disabled until mainRfpFileId is set; doProcess uses mainRfpFileId for primary file selection
+- [x] Fix 3: Confirmed — Launchpad manifest renders from queue (session-local React state) only; no dam_documents query in manifest path; the three damDocuments queries in rfpSessions.ts are inside buildSkillVariables() for LLM context hydration only
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint
