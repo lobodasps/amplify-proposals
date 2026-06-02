@@ -1317,117 +1317,128 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
   // ASSET MATCHING — Step 3 of Proposal Launchpad
   // ══════════════════════════════════════════════════════════════════════════════
 
-  /** Match project sheets by service line tag overlap */
+  /** Match project sheets by service line tag overlap, with all-docs fallback */
   matchProjectSheets: protectedProcedure
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return [];
-      if (input.serviceLines.length === 0) return [];
+      if (!db) return { results: [], isFallback: false };
 
-      // Tags are comma-separated text. Match any service line via ILIKE.
-      const tagConditions = input.serviceLines.map(
-        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-      );
-      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+      const selectFields = {
+        id: damDocuments.id,
+        title: damDocuments.title,
+        clientName: damDocuments.clientName,
+        ownerName: damDocuments.ownerName,
+        contractValue: damDocuments.contractValue,
+        tags: damDocuments.tags,
+        staffName: damDocuments.staffName,
+        projectName: damDocuments.projectName,
+        extractedMeta: damDocuments.extractedMeta,
+      };
 
-      const rows = await db
-        .select({
-          id: damDocuments.id,
-          title: damDocuments.title,
-          clientName: damDocuments.clientName,
-          ownerName: damDocuments.ownerName,
-          contractValue: damDocuments.contractValue,
-          tags: damDocuments.tags,
-          staffName: damDocuments.staffName,
-          projectName: damDocuments.projectName,
-          extractedMeta: damDocuments.extractedMeta,
-        })
+      // Try tag-overlap match first
+      if (input.serviceLines.length > 0) {
+        const tagConditions = input.serviceLines.map(
+          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+        );
+        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+        const matched = await db
+          .select(selectFields)
+          .from(damDocuments)
+          .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
+          .orderBy(desc(damDocuments.createdAt))
+          .limit(10);
+        if (matched.length > 0) return { results: matched, isFallback: false };
+      }
+
+      // Fallback — return all indexed project sheets
+      const all = await db
+        .select(selectFields)
         .from(damDocuments)
-        .where(
-          and(
-            eq(damDocuments.docType, "project_sheet"),
-            eq(damDocuments.processingStatus, "indexed"),
-            tagOverlap
-          )
-        )
+        .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed")))
         .orderBy(desc(damDocuments.createdAt))
         .limit(10);
-
-      return rows;
+      return { results: all, isFallback: true };
     }),
 
-  /** Match resumes (base version) by service line tag overlap */
+  /** Match resumes (base version) by service line tag overlap, with all-docs fallback */
   matchResumes: protectedProcedure
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return [];
-      if (input.serviceLines.length === 0) return [];
+      if (!db) return { results: [], isFallback: false };
 
-      const tagConditions = input.serviceLines.map(
-        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-      );
-      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+      const selectFields = {
+        id: damDocuments.id,
+        title: damDocuments.title,
+        staffName: damDocuments.staffName,
+        tags: damDocuments.tags,
+        extractedMeta: damDocuments.extractedMeta,
+      };
 
-      const rows = await db
-        .select({
-          id: damDocuments.id,
-          title: damDocuments.title,
-          staffName: damDocuments.staffName,
-          tags: damDocuments.tags,
-          extractedMeta: damDocuments.extractedMeta,
-        })
+      if (input.serviceLines.length > 0) {
+        const tagConditions = input.serviceLines.map(
+          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+        );
+        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+        const matched = await db
+          .select(selectFields)
+          .from(damDocuments)
+          .where(and(eq(damDocuments.docType, "resume"), eq(damDocuments.resumeVersion, "base"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
+          .orderBy(desc(damDocuments.createdAt))
+          .limit(10);
+        if (matched.length > 0) return { results: matched, isFallback: false };
+      }
+
+      // Fallback — return all indexed base resumes
+      const all = await db
+        .select(selectFields)
         .from(damDocuments)
-        .where(
-          and(
-            eq(damDocuments.docType, "resume"),
-            eq(damDocuments.resumeVersion, "base"),
-            eq(damDocuments.processingStatus, "indexed"),
-            tagOverlap
-          )
-        )
+        .where(and(eq(damDocuments.docType, "resume"), eq(damDocuments.resumeVersion, "base"), eq(damDocuments.processingStatus, "indexed")))
         .orderBy(desc(damDocuments.createdAt))
         .limit(10);
-
-      return rows;
+      return { results: all, isFallback: true };
     }),
 
-  /** Match past proposals by service line tag overlap */
+  /** Match past proposals by service line tag overlap, with all-docs fallback */
   matchPastProposals: protectedProcedure
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return [];
-      if (input.serviceLines.length === 0) return [];
+      if (!db) return { results: [], isFallback: false };
 
-      const tagConditions = input.serviceLines.map(
-        (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-      );
-      const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+      const selectFields = {
+        id: damDocuments.id,
+        title: damDocuments.title,
+        clientName: damDocuments.clientName,
+        contractValue: damDocuments.contractValue,
+        tags: damDocuments.tags,
+        createdAt: damDocuments.createdAt,
+        extractedMeta: damDocuments.extractedMeta,
+      };
 
-      const rows = await db
-        .select({
-          id: damDocuments.id,
-          title: damDocuments.title,
-          clientName: damDocuments.clientName,
-          contractValue: damDocuments.contractValue,
-          tags: damDocuments.tags,
-          createdAt: damDocuments.createdAt,
-          extractedMeta: damDocuments.extractedMeta,
-        })
+      if (input.serviceLines.length > 0) {
+        const tagConditions = input.serviceLines.map(
+          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
+        );
+        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
+        const matched = await db
+          .select(selectFields)
+          .from(damDocuments)
+          .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
+          .orderBy(desc(damDocuments.createdAt))
+          .limit(5);
+        if (matched.length > 0) return { results: matched, isFallback: false };
+      }
+
+      // Fallback — return all indexed past proposals
+      const all = await db
+        .select(selectFields)
         .from(damDocuments)
-        .where(
-          and(
-            eq(damDocuments.docType, "past_proposal"),
-            eq(damDocuments.processingStatus, "indexed"),
-            tagOverlap
-          )
-        )
+        .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed")))
         .orderBy(desc(damDocuments.createdAt))
         .limit(5);
-
-      return rows;
+      return { results: all, isFallback: true };
     }),
 
   /** Search DAM documents by title or tag (free text, any docType) */

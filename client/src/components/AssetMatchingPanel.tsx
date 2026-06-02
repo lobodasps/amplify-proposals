@@ -9,6 +9,8 @@
  *   C) Relevant Past Proposals (top 5, top 1 pre-checked)
  *
  * Each section has a manual search bar to find DAM docs by title/tag.
+ * When no service line overlap is found, falls back to ALL indexed docs of that
+ * type and shows an amber banner.
  * "Confirm Selections and Open Workspace" saves to pursuit and navigates.
  */
 
@@ -47,6 +49,7 @@ import {
   AlertTriangle,
   ArrowRight,
   FolderOpen,
+  Info,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,7 +57,7 @@ import {
 interface AssetMatchingPanelProps {
   pursuitId: string;
   serviceLines: string[];
-  onComplete: () => void; // Navigate to workspace
+  onComplete: () => void;
   onBack?: () => void;
 }
 
@@ -62,6 +65,50 @@ interface SelectedPerson {
   damDocumentId: string;
   staffName: string;
   role: string;
+}
+
+type ProjectSheetDoc = {
+  id: string;
+  title: string;
+  clientName: string | null;
+  ownerName: string | null;
+  contractValue: string | null;
+  tags: string | null;
+  staffName: string | null;
+  projectName: string | null;
+  extractedMeta: unknown;
+};
+
+type ResumeDoc = {
+  id: string;
+  title: string;
+  staffName: string | null;
+  tags: string | null;
+  extractedMeta: unknown;
+};
+
+type PastProposalDoc = {
+  id: string;
+  title: string;
+  clientName: string | null;
+  contractValue: string | null;
+  tags: string | null;
+  createdAt: number | Date | null;
+  extractedMeta: unknown;
+};
+
+// ─── Fallback banner ──────────────────────────────────────────────────────────
+
+function FallbackBanner() {
+  return (
+    <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+      <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+      <p className="text-xs text-amber-800">
+        No direct service line matches found — showing all available assets.
+        Select the most relevant ones manually.
+      </p>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -73,23 +120,23 @@ export default function AssetMatchingPanel({
   onBack,
 }: AssetMatchingPanelProps) {
   // ── Queries ────────────────────────────────────────────────────────────────
-  const { data: projectSheets = [], isLoading: loadingProjects } =
-    trpc.dam.matchProjectSheets.useQuery(
-      { serviceLines },
-      { enabled: serviceLines.length > 0 }
-    );
+  const { data: projectSheetsData, isLoading: loadingProjects } =
+    trpc.dam.matchProjectSheets.useQuery({ serviceLines });
 
-  const { data: resumes = [], isLoading: loadingResumes } =
-    trpc.dam.matchResumes.useQuery(
-      { serviceLines },
-      { enabled: serviceLines.length > 0 }
-    );
+  const { data: resumesData, isLoading: loadingResumes } =
+    trpc.dam.matchResumes.useQuery({ serviceLines });
 
-  const { data: pastProposals = [], isLoading: loadingProposals } =
-    trpc.dam.matchPastProposals.useQuery(
-      { serviceLines },
-      { enabled: serviceLines.length > 0 }
-    );
+  const { data: pastProposalsData, isLoading: loadingProposals } =
+    trpc.dam.matchPastProposals.useQuery({ serviceLines });
+
+  const projectSheets: ProjectSheetDoc[] = projectSheetsData?.results ?? [];
+  const projectsFallback = projectSheetsData?.isFallback ?? false;
+
+  const resumes: ResumeDoc[] = resumesData?.results ?? [];
+  const resumesFallback = resumesData?.isFallback ?? false;
+
+  const pastProposals: PastProposalDoc[] = (pastProposalsData?.results ?? []) as PastProposalDoc[];
+  const proposalsFallback = pastProposalsData?.isFallback ?? false;
 
   // ── Search state ───────────────────────────────────────────────────────────
   const [projectSearch, setProjectSearch] = useState("");
@@ -159,10 +206,10 @@ export default function AssetMatchingPanel({
   };
 
   const doSave = () => {
-    // Build personnel array from selected resumes + roles
+    const allResumeDocs = [...resumes, ...(resumeSearchResults as ResumeDoc[])];
     const selectedPersonnel: SelectedPerson[] = Array.from(selectedResumeIds).map(
       (id) => {
-        const doc = [...resumes, ...resumeSearchResults].find((r) => r.id === id);
+        const doc = allResumeDocs.find((r) => r.id === id);
         return {
           damDocumentId: id,
           staffName: doc?.staffName ?? doc?.title ?? "Unknown",
@@ -206,28 +253,28 @@ export default function AssetMatchingPanel({
 
   // Merge auto-matched + search results, deduplicate
   const allProjects = useMemo(() => {
-    const map = new Map<string, typeof projectSheets[0]>();
+    const map = new Map<string, ProjectSheetDoc>();
     projectSheets.forEach((p) => map.set(p.id, p));
     if (projectSearch.length >= 2) {
-      projectSearchResults.forEach((p) => map.set(p.id, p as any));
+      (projectSearchResults as unknown as ProjectSheetDoc[]).forEach((p) => map.set(p.id, p));
     }
     return Array.from(map.values());
   }, [projectSheets, projectSearchResults, projectSearch]);
 
   const allResumes = useMemo(() => {
-    const map = new Map<string, typeof resumes[0]>();
+    const map = new Map<string, ResumeDoc>();
     resumes.forEach((r) => map.set(r.id, r));
     if (resumeSearch.length >= 2) {
-      resumeSearchResults.forEach((r) => map.set(r.id, r as typeof resumes[0]));
+      (resumeSearchResults as ResumeDoc[]).forEach((r) => map.set(r.id, r));
     }
     return Array.from(map.values());
   }, [resumes, resumeSearchResults, resumeSearch]);
 
   const allProposals = useMemo(() => {
-    const map = new Map<string, typeof pastProposals[0]>();
+    const map = new Map<string, PastProposalDoc>();
     pastProposals.forEach((p) => map.set(p.id, p));
     if (proposalSearch.length >= 2) {
-      proposalSearchResults.forEach((p) => map.set(p.id, p as any));
+      (proposalSearchResults as unknown as PastProposalDoc[]).forEach((p) => map.set(p.id, p));
     }
     return Array.from(map.values());
   }, [pastProposals, proposalSearchResults, proposalSearch]);
@@ -281,10 +328,11 @@ export default function AssetMatchingPanel({
               </div>
             </CardHeader>
             <CardContent className="pt-0">
+              {projectsFallback && allProjects.length > 0 && <FallbackBanner />}
               {allProjects.length === 0 ? (
                 <div className="flex items-center gap-2 py-4 px-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  No matching project sheets found — upload project sheets to Knowledge Hub
+                  No project sheets found — upload project sheets to Knowledge Hub
                 </div>
               ) : (
                 <ScrollArea className="max-h-[280px]">
@@ -310,7 +358,7 @@ export default function AssetMatchingPanel({
                           </div>
                           {doc.tags && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              {doc.tags.split(",").slice(0, 5).map((tag, i) => (
+                              {doc.tags.split(",").slice(0, 5).map((tag: string, i: number) => (
                                 <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0">
                                   {tag.trim()}
                                 </Badge>
@@ -349,17 +397,18 @@ export default function AssetMatchingPanel({
               </div>
             </CardHeader>
             <CardContent className="pt-0">
+              {resumesFallback && allResumes.length > 0 && <FallbackBanner />}
               {allResumes.length === 0 ? (
                 <div className="flex items-center gap-2 py-4 px-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  No matching resumes found — upload base resumes to Knowledge Hub
+                  No resumes found — upload staff resumes to Knowledge Hub
                 </div>
               ) : (
                 <ScrollArea className="max-h-[320px]">
                   <div className="space-y-2">
                     {allResumes.map((doc) => {
                       const isSelected = selectedResumeIds.has(doc.id);
-                      const meta = doc.extractedMeta as Record<string, any> | null;
+                      const meta = doc.extractedMeta as Record<string, unknown> | null;
                       return (
                         <div
                           key={doc.id}
@@ -376,14 +425,14 @@ export default function AssetMatchingPanel({
                                 {doc.staffName || doc.title}
                               </p>
                               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
-                                {meta?.title && <span>{meta.title}</span>}
-                                {meta?.certifications && (
-                                  <span>Certs: {Array.isArray(meta.certifications) ? meta.certifications.join(", ") : meta.certifications}</span>
+                                {meta?.title != null && <span>{String(meta.title)}</span>}
+                                {meta?.certifications != null && (
+                                  <span>Certs: {Array.isArray(meta.certifications) ? (meta.certifications as string[]).join(", ") : String(meta.certifications)}</span>
                                 )}
                               </div>
                               {doc.tags && (
                                 <div className="flex flex-wrap gap-1 mt-1.5">
-                                  {doc.tags.split(",").slice(0, 5).map((tag, i) => (
+                                  {doc.tags.split(",").slice(0, 5).map((tag: string, i: number) => (
                                     <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0">
                                       {tag.trim()}
                                     </Badge>
@@ -439,10 +488,11 @@ export default function AssetMatchingPanel({
               </div>
             </CardHeader>
             <CardContent className="pt-0">
+              {proposalsFallback && allProposals.length > 0 && <FallbackBanner />}
               {allProposals.length === 0 ? (
                 <div className="flex items-center gap-2 py-4 px-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  No matching past proposals found
+                  No past proposals found
                 </div>
               ) : (
                 <ScrollArea className="max-h-[220px]">
@@ -472,7 +522,7 @@ export default function AssetMatchingPanel({
                           </div>
                           {doc.tags && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              {doc.tags.split(",").slice(0, 5).map((tag, i) => (
+                              {doc.tags.split(",").slice(0, 5).map((tag: string, i: number) => (
                                 <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0">
                                   {tag.trim()}
                                 </Badge>
