@@ -38,6 +38,7 @@ import {
   Lightbulb,
   BarChart3,
   AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -54,6 +55,8 @@ interface RendererProps {
   sessionId: string;
   isComplete: boolean;
   onSaved: (newOutput: string) => void;
+  /** Called when the user clicks Re-render to force prose rendering of a saved JSON section */
+  onRerender?: () => void;
 }
 
 // ─── Win Theme Cards ──────────────────────────────────────────────────────────
@@ -651,19 +654,40 @@ function GenericJsonViewer({ data }: { data: unknown }) {
 
 // ─── Fallback / Parse Error ───────────────────────────────────────────────────
 
-function FallbackRenderer({ output, reason }: { output: string; reason: string }) {
+function FallbackRenderer({
+  output,
+  reason,
+  onRerender,
+}: {
+  output: string;
+  reason: string;
+  onRerender?: () => void;
+}) {
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 px-4 py-3">
-        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-            Raw output — structured renderer unavailable
-          </p>
-          <p className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-0.5">
-            {reason}
-          </p>
+      <div className="flex items-start justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+              Raw output — structured renderer unavailable
+            </p>
+            <p className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-0.5">
+              {reason}
+            </p>
+          </div>
         </div>
+        {onRerender && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 text-xs border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900"
+            onClick={onRerender}
+          >
+            <RotateCcw className="h-3 w-3 mr-1.5" />
+            Re-render as Prose
+          </Button>
+        )}
       </div>
       <ScrollArea className="rounded-md border bg-muted/20 p-4 max-h-[500px]">
         <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed">
@@ -807,12 +831,14 @@ function JsonRenderer({
   sessionId,
   isComplete,
   onSaved,
+  onRerender,
 }: {
   skillName: WorkflowSkillName;
   output: string;
   sessionId: string;
   isComplete: boolean;
   onSaved: (newOutput: string) => void;
+  onRerender?: () => void;
 }) {
   // Try to parse the JSON
   let parsed: unknown;
@@ -823,6 +849,7 @@ function JsonRenderer({
       <FallbackRenderer
         output={output}
         reason="Output could not be parsed as JSON. The raw text is shown below."
+        onRerender={onRerender}
       />
     );
   }
@@ -856,6 +883,17 @@ function JsonRenderer({
                 Structured Data
               </Badge>
             </div>
+            {onRerender && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={onRerender}
+              >
+                <RotateCcw className="h-3 w-3 mr-1.5" />
+                Re-render as Prose
+              </Button>
+            )}
           </div>
           <GenericJsonViewer data={parsed} />
         </div>
@@ -872,15 +910,51 @@ export function SkillOutputRenderer({
   sessionId,
   isComplete,
   onSaved,
+  onRerender,
 }: RendererProps) {
   // Determine effective output type
   const effectiveType = outputType ?? "prose";
+
+  // Local state: user can force prose rendering for sections saved as JSON
+  const [forceProse, setForceProse] = useState(false);
 
   if (!output || output.trim() === "") {
     return (
       <p className="text-sm text-muted-foreground italic">No output available yet.</p>
     );
   }
+
+  // If user clicked Re-render, or caller forced prose, render as prose regardless of outputType
+  if (forceProse) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+          <span>Re-rendered as prose. Use Edit to make corrections.</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs ml-auto"
+            onClick={() => setForceProse(false)}
+          >
+            Undo re-render
+          </Button>
+        </div>
+        <ProseEditor
+          skillName={skillName}
+          output={output}
+          sessionId={sessionId}
+          isComplete={isComplete}
+          onSaved={onSaved}
+        />
+      </div>
+    );
+  }
+
+  const handleRerender = () => {
+    setForceProse(true);
+    if (onRerender) onRerender();
+  };
 
   switch (effectiveType) {
     case "prose":
@@ -902,6 +976,7 @@ export function SkillOutputRenderer({
           sessionId={sessionId}
           isComplete={isComplete}
           onSaved={onSaved}
+          onRerender={handleRerender}
         />
       );
 
@@ -946,6 +1021,7 @@ export function SkillOutputRenderer({
         <FallbackRenderer
           output={output}
           reason={`Unknown outputType "${effectiveType}". Showing raw output.`}
+          onRerender={handleRerender}
         />
       );
   }

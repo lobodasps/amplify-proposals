@@ -836,3 +836,10 @@
 - [x] Cancel button context text: "Cancel — stops processing, files already uploaded are preserved"
 - [x] Gemini retry notices surfaced via retryMessage field polled from DB (onRetry callback in retryWithBackoff)
 - [x] Zero TypeScript errors, 25/25 tests passing
+
+## Section Output Rendering Fix (v4.13)
+- [x] Log resolved outputType for every section as it completes generation (console.log in resolveOutputType)
+- [x] Fix WORKFLOW_SKILL_TO_SKILL_TYPE mapping gaps: technical_outline, fee_estimator, technical_writer, key_personnel, past_performance all forced to prose via FORCE_PROSE_SKILLS constant
+- [x] Add hard fallback: if skillType ends with _writer and DB outputType != prose, override to prose with console.warn
+- [x] Add Re-render as Prose button for sections showing as JSON/Fallback (in JsonRenderer default case and FallbackRenderer)
+- [x] Zero TypeScript errors, 25/25 tests passing

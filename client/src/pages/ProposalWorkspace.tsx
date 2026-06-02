@@ -90,16 +90,47 @@ type ActiveView = "overview" | "full_draft" | WorkflowSkillName;
 // Reads outputType from the live ai_skills records fetched at runtime.
 // Falls back to 'prose' if the record is not yet loaded or the skill type
 // is not found — this prevents showing raw JSON while the query loads.
+//
+// Hard rules (override DB value):
+//   1. technical_outline always → prose (it produces a text outline, not JSON)
+//   2. fee_estimator always → prose (it produces a text fee narrative)
+//   3. Any skill whose skillType ends with '_writer' → prose
+//   4. rfp_parser / proposal_scorer → json (they use json_schema response_format)
+const FORCE_PROSE_SKILLS: WorkflowSkillName[] = ["technical_outline", "fee_estimator", "technical_writer", "key_personnel", "past_performance"];
+const FORCE_JSON_SKILLS: WorkflowSkillName[] = ["rfp_parser", "proposal_scorer"];
+
 function resolveOutputType(
   skillName: WorkflowSkillName,
   skillRecords: Array<{ skillType: string; outputType: string | null }> | undefined
 ): SkillOutputType {
-  if (!skillRecords || skillRecords.length === 0) return "prose";
+  // Hard overrides — these skills always produce a known format regardless of DB
+  if (FORCE_PROSE_SKILLS.includes(skillName)) {
+    console.log(`[outputType] Section: ${skillName}, skillType: ${WORKFLOW_SKILL_TO_SKILL_TYPE[skillName]}, resolved outputType: prose (FORCED)`);
+    return "prose";
+  }
+  if (FORCE_JSON_SKILLS.includes(skillName)) {
+    console.log(`[outputType] Section: ${skillName}, skillType: ${WORKFLOW_SKILL_TO_SKILL_TYPE[skillName]}, resolved outputType: json (FORCED)`);
+    return "json";
+  }
+
+  // Dynamic resolution from DB records
+  if (!skillRecords || skillRecords.length === 0) {
+    console.log(`[outputType] Section: ${skillName}, skillType: ${WORKFLOW_SKILL_TO_SKILL_TYPE[skillName]}, resolved outputType: prose (no DB records)`);
+    return "prose";
+  }
   const skillType = WORKFLOW_SKILL_TO_SKILL_TYPE[skillName];
   const record = skillRecords.find((r) => r.skillType === skillType);
-  const ot = record?.outputType;
-  if (ot === "json" || ot === "prose" || ot === "json_with_prose") return ot;
-  return "prose"; // safe fallback
+  let ot = record?.outputType;
+
+  // Hard fallback: if skillType ends with '_writer', it must be prose
+  if (skillType.endsWith("_writer") && ot !== "prose" && ot !== "json_with_prose") {
+    console.warn(`[outputType] Section: ${skillName}, skillType: ${skillType}, DB outputType: "${ot}" — overriding to prose (_writer fallback)`);
+    ot = "prose";
+  }
+
+  const resolved: SkillOutputType = (ot === "json" || ot === "prose" || ot === "json_with_prose") ? ot : "prose";
+  console.log(`[outputType] Section: ${skillName}, skillType: ${skillType}, resolved outputType: ${resolved}`);
+  return resolved;
 }
 
 // ─── Skill Status Icon ────────────────────────────────────────────────────────
