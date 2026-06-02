@@ -1246,6 +1246,36 @@ function resolveGeminiModelForNativeSDK(model: string): string {
   return MODEL_MAP[model] ?? model;
 }
 
+// ─── Retry-with-backoff for transient Gemini errors ─────────────────────────
+
+const GEMINI_RETRY_STATUS_CODES = new Set([429, 502, 503]);
+const GEMINI_RETRY_DELAYS_MS = [5_000, 15_000, 30_000]; // after attempt 1, 2, 3
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= GEMINI_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      lastErr = err;
+      const status = (err as { status?: number })?.status;
+      const isRetryable = status !== undefined && GEMINI_RETRY_STATUS_CODES.has(status);
+      if (!isRetryable || attempt === GEMINI_RETRY_DELAYS_MS.length) break;
+      const delayMs = GEMINI_RETRY_DELAYS_MS[attempt];
+      const delaySec = delayMs / 1000;
+      console.warn(`[${label}] Gemini ${status} — retrying in ${delaySec}s (attempt ${attempt + 1} of ${GEMINI_RETRY_DELAYS_MS.length})`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  const status = (lastErr as { status?: number })?.status;
+  if (status !== undefined && GEMINI_RETRY_STATUS_CODES.has(status)) {
+    throw new Error(`Gemini API unavailable after 3 attempts — please retry in a few minutes`);
+  }
+  throw lastErr;
+}
+
+// ─── Gemini native SDK call ───────────────────────────────────────────────────
+
 async function callGeminiNative(
   apiKey: string,
   model: string,
@@ -1268,7 +1298,10 @@ async function callGeminiNative(
     generationConfig,
   });
 
-  const response = await genModel.generateContent({ contents });
+  const response = await retryWithBackoff(
+    () => genModel.generateContent({ contents }),
+    `callGeminiNative/${model}`
+  );
   const result = response.response;
 
   // Extract token usage from usageMetadata

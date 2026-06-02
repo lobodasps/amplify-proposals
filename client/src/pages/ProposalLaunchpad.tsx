@@ -394,6 +394,7 @@ export default function ProposalLaunchpad() {
   const [step, setStep] = useState<WizardStep>("upload");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef(false);
 
   // ── File queue ────────────────────────────────────────────────────────────
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -645,7 +646,13 @@ export default function ProposalLaunchpad() {
   };
 
   // ── Actual processing start (called by handleProcess or warning dialog) ────
+  const cancelProcessing = () => {
+    abortRef.current = true;
+    toast.info("Cancelling processing…");
+  };
+
   const doProcess = async () => {
+    abortRef.current = false;
     setStep("processing");
     setProcessingProgress(5);
 
@@ -661,6 +668,7 @@ export default function ProposalLaunchpad() {
       const uploadedFiles: Array<QueuedFile & { uploadedUrl: string; uploadedKey: string }> = [];
 
       for (let i = 0; i < totalFiles; i++) {
+        if (abortRef.current) throw new Error("Processing cancelled.");
         const entry = queue[i];
         setProcessingStatus(`Uploading "${entry.file.name}" (${i + 1}/${totalFiles})…`);
         setQueue((prev) => prev.map((f) => f.id === entry.id ? { ...f, status: "uploading" } : f));
@@ -702,6 +710,7 @@ export default function ProposalLaunchpad() {
       let xlsxSummaries: string[] = [];
 
       for (let i = 0; i < uploadedFiles.length; i++) {
+        if (abortRef.current) throw new Error("Processing cancelled.");
         const entry = uploadedFiles[i];
         setProcessingStatus(`Extracting "${entry.file.name}" (${i + 1}/${uploadedFiles.length})…`);
 
@@ -741,6 +750,7 @@ export default function ProposalLaunchpad() {
       let finalSessionData: Awaited<ReturnType<typeof utils.rfpSessions.getById.fetch>> | null = null;
 
       while (Date.now() - pollStart < MAX_POLL_MS) {
+        if (abortRef.current) throw new Error("Processing cancelled.");
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
         try {
           const sessionData = await utils.rfpSessions.getById.fetch({ id: sid });
@@ -1500,6 +1510,15 @@ export default function ProposalLaunchpad() {
                   <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{processingProgress}%</span>
                 </div>
                 <Progress value={processingProgress} className="h-2" />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={cancelProcessing}
+                  className="text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 transition-colors"
+                >
+                  Cancel processing
+                </button>
               </div>
 
               {/* Per-file status */}

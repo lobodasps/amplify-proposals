@@ -815,3 +815,15 @@
 - [x] Fix 3: Confirmed — Launchpad manifest renders from queue (session-local React state) only; no dam_documents query in manifest path; the three damDocuments queries in rfpSessions.ts are inside buildSkillVariables() for LLM context hydration only
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Launchpad Processing Kill Switch (v4.9)
+- [x] Add Cancel Processing button to the Processing RFP Package step in ProposalLaunchpad
+- [x] abortRef pattern: checks abort flag between every upload, extract, and poll iteration; throws 'Processing cancelled.' which the catch block handles by resetting to upload step
+- [x] Zero TypeScript errors, push to GitHub + checkpoint
+
+## Gemini Retry-with-Backoff + Launchpad Cancel Button (v4.9)
+- [x] llmSkill.ts: retryWithBackoff() helper — max 3 retries, 5/15/30s delays, retry on 503/429/502 only, non-retryable (400/401/404) breaks immediately, throws 'Gemini API unavailable after 3 attempts — please retry in a few minutes'
+- [x] llmSkill.ts: callGeminiNative() wraps genModel.generateContent() with retryWithBackoff()
+- [x] Launchpad: abortRef pattern — Cancel button sets abortRef.current=true; checked before each upload, extract, and poll iteration; catch block resets step to 'upload' and clears queue statuses
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint
