@@ -23,7 +23,7 @@
  * Rules: no new backend code, only existing tRPC procedures and /api/upload.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import * as fflate from "fflate";
@@ -425,6 +425,40 @@ export default function ProposalLaunchpad() {
   // ── Pre-process warning state ─────────────────────────────────────────────
   const [showProcessWarning, setShowProcessWarning] = useState(false);
 
+  // ── Real-time processing status log ──────────────────────────────────────
+  type LogEntryType = "info" | "success" | "warning" | "error" | "running";
+  interface StatusLogEntry {
+    id: string;
+    time: string; // HH:MM:SS
+    message: string;
+    type: LogEntryType;
+  }
+  const [statusLog, setStatusLog] = useState<StatusLogEntry[]>([]);
+  const [currentStepLabel, setCurrentStepLabel] = useState("");
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const stepStartTimeRef = useRef<number>(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const addLog = (message: string, type: LogEntryType = "info") => {
+    const now = new Date();
+    const time = now.toTimeString().slice(0, 8);
+    setStatusLog((prev) => [...prev, { id: crypto.randomUUID(), time, message, type }]);
+  };
+
+  const startStepTimer = (label: string, stepIdx: number) => {
+    setCurrentStepLabel(label);
+    setCurrentStepIndex(stepIdx);
+    stepStartTimeRef.current = Date.now();
+    setElapsedSeconds(0);
+  };
+
+  // Auto-scroll log to bottom
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [statusLog]);
+
   // ── Asset Matching state (Step 3) ─────────────────────────────────────────
   const [createdPursuitId, setCreatedPursuitId] = useState<string | null>(null);
   const [createdProposalId, setCreatedProposalId] = useState<string | null>(null);
@@ -619,6 +653,28 @@ export default function ProposalLaunchpad() {
 
   const updateLabel = (id: string, label: FileLabel) => {
     setQueue((prev) => prev.map((f) => f.id === id ? { ...f, label } : f));
+    // If user manually selects "Main RFP" in the dropdown, auto-set the radio too
+    if (label === "Main RFP") {
+      setMainRfpFileId(id);
+    }
+    // If user changes away from "Main RFP" and this was the designated file, clear the radio
+    if (label !== "Main RFP" && mainRfpFileId === id) {
+      setMainRfpFileId(null);
+    }
+  };
+
+  const handleSetMainRfp = (id: string) => {
+    setMainRfpFileId(id);
+    // Auto-sync the label dropdown to "Main RFP" for the selected file
+    setQueue((prev) =>
+      prev.map((f) =>
+        f.id === id
+          ? { ...f, label: "Main RFP" as FileLabel }
+          : f.label === "Main RFP"
+          ? { ...f, label: "Supplemental" as FileLabel } // demote previous Main RFP
+          : f
+      )
+    );
   };
 
   // ── Core processing flow ──────────────────────────────────────────────────
@@ -655,10 +711,21 @@ export default function ProposalLaunchpad() {
     abortRef.current = false;
     setStep("processing");
     setProcessingProgress(5);
+    setStatusLog([]);
+    setCurrentStepLabel("Initializing");
+    setCurrentStepIndex(1);
+    stepStartTimeRef.current = Date.now();
+    setElapsedSeconds(0);
+    // Start elapsed-time ticker
+    if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
+    elapsedIntervalRef.current = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - stepStartTimeRef.current) / 1000));
+    }, 1000);
 
     try {
       // 1. Create rfpSession
       setProcessingStatus("Creating session…");
+      addLog("Starting processing session", "info");
       const { sessionId: sid } = await createSession.mutateAsync({});
       setSessionId(sid);
       setProcessingProgress(10);
@@ -667,6 +734,8 @@ export default function ProposalLaunchpad() {
       const totalFiles = queue.length;
       const uploadedFiles: Array<QueuedFile & { uploadedUrl: string; uploadedKey: string }> = [];
 
+      startStepTimer("Uploading files", 1);
+      const totalSizeBytes = queue.reduce((sum, f) => sum + f.file.size, 0);
       for (let i = 0; i < totalFiles; i++) {
         if (abortRef.current) throw new Error("Processing cancelled.");
         const entry = queue[i];
@@ -680,6 +749,7 @@ export default function ProposalLaunchpad() {
         const uploadPct = 10 + Math.round(((i + 1) / totalFiles) * 30);
         setProcessingProgress(uploadPct);
       }
+      addLog(`Files uploaded (${totalFiles} file${totalFiles !== 1 ? "s" : ""}, ${(totalSizeBytes / (1024 * 1024)).toFixed(1)} MB)`, "success");
 
       // 3. Save primary file — use user-designated Main RFP (guaranteed to exist by handleProcess gate)
       const primary = uploadedFiles.find((f) => f.id === mainRfpFileId) ?? uploadedFiles.find((f) => f.type === "pdf" || f.type === "docx") ?? uploadedFiles[0];
@@ -703,9 +773,11 @@ export default function ProposalLaunchpad() {
           label: f.label,
         })),
       });
+      addLog("Text extracted from all files", "success");
       setProcessingProgress(45);
 
       // 4. Extract content from each file
+      startStepTimer("Preparing file context", 2);
       let combinedContext = "";
       let xlsxSummaries: string[] = [];
 
@@ -735,6 +807,8 @@ export default function ProposalLaunchpad() {
       // 5. Run rfp_parser skill on the session (fire-and-forget — backend returns immediately)
       // We poll getById every 2s until workflowState.rfp_parser.status === 'complete' or 'error'
       setProcessingStatus("Starting AI extraction…");
+      startStepTimer("Calling Gemini for RFP analysis", 3);
+      addLog("Calling Gemini for RFP analysis... (attempt 1)", "running");
 
       // Kick off the skill (returns immediately with running:true)
       try {
@@ -748,16 +822,34 @@ export default function ProposalLaunchpad() {
       const MAX_POLL_MS = 15 * 60 * 1000;
       const pollStart = Date.now();
       let finalSessionData: Awaited<ReturnType<typeof utils.rfpSessions.getById.fetch>> | null = null;
+      let lastSubStepMessage = "";
+      let lastRetryMessage = "";
 
       while (Date.now() - pollStart < MAX_POLL_MS) {
         if (abortRef.current) throw new Error("Processing cancelled.");
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
         try {
           const sessionData = await utils.rfpSessions.getById.fetch({ id: sid });
-          const rfpParserState = (sessionData?.workflowState as Record<string, { status?: string; subStepMessage?: string }> | null)?.rfp_parser;
+          const rfpParserState = (sessionData?.workflowState as Record<string, { status?: string; subStepMessage?: string; retryMessage?: string }> | null)?.rfp_parser;
           // Show sub-step message while running
-          if (rfpParserState?.subStepMessage) {
+          if (rfpParserState?.subStepMessage && rfpParserState.subStepMessage !== lastSubStepMessage) {
+            lastSubStepMessage = rfpParserState.subStepMessage;
             setProcessingStatus(rfpParserState.subStepMessage);
+            // Determine log type based on message content
+            const isShredding = rfpParserState.subStepMessage.toLowerCase().includes("shredding") || rfpParserState.subStepMessage.toLowerCase().includes("cataloguing") || rfpParserState.subStepMessage.toLowerCase().includes("parsing fee");
+            const isGemini = rfpParserState.subStepMessage.toLowerCase().includes("gemini") || rfpParserState.subStepMessage.toLowerCase().includes("ai parser") || rfpParserState.subStepMessage.toLowerCase().includes("generating");
+            if (isShredding) {
+              addLog(rfpParserState.subStepMessage, "info");
+              startStepTimer(rfpParserState.subStepMessage, 3);
+            } else if (isGemini) {
+              addLog(rfpParserState.subStepMessage, "running");
+              startStepTimer(rfpParserState.subStepMessage, 4);
+            }
+          }
+          // Surface Gemini retry notices
+          if (rfpParserState?.retryMessage && rfpParserState.retryMessage !== lastRetryMessage) {
+            lastRetryMessage = rfpParserState.retryMessage;
+            addLog(rfpParserState.retryMessage, "warning");
           }
           if (rfpParserState?.status === "complete") {
             finalSessionData = sessionData;
@@ -777,9 +869,12 @@ export default function ProposalLaunchpad() {
         throw new Error("RFP extraction timed out — please try again.");
       }
 
+      addLog("RFP analysis complete", "success");
       setProcessingProgress(90);
 
       // 6. Parse structured output from skillOutputs (not the mutation response)
+      startStepTimer("Building requirements matrix", 5);
+      addLog("Building requirements matrix...", "running");
       const rawOutput = (finalSessionData.skillOutputs as Record<string, string> | null)?.rfp_parser ?? "";
       let parsed: Partial<ParsedRfpData> = {};
       try {
@@ -801,10 +896,16 @@ export default function ProposalLaunchpad() {
       setRfpServiceLines(parsed.serviceLines ?? []);
       setRfpSummary((parsed.scopeSummary ?? "") + xlsxNote);
 
+      addLog("Extraction complete — ready for review", "success");
+      if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
       setProcessingProgress(100);
       setStep("review");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Processing failed";
+      if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
+      if (msg !== "Processing cancelled.") {
+        addLog(msg, "error");
+      }
       toast.error(msg);
       setStep("upload");
       setProcessingProgress(0);
@@ -943,6 +1044,11 @@ export default function ProposalLaunchpad() {
     setRfpSummary("");
     setGoNoGoResult(null);
     setQuickSignals(null);
+    setMainRfpFileId(null);
+    setStatusLog([]);
+    setCurrentStepLabel("");
+    setCurrentStepIndex(0);
+    if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -1272,7 +1378,7 @@ export default function ProposalLaunchpad() {
                                   name="mainRfpFile"
                                   value={entry.id}
                                   checked={mainRfpFileId === entry.id}
-                                  onChange={() => setMainRfpFileId(entry.id)}
+                                  onChange={() => handleSetMainRfp(entry.id)}
                                   className="accent-blue-600"
                                 />
                                 <span className={`text-xs truncate max-w-[240px] group-hover:text-blue-700 transition-colors ${
@@ -1503,7 +1609,8 @@ export default function ProposalLaunchpad() {
                 Uploading files and running AI extraction — this takes about 20–60 seconds depending on package size.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-5">
+              {/* Progress bar */}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="flex-1 mr-2 text-foreground font-medium truncate">{processingStatus || "Starting…"}</span>
@@ -1512,10 +1619,82 @@ export default function ProposalLaunchpad() {
                 <Progress value={processingProgress} className="h-2" />
               </div>
 
-              <div className="flex justify-end">
+              {/* Current step indicator */}
+              {currentStepLabel && (
+                <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                    <span className="text-xs font-medium text-blue-800">
+                      Currently: {currentStepLabel} (Step {currentStepIndex} of 5)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs tabular-nums ${
+                      elapsedSeconds >= 120 ? "text-amber-600 font-semibold" : "text-blue-600"
+                    }`}>
+                      {elapsedSeconds >= 120
+                        ? `⚠️ ${elapsedSeconds}s — longer than expected`
+                        : `${elapsedSeconds}s`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 2-min warning banner */}
+              {elapsedSeconds >= 120 && (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                  <span className="text-amber-600 text-sm shrink-0">⚠️</span>
+                  <p className="text-xs text-amber-800">
+                    This is taking longer than expected — Gemini may be under high load. Processing will continue automatically.
+                  </p>
+                </div>
+              )}
+
+              {/* Real-time status log */}
+              {statusLog.length > 0 && (
+                <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+                  <div className="px-3 py-1.5 border-b border-border bg-muted/60 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Processing Log</span>
+                    <span className="text-[10px] text-muted-foreground">{statusLog.length} event{statusLog.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto p-2 space-y-0.5 font-mono">
+                    {statusLog.map((entry) => (
+                      <div key={entry.id} className="flex items-start gap-2 text-[11px] leading-relaxed">
+                        <span className="text-muted-foreground shrink-0 tabular-nums">{entry.time}</span>
+                        <span className={`shrink-0 ${
+                          entry.type === "success" ? "text-emerald-600" :
+                          entry.type === "warning" ? "text-amber-600" :
+                          entry.type === "error" ? "text-red-600" :
+                          entry.type === "running" ? "text-blue-600" :
+                          "text-muted-foreground"
+                        }`}>
+                          {entry.type === "success" ? "✅" :
+                           entry.type === "warning" ? "⚠️" :
+                           entry.type === "error" ? "❌" :
+                           entry.type === "running" ? "⏳" : "ℹ️"}
+                        </span>
+                        <span className={`flex-1 ${
+                          entry.type === "success" ? "text-emerald-700" :
+                          entry.type === "warning" ? "text-amber-700" :
+                          entry.type === "error" ? "text-red-700" :
+                          entry.type === "running" ? "text-blue-700" :
+                          "text-foreground"
+                        }`}>{entry.message}</span>
+                      </div>
+                    ))}
+                    <div ref={logEndRef} />
+                  </div>
+                </div>
+              )}
+
+              {/* Cancel button with context */}
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Cancel — stops processing, files already uploaded are preserved
+                </p>
                 <button
                   onClick={cancelProcessing}
-                  className="text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 transition-colors"
+                  className="text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 transition-colors ml-4 shrink-0"
                 >
                   Cancel processing
                 </button>

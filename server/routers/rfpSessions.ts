@@ -1089,13 +1089,13 @@ export const rfpSessionsRouter = router({
             }
 
             // Helper: write a sub-step message into workflowState so the UI can poll it
-            const writeSubStep = async (msg: string) => {
+            const writeSubStep = async (msg: string, retryMsg?: string) => {
               try {
                 const freshDb = await getDb();
                 if (!freshDb) return;
                 const latestRows = await freshDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
                 const latestState = ((latestRows[0]?.workflowState ?? {}) as WorkflowState);
-                const updatedEntry: SkillStateEntry = { ...latestState.rfp_parser, status: "running", subStepMessage: msg } as SkillStateEntry;
+                const updatedEntry: SkillStateEntry = { ...latestState.rfp_parser, status: "running", subStepMessage: msg, ...(retryMsg !== undefined ? { retryMessage: retryMsg } : {}) } as SkillStateEntry;
                 await freshDb.update(rfpSessions).set({ workflowState: { ...latestState, rfp_parser: updatedEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
               } catch { /* non-fatal */ }
             };
@@ -1182,10 +1182,24 @@ export const rfpSessionsRouter = router({
           if (genDb) {
             const genRows = await genDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
             const genState = ((genRows[0]?.workflowState ?? {}) as WorkflowState);
-            const genEntry: SkillStateEntry = { ...genState[input.skillName as WorkflowSkillName], status: "running", startedAt, subStepMessage: "Generating..." };
+            const genEntry: SkillStateEntry = { ...genState[input.skillName as WorkflowSkillName], status: "running", startedAt, subStepMessage: "Calling Gemini for RFP analysis...", retryMessage: undefined };
             await genDb.update(rfpSessions).set({ workflowState: { ...genState, [input.skillName]: genEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
           }
         }
+
+        // onRetry: write retry notice to DB so the UI can display it in the status log
+        const onRetry = input.skillName === "rfp_parser"
+          ? async (status: number, attempt: number, delaySec: number) => {
+              try {
+                const rDb = await getDb();
+                if (!rDb) return;
+                const rRows = await rDb.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+                const rState = ((rRows[0]?.workflowState ?? {}) as WorkflowState);
+                const rEntry: SkillStateEntry = { ...rState.rfp_parser, status: "running", retryMessage: `Gemini ${status} — retrying in ${delaySec}s (attempt ${attempt} of 3)` } as SkillStateEntry;
+                await rDb.update(rfpSessions).set({ workflowState: { ...rState, rfp_parser: rEntry } as WorkflowState }).where(eq(rfpSessions.id, input.sessionId));
+              } catch { /* non-fatal */ }
+            }
+          : undefined;
 
         const result = await invokeLLMWithSkill({
           skillType,
@@ -1193,6 +1207,7 @@ export const rfpSessionsRouter = router({
           ...(responseFormat ? { responseFormat } : {}),
           ...(systemOverride ? { systemOverride } : {}),
           ...(extraUserContent && extraUserContent.length > 0 ? { extraUserContent } : {}),
+          ...(onRetry ? { onRetry } : {}),
         });
 
         llmOutput = result.choices[0]?.message?.content ?? "";

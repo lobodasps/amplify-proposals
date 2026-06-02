@@ -94,6 +94,8 @@ export interface SkillInvokeParams {
   >;
   /** Override max_tokens for this call */
   maxTokens?: number;
+  /** Called on each Gemini retry attempt before the backoff delay */
+  onRetry?: (status: number, attempt: number, delaySec: number) => Promise<void>;
 }
 
 export interface SkillInvokeResult {
@@ -1251,7 +1253,7 @@ function resolveGeminiModelForNativeSDK(model: string): string {
 const GEMINI_RETRY_STATUS_CODES = new Set([429, 502, 503]);
 const GEMINI_RETRY_DELAYS_MS = [5_000, 15_000, 30_000]; // after attempt 1, 2, 3
 
-async function retryWithBackoff<T>(fn: () => Promise<T>, label: string): Promise<T> {
+async function retryWithBackoff<T>(fn: () => Promise<T>, label: string, onRetry?: (status: number, attempt: number, delaySec: number) => Promise<void>): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= GEMINI_RETRY_DELAYS_MS.length; attempt++) {
     try {
@@ -1264,6 +1266,9 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, label: string): Promise
       const delayMs = GEMINI_RETRY_DELAYS_MS[attempt];
       const delaySec = delayMs / 1000;
       console.warn(`[${label}] Gemini ${status} — retrying in ${delaySec}s (attempt ${attempt + 1} of ${GEMINI_RETRY_DELAYS_MS.length})`);
+      if (onRetry) {
+        try { await onRetry(status, attempt + 1, delaySec); } catch { /* non-fatal */ }
+      }
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
@@ -1281,7 +1286,8 @@ async function callGeminiNative(
   model: string,
   messages: SkillMessage[],
   responseFormat?: SkillInvokeParams["responseFormat"],
-  maxTokens?: number
+  maxTokens?: number,
+  onRetry?: (status: number, attempt: number, delaySec: number) => Promise<void>
 ): Promise<{ result: SkillInvokeResult; tokensIn: number; tokensOut: number }> {
   const resolvedModel = resolveGeminiModelForNativeSDK(model);
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -1300,7 +1306,8 @@ async function callGeminiNative(
 
   const response = await retryWithBackoff(
     () => genModel.generateContent({ contents }),
-    `callGeminiNative/${model}`
+    `callGeminiNative/${model}`,
+    onRetry
   );
   const result = response.response;
 
@@ -1478,7 +1485,7 @@ export async function invokeLLMWithSkill(
   try {
     if (provider === "google_gemini") {
       // Native Google Generative AI SDK — full file_url/fileUri support
-      const resp = await callGeminiNative(apiKey, model, messages, responseFormat, maxTokens);
+      const resp = await callGeminiNative(apiKey, model, messages, responseFormat, maxTokens, params.onRetry);
       result = resp.result;
       tokensIn = resp.tokensIn;
       tokensOut = resp.tokensOut;

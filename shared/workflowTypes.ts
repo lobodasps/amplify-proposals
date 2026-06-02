@@ -41,6 +41,8 @@ export interface SkillStateEntry {
   subStepMessage?: string;
   /** Variables that could not be populated from DB — replaced with '[Not provided]' before LLM call */
   missingVariables?: string[];
+  /** Gemini retry notice written during backoff (e.g. 'Gemini 503 — retrying in 15s (attempt 2 of 3)') */
+  retryMessage?: string;
 }
 
 /** Full workflow state — stored in rfpSessions.workflowState */

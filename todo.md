@@ -827,3 +827,12 @@
 - [x] Launchpad: abortRef pattern — Cancel button sets abortRef.current=true; checked before each upload, extract, and poll iteration; catch block resets step to 'upload' and clears queue statuses
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Launchpad UX Fixes (v4.10)
+- [x] Main RFP radio auto-sync: selecting a file as Main RFP automatically sets its label dropdown to "Main RFP"; changing dropdown to "Main RFP" auto-sets radio; demotes previous Main RFP to Supplemental
+- [x] Real-time processing status log panel: step-by-step log below progress bar with timestamps and icons (✅/⏳/⚠️/❌/ℹ️)
+- [x] Current step indicator above log: "Currently: X (Step N of 5)" with elapsed seconds
+- [x] Elapsed time display per step with 2-minute amber warning banner
+- [x] Cancel button context text: "Cancel — stops processing, files already uploaded are preserved"
+- [x] Gemini retry notices surfaced via retryMessage field polled from DB (onRetry callback in retryWithBackoff)
+- [x] Zero TypeScript errors, 25/25 tests passing
