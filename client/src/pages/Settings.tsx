@@ -91,8 +91,7 @@ function EntitiesTab() {
             <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f=>({...f,name:e.target.value}))} /></div>
             <div><Label>Short Name</Label><Input value={form.shortName} onChange={e => setForm(f=>({...f,shortName:e.target.value}))} placeholder="e.g. JPCL" /></div>
             <div><Label>Badge Color</Label><Select value={form.badgeColor} onValueChange={v=>setForm(f=>({...f,badgeColor:v}))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{BADGE_COLORS.map(c=><SelectItem key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</SelectItem>)}</SelectContent></Select></div>
-            <div><Label>Supabase Company ID</Label><Input value={form.supabaseCompanyId} onChange={e=>setForm(f=>({...f,supabaseCompanyId:e.target.value}))} placeholder="UUID" /></div>
-            <div className="flex items-center gap-2"><Switch checked={form.isDefault} onCheckedChange={v=>setForm(f=>({...f,isDefault:v}))} /><Label>Default Entity</Label></div>
+            <div className="flex items-center gap-2"><Switch checked={form.isDefault} onCheckedChange={v=>setForm(f=>({...f,isDefault:v}))} /><Label>Set as Default Entity</Label></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={()=>setOpen(false)}>Cancel</Button>
