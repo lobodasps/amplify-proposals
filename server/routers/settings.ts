@@ -600,14 +600,37 @@ export const firmSettingsRouter = router({
   upsert: protectedProcedure
     .input(z.object({
       entityId: z.string().uuid().optional(),
+      // Identity
       firmName: z.string().optional(),
+      legalName: z.string().optional(),
+      foundingYear: z.number().int().min(1800).max(2100).nullable().optional(),
+      employeeCount: z.string().optional(),
+      description: z.string().optional(),
+      // Disciplines & geography
       serviceLines: z.array(z.string()).optional(),
-      states: z.array(z.string()).optional(),
+      geographicFocus: z.string().optional(),
+      // Certifications
+      dbeCertification: z.boolean().optional(),
+      mbeCertification: z.boolean().optional(),
+      wbeCertification: z.boolean().optional(),
+      certificationDetails: z.string().optional(),
+      // Registrations & identifiers
+      naicsCodes: z.array(z.string()).optional(),
+      ueiNumber: z.string().optional(),
+      dunsNumber: z.string().optional(),
+      stateRegistrations: z.array(z.string()).optional(),
+      // Agency relationships
+      preferredAgencies: z.array(z.string()).optional(),
+      avoidedAgencies: z.array(z.string()).optional(),
+      // Contract sizing
       typicalValueMin: z.number().nullable().optional(),
       typicalValueMax: z.number().nullable().optional(),
       minDaysToRespond: z.number().int().min(1).default(14),
-      preferredAgencies: z.array(z.string()).optional(),
-      avoidedAgencies: z.array(z.string()).optional(),
+      // Proposal content
+      boilerplateFirmDescription: z.string().optional(),
+      differentiators: z.array(z.string()).optional(),
+      // Legacy
+      states: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -620,13 +643,28 @@ export const firmSettingsRouter = router({
       const values = {
         entityId: input.entityId ?? null,
         firmName: input.firmName,
+        legalName: input.legalName,
+        foundingYear: input.foundingYear ?? null,
+        employeeCount: input.employeeCount,
+        description: input.description,
         serviceLines: input.serviceLines ?? [],
-        states: input.states ?? [],
+        geographicFocus: input.geographicFocus,
+        dbeCertification: input.dbeCertification ?? false,
+        mbeCertification: input.mbeCertification ?? false,
+        wbeCertification: input.wbeCertification ?? false,
+        certificationDetails: input.certificationDetails,
+        naicsCodes: input.naicsCodes ?? [],
+        ueiNumber: input.ueiNumber,
+        dunsNumber: input.dunsNumber,
+        stateRegistrations: input.stateRegistrations ?? [],
+        preferredAgencies: input.preferredAgencies ?? [],
+        avoidedAgencies: input.avoidedAgencies ?? [],
         typicalValueMin: input.typicalValueMin != null ? input.typicalValueMin.toString() : null,
         typicalValueMax: input.typicalValueMax != null ? input.typicalValueMax.toString() : null,
         minDaysToRespond: input.minDaysToRespond,
-        preferredAgencies: input.preferredAgencies ?? [],
-        avoidedAgencies: input.avoidedAgencies ?? [],
+        boilerplateFirmDescription: input.boilerplateFirmDescription,
+        differentiators: input.differentiators ?? [],
+        states: input.states ?? [],
         updatedAt: now,
       };
       if (existing.length > 0) {

@@ -1148,37 +1148,69 @@ import React from "react";
 
 function FirmProfileTab() {
   const { activeEntityId, allowedEntities, setActiveEntityId } = useEntityContext();
-  // Use the app-wide active entity as the selected entity for this tab
   const selectedEntityId = activeEntityId ?? undefined;
   const { data: profile, isLoading } = trpc.firmSettings.get.useQuery({ entityId: selectedEntityId });
   const upsert = trpc.firmSettings.upsert.useMutation();
   const utils = trpc.useUtils();
 
+  // ── Identity
   const [firmName, setFirmName] = React.useState("");
+  const [legalName, setLegalName] = React.useState("");
+  const [foundingYear, setFoundingYear] = React.useState("");
+  const [employeeCount, setEmployeeCount] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  // ── Disciplines & geography
   const [serviceLines, setServiceLines] = React.useState<string[]>([]);
-  const [states, setStates] = React.useState<string[]>([]);
+  const [geographicFocus, setGeographicFocus] = React.useState("");
+  // ── Certifications
+  const [dbeCertification, setDbeCertification] = React.useState(false);
+  const [mbeCertification, setMbeCertification] = React.useState(false);
+  const [wbeCertification, setWbeCertification] = React.useState(false);
+  const [certificationDetails, setCertificationDetails] = React.useState("");
+  // ── Registrations & identifiers
+  const [naicsCodes, setNaicsCodes] = React.useState<string[]>([]);
+  const [ueiNumber, setUeiNumber] = React.useState("");
+  const [dunsNumber, setDunsNumber] = React.useState("");
+  const [stateRegistrations, setStateRegistrations] = React.useState<string[]>([]);
+  // ── Agency relationships
+  const [preferredAgencies, setPreferredAgencies] = React.useState<string[]>([]);
+  const [avoidedAgencies, setAvoidedAgencies] = React.useState<string[]>([]);
+  // ── Contract sizing
   const [typicalValueMin, setTypicalValueMin] = React.useState("");
   const [typicalValueMax, setTypicalValueMax] = React.useState("");
   const [minDaysToRespond, setMinDaysToRespond] = React.useState("14");
-  const [preferredAgencies, setPreferredAgencies] = React.useState<string[]>([]);
-  const [avoidedAgencies, setAvoidedAgencies] = React.useState<string[]>([]);
+  // ── Proposal content
+  const [boilerplateFirmDescription, setBoilerplateFirmDescription] = React.useState("");
+  const [differentiators, setDifferentiators] = React.useState<string[]>([]);
+
   const [initialized, setInitialized] = React.useState<string | null | undefined>(undefined);
 
-  // Reset form when entity changes
-  React.useEffect(() => {
-    setInitialized(undefined);
-  }, [selectedEntityId]);
+  React.useEffect(() => { setInitialized(undefined); }, [selectedEntityId]);
 
   React.useEffect(() => {
     if (profile && initialized !== selectedEntityId) {
       setFirmName(profile.firmName ?? "");
+      setLegalName(profile.legalName ?? "");
+      setFoundingYear(profile.foundingYear != null ? String(profile.foundingYear) : "");
+      setEmployeeCount(profile.employeeCount ?? "");
+      setDescription(profile.description ?? "");
       setServiceLines((profile.serviceLines as string[]) ?? []);
-      setStates((profile.states as string[]) ?? []);
+      setGeographicFocus(profile.geographicFocus ?? "");
+      setDbeCertification(profile.dbeCertification ?? false);
+      setMbeCertification(profile.mbeCertification ?? false);
+      setWbeCertification(profile.wbeCertification ?? false);
+      setCertificationDetails(profile.certificationDetails ?? "");
+      setNaicsCodes((profile.naicsCodes as string[]) ?? []);
+      setUeiNumber(profile.ueiNumber ?? "");
+      setDunsNumber(profile.dunsNumber ?? "");
+      setStateRegistrations((profile.stateRegistrations as string[]) ?? []);
+      setPreferredAgencies((profile.preferredAgencies as string[]) ?? []);
+      setAvoidedAgencies((profile.avoidedAgencies as string[]) ?? []);
       setTypicalValueMin(profile.typicalValueMin != null ? String(profile.typicalValueMin) : "");
       setTypicalValueMax(profile.typicalValueMax != null ? String(profile.typicalValueMax) : "");
       setMinDaysToRespond(String(profile.minDaysToRespond ?? 14));
-      setPreferredAgencies((profile.preferredAgencies as string[]) ?? []);
-      setAvoidedAgencies((profile.avoidedAgencies as string[]) ?? []);
+      setBoilerplateFirmDescription(profile.boilerplateFirmDescription ?? "");
+      setDifferentiators((profile.differentiators as string[]) ?? []);
       setInitialized(selectedEntityId);
     }
   }, [profile, initialized, selectedEntityId]);
@@ -1188,13 +1220,28 @@ function FirmProfileTab() {
       await upsert.mutateAsync({
         entityId: selectedEntityId,
         firmName: firmName || undefined,
+        legalName: legalName || undefined,
+        foundingYear: foundingYear ? parseInt(foundingYear, 10) : null,
+        employeeCount: employeeCount || undefined,
+        description: description || undefined,
         serviceLines,
-        states,
+        geographicFocus: geographicFocus || undefined,
+        dbeCertification,
+        mbeCertification,
+        wbeCertification,
+        certificationDetails: certificationDetails || undefined,
+        naicsCodes,
+        ueiNumber: ueiNumber || undefined,
+        dunsNumber: dunsNumber || undefined,
+        stateRegistrations,
+        preferredAgencies,
+        avoidedAgencies,
         typicalValueMin: typicalValueMin ? parseFloat(typicalValueMin) : null,
         typicalValueMax: typicalValueMax ? parseFloat(typicalValueMax) : null,
         minDaysToRespond: parseInt(minDaysToRespond, 10) || 14,
-        preferredAgencies,
-        avoidedAgencies,
+        boilerplateFirmDescription: boilerplateFirmDescription || undefined,
+        differentiators,
+        states: stateRegistrations,
       });
       utils.firmSettings.get.invalidate();
       toast.success("Firm profile saved.");
@@ -1211,128 +1258,235 @@ function FirmProfileTab() {
     );
   }
 
+  const SectionHeader = ({ title, description: desc }: { title: string; description?: string }) => (
+    <div className="pb-2 border-b border-border mb-4">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {desc && <p className="text-[11px] text-muted-foreground mt-0.5">{desc}</p>}
+    </div>
+  );
+
   return (
     <div className="space-y-6 max-w-2xl">
+      {/* Entity switcher header */}
+      {allowedEntities.length > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium">Editing profile for:</span>
+          {allowedEntities.map((e: any) => {
+            const isActive = e.id === selectedEntityId;
+            const colorMap: Record<string, string> = { blue: "bg-blue-600", emerald: "bg-emerald-600", violet: "bg-violet-600", amber: "bg-amber-600", rose: "bg-rose-600", slate: "bg-slate-600" };
+            const color = colorMap[e.badgeColor ?? "slate"] ?? "bg-slate-600";
+            return (
+              <button
+                key={e.id}
+                onClick={() => setActiveEntityId(e.id)}
+                className={`h-7 px-3 text-xs rounded font-bold text-white transition-opacity ${color} ${isActive ? "opacity-100 ring-2 ring-offset-1 ring-current" : "opacity-50 hover:opacity-80"}`}
+              >
+                {e.shortName || e.name.slice(0, 6).toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Section 1: Identity ── */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-4 w-4" />
-              Firm Profile
-            </CardTitle>
-            {allowedEntities.length > 1 && (
-              <div className="flex items-center gap-1.5">
-                {allowedEntities.map((e: any) => {
-                  const isActive = e.id === selectedEntityId;
-                  const colorMap: Record<string, string> = { blue: "bg-blue-600", emerald: "bg-emerald-600", violet: "bg-violet-600", amber: "bg-amber-600", rose: "bg-rose-600", slate: "bg-slate-600" };
-                  const color = colorMap[e.badgeColor ?? "slate"] ?? "bg-slate-600";
-                  return (
-                    <button
-                      key={e.id}
-                      onClick={() => setActiveEntityId(e.id)}
-                      className={`h-7 px-2 text-xs rounded font-bold text-white transition-opacity ${color} ${isActive ? "opacity-100 ring-2 ring-offset-1 ring-current" : "opacity-50 hover:opacity-80"}`}
-                    >
-                      {e.shortName || e.name.slice(0, 4).toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            Used by the Quick Signal pre-score to evaluate RFP fit before committing to full analysis.
-            {allowedEntities.length > 1 && " Each entity maintains a separate profile."}
-          </p>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Building2 className="h-4 w-4" />
+            Firm Identity
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">Core firm information used in all proposal headers and introductions.</p>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Firm Name */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Firm Name</Label>
-            <Input
-              value={firmName}
-              onChange={(e) => setFirmName(e.target.value)}
-              placeholder="e.g. Acme Engineering LLC"
-            />
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Display Name</Label>
+              <Input value={firmName} onChange={(e) => setFirmName(e.target.value)} placeholder="e.g. JPCL" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legal Name</Label>
+              <Input value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="e.g. JP Consulting & Logistics LLC" />
+            </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Founding Year</Label>
+              <Input type="number" min={1800} max={2100} value={foundingYear} onChange={(e) => setFoundingYear(e.target.value)} placeholder="e.g. 2008" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Staff Size</Label>
+              <Input value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} placeholder="e.g. 15-25 professionals" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Firm Description (2-3 sentences)</Label>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description of the firm's core capabilities and focus areas." rows={3} />
+          </div>
+        </CardContent>
+      </Card>
 
-          {/* Service Lines */}
+      {/* ── Section 2: Disciplines & Geography ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Disciplines &amp; Geography</CardTitle>
+          <p className="text-sm text-muted-foreground">Used for RFP fit scoring and proposal context.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <TagInput
-            label="Service Lines"
+            label="Primary Service Lines"
             values={serviceLines}
             onChange={setServiceLines}
             placeholder="Type or select a service line…"
             suggestions={FIRM_SERVICE_LINE_OPTIONS}
           />
-
-          {/* States */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Geographic Focus</Label>
+            <Input value={geographicFocus} onChange={(e) => setGeographicFocus(e.target.value)} placeholder="e.g. New York, New Jersey, Connecticut" />
+          </div>
           <TagInput
-            label="Licensed / Registered States"
-            values={states}
-            onChange={setStates}
+            label="State Registrations / Licenses"
+            values={stateRegistrations}
+            onChange={setStateRegistrations}
             placeholder="Type a state abbreviation…"
             suggestions={US_STATES}
           />
+        </CardContent>
+      </Card>
 
-          {/* Typical Contract Value */}
+      {/* ── Section 3: Certifications ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Certifications</CardTitle>
+          <p className="text-sm text-muted-foreground">Certification status included in proposal qualification sections.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-6">
+            {([
+              { key: "dbe", label: "DBE", value: dbeCertification, set: setDbeCertification },
+              { key: "mbe", label: "MBE", value: mbeCertification, set: setMbeCertification },
+              { key: "wbe", label: "WBE", value: wbeCertification, set: setWbeCertification },
+            ] as const).map(({ key, label, value, set }) => (
+              <label key={key} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={value}
+                  onChange={(e) => (set as React.Dispatch<React.SetStateAction<boolean>>)(e.target.checked)}
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+                <span className="text-sm font-medium">{label} Certified</span>
+              </label>
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certification Details</Label>
+            <Textarea value={certificationDetails} onChange={(e) => setCertificationDetails(e.target.value)} placeholder="Certificate numbers, issuing agencies, expiration dates, etc." rows={2} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Section 4: Registrations & Identifiers ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Registrations &amp; Identifiers</CardTitle>
+          <p className="text-sm text-muted-foreground">Federal and state registration numbers for proposal cover sheets.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Min ($)</Label>
-              <Input
-                type="number"
-                value={typicalValueMin}
-                onChange={(e) => setTypicalValueMin(e.target.value)}
-                placeholder="e.g. 100000"
-              />
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">UEI Number</Label>
+              <Input value={ueiNumber} onChange={(e) => setUeiNumber(e.target.value)} placeholder="SAM.gov UEI" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Max ($)</Label>
-              <Input
-                type="number"
-                value={typicalValueMax}
-                onChange={(e) => setTypicalValueMax(e.target.value)}
-                placeholder="e.g. 2000000"
-              />
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">DUNS Number</Label>
+              <Input value={dunsNumber} onChange={(e) => setDunsNumber(e.target.value)} placeholder="Legacy DUNS" />
             </div>
           </div>
+          <TagInput
+            label="NAICS Codes"
+            values={naicsCodes}
+            onChange={setNaicsCodes}
+            placeholder="e.g. 541330, 541620…"
+          />
+        </CardContent>
+      </Card>
 
-          {/* Min Days to Respond */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Minimum Days to Respond</Label>
-            <Input
-              type="number"
-              min={1}
-              max={90}
-              value={minDaysToRespond}
-              onChange={(e) => setMinDaysToRespond(e.target.value)}
-              className="w-32"
-            />
-            <p className="text-[11px] text-muted-foreground">Proposals with fewer days remaining will be flagged as unfavorable.</p>
-          </div>
-
-          {/* Preferred Agencies */}
+      {/* ── Section 5: Agency Relationships ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Agency Relationships</CardTitle>
+          <p className="text-sm text-muted-foreground">Influences Quick Signal fit scoring for incoming RFPs.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <TagInput
             label="Preferred Agencies (existing relationships)"
             values={preferredAgencies}
             onChange={setPreferredAgencies}
-            placeholder="e.g. NYC DOT, MTA…"
+            placeholder="e.g. NYC DOT, MTA, NJDOT…"
           />
-
-          {/* Avoided Agencies */}
           <TagInput
             label="Agencies to Avoid"
             values={avoidedAgencies}
             onChange={setAvoidedAgencies}
-            placeholder="e.g. Any agency to skip…"
+            placeholder="e.g. any agency to skip…"
           />
+        </CardContent>
+      </Card>
 
-          <div className="flex justify-end pt-2">
-            <Button onClick={handleSave} disabled={upsert.isPending} className="gap-2">
-              {upsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save Firm Profile
-            </Button>
+      {/* ── Section 6: Contract Sizing ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Contract Sizing &amp; Response Capacity</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Min ($)</Label>
+              <Input type="number" value={typicalValueMin} onChange={(e) => setTypicalValueMin(e.target.value)} placeholder="e.g. 100000" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Typical Value Max ($)</Label>
+              <Input type="number" value={typicalValueMax} onChange={(e) => setTypicalValueMax(e.target.value)} placeholder="e.g. 2000000" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Minimum Days to Respond</Label>
+            <Input type="number" min={1} max={90} value={minDaysToRespond} onChange={(e) => setMinDaysToRespond(e.target.value)} className="w-32" />
+            <p className="text-[11px] text-muted-foreground">RFPs with fewer days remaining will be flagged as unfavorable in Quick Signal.</p>
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Section 7: Proposal Content ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Proposal Content</CardTitle>
+          <p className="text-sm text-muted-foreground">This content is injected directly into AI-generated proposal sections.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Approved Marketing Paragraph</Label>
+            <Textarea
+              value={boilerplateFirmDescription}
+              onChange={(e) => setBoilerplateFirmDescription(e.target.value)}
+              placeholder="Paste your firm's approved boilerplate description here. This will be used verbatim in proposal introductions."
+              rows={5}
+            />
+          </div>
+          <TagInput
+            label="Key Differentiators"
+            values={differentiators}
+            onChange={setDifferentiators}
+            placeholder="e.g. 15+ years NYC agency experience…"
+          />
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end pt-2 pb-8">
+        <Button onClick={handleSave} disabled={upsert.isPending} className="gap-2">
+          {upsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Save Firm Profile
+        </Button>
+      </div>
     </div>
   );
 }

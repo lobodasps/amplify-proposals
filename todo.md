@@ -843,3 +843,11 @@
 - [x] Add hard fallback: if skillType ends with _writer and DB outputType != prose, override to prose with console.warn
 - [x] Add Re-render as Prose button for sections showing as JSON/Fallback (in JsonRenderer default case and FallbackRenderer)
 - [x] Zero TypeScript errors, 25/25 tests passing
+
+## Firm Profile Settings (v4.14)
+- [ ] Add firm_settings table to drizzle/schema.ts with all required fields
+- [ ] Run pnpm db:push to migrate
+- [ ] Add firmSettings tRPC procedures: getFirmSettings, upsertFirmSettings (in existing settings or new firm router)
+- [ ] Add Firm Profile tab to Settings UI — per-company selector (JPCL / Strans), all fields editable
+- [ ] Wire firm_settings into buildSkillVariables(): firmName, firmDescription, firmSize, foundingYear, firmStrengths, certifications, geographicFocus, stateRegistrations, firmServiceLines
+- [ ] Zero TypeScript errors, 25/25 tests passing

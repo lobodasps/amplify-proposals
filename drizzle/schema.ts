@@ -1099,19 +1099,47 @@ export const firmSettings = pgTable("firm_settings", {
   id: uuid("id").primaryKey().defaultRandom(),
   // FK to entities table — one profile per entity (e.g. JPCL, Strans). Null = legacy single-entity row.
   entityId: uuid("entityId"),
+
+  // Identity
   firmName: text("firmName"),
+  legalName: text("legalName"),
+  foundingYear: integer("foundingYear"),
+  employeeCount: text("employeeCount"),          // e.g. '15-25 professionals'
+  description: text("description"),              // 2-3 sentence firm description
+
+  // Disciplines & geography
   // JSON array of service line strings e.g. ["Special Inspections","Traffic Engineering"]
   serviceLines: jsonb("serviceLines").$type<string[]>().default([]),
-  // JSON array of state abbreviations e.g. ["NJ","NY","CT"]
-  states: jsonb("states").$type<string[]>().default([]),
+  geographicFocus: text("geographicFocus"),      // e.g. 'New York, New Jersey, Connecticut'
+
+  // Certifications
+  dbeCertification: boolean("dbeCertification").default(false),
+  mbeCertification: boolean("mbeCertification").default(false),
+  wbeCertification: boolean("wbeCertification").default(false),
+  certificationDetails: text("certificationDetails"),
+
+  // Registrations & identifiers
+  naicsCodes: jsonb("naicsCodes").$type<string[]>().default([]),
+  ueiNumber: text("ueiNumber"),
+  dunsNumber: text("dunsNumber"),
+  stateRegistrations: jsonb("stateRegistrations").$type<string[]>().default([]),
+
+  // Agency relationships
+  preferredAgencies: jsonb("preferredAgencies").$type<string[]>().default([]),
+  avoidedAgencies: jsonb("avoidedAgencies").$type<string[]>().default([]),
+
+  // Contract sizing & response capacity
   typicalValueMin: numeric("typicalValueMin"),
   typicalValueMax: numeric("typicalValueMax"),
-  // Minimum days needed to prepare a response (default 14)
   minDaysToRespond: integer("minDaysToRespond").default(14),
-  // JSON array of preferred agency name strings
-  preferredAgencies: jsonb("preferredAgencies").$type<string[]>().default([]),
-  // JSON array of agency names to avoid
-  avoidedAgencies: jsonb("avoidedAgencies").$type<string[]>().default([]),
+
+  // Proposal content
+  boilerplateFirmDescription: text("boilerplateFirmDescription"),  // Approved marketing paragraph
+  differentiators: jsonb("differentiators").$type<string[]>().default([]),  // Key firm differentiators
+
+  // Legacy field (kept for backwards compat)
+  states: jsonb("states").$type<string[]>().default([]),
+
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 });

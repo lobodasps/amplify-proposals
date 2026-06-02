@@ -99,6 +99,13 @@
       "when": 1780347510721,
       "tag": "0013_thankful_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780425890049,
+      "tag": "0014_smooth_slapstick",
+      "breakpoints": true
     }
   ]
 }

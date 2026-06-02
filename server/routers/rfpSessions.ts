@@ -200,21 +200,57 @@ async function buildSkillVariables(
     }
   }
 
-  // Firm settings (entity-scoped)
+  // Firm settings (entity-scoped — load best match for this session's entity)
   let firmName = "Our firm";
+  let firmLegalName = "";
   let firmDescription = "AEC firm specializing in public-agency markets in NJ/NY/NYC.";
+  let firmSize = "";
+  let firmFoundingYear = "";
   let firmServiceLines = pursuitServiceLines || "Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, Environmental";
   let firmCertifications = "";
+  let firmGeographicFocus = "New York, New Jersey, Connecticut";
+  let firmStateRegistrations = "NJ, NY";
+  let firmStrengthsList = "";
   if (db) {
     // Try to load entity-scoped firm settings — fall back to any available row
     const firmRows = await db.select().from(firmSettings).limit(5);
     const firmRow = firmRows[0];
     if (firmRow) {
-      firmName = firmRow.firmName || firmName;
+      firmName = firmRow.firmName || firmRow.legalName || firmName;
+      firmLegalName = firmRow.legalName || firmRow.firmName || firmName;
+      firmFoundingYear = firmRow.foundingYear ? String(firmRow.foundingYear) : "";
+      firmSize = firmRow.employeeCount || "";
+      firmGeographicFocus = firmRow.geographicFocus || firmGeographicFocus;
+      firmStateRegistrations = Array.isArray(firmRow.stateRegistrations) && firmRow.stateRegistrations.length > 0
+        ? firmRow.stateRegistrations.join(", ")
+        : Array.isArray(firmRow.states) && firmRow.states.length > 0
+          ? firmRow.states.join(", ")
+          : firmStateRegistrations;
       firmServiceLines = Array.isArray(firmRow.serviceLines) && firmRow.serviceLines.length > 0
         ? firmRow.serviceLines.join(", ")
         : firmServiceLines;
-      firmDescription = `${firmName} — ${firmServiceLines}. Licensed in: ${Array.isArray(firmRow.states) ? firmRow.states.join(", ") : "NJ, NY"}.`;
+      // Certifications
+      const certs: string[] = [];
+      if (firmRow.dbeCertification) certs.push("DBE");
+      if (firmRow.mbeCertification) certs.push("MBE");
+      if (firmRow.wbeCertification) certs.push("WBE");
+      firmCertifications = certs.length > 0
+        ? `${certs.join("/")} Certified${firmRow.certificationDetails ? " — " + firmRow.certificationDetails : ""}`
+        : "No diversity certifications.";
+      // Differentiators as bullet list
+      firmStrengthsList = Array.isArray(firmRow.differentiators) && firmRow.differentiators.length > 0
+        ? firmRow.differentiators.map((d: string) => `• ${d}`).join("\n")
+        : "";
+      // Firm description: prefer boilerplate, fall back to constructed
+      if (firmRow.boilerplateFirmDescription) {
+        firmDescription = firmRow.boilerplateFirmDescription;
+      } else if (firmRow.description) {
+        firmDescription = firmRow.description;
+      } else {
+        const yearStr = firmRow.foundingYear ? `, founded ${firmRow.foundingYear}` : "";
+        const sizeStr = firmRow.employeeCount ? ` (${firmRow.employeeCount})` : "";
+        firmDescription = `${firmName}${yearStr}${sizeStr} — ${firmServiceLines}. Licensed in: ${firmStateRegistrations}.`;
+      }
     }
   }
 
@@ -246,7 +282,12 @@ async function buildSkillVariables(
           : "No RFP file uploaded.";
       return {
         rfpText: fileList,
-        firmProfile: firmDescription,
+        firmProfile: [
+          firmDescription,
+          firmCertifications ? `Certifications: ${firmCertifications}` : "",
+          firmGeographicFocus ? `Geographic Focus: ${firmGeographicFocus}` : "",
+          firmStateRegistrations ? `Licensed in: ${firmStateRegistrations}` : "",
+        ].filter(Boolean).join("\n"),
       };
     }
 
@@ -254,12 +295,24 @@ async function buildSkillVariables(
       return {
         pursuitTitle,
         agency,
+        firmName,
+        firmDescription,
+        firmSize,
+        foundingYear: firmFoundingYear,
         serviceLines: firmServiceLines,
+        certifications: firmCertifications,
+        geographicFocus: firmGeographicFocus,
         value: pursuitValue || extracted.estimatedValue || "Not specified",
         dueDate: pursuitDueDate || extracted.submissionDeadline || "Not specified",
         rfpSummary: scopeSummary,
         evaluationCriteria: evalCriteria,
-        firmStrengths: `${firmDescription}\n\nRelevant Projects:\n${projectsSummary}\n\nKey Personnel:\n${personnelSummary}\n\nPast Proposals:\n${pastProposalsSummary}`,
+        firmStrengths: [
+          firmDescription,
+          firmStrengthsList ? `Key Differentiators:\n${firmStrengthsList}` : "",
+          `Relevant Projects:\n${projectsSummary}`,
+          `Key Personnel:\n${personnelSummary}`,
+          `Past Proposals:\n${pastProposalsSummary}`,
+        ].filter(Boolean).join("\n\n"),
       };
 
     case "technical_outline":
@@ -267,17 +320,23 @@ async function buildSkillVariables(
         rfpContext,
         winThemes: winThemesOutput,
         agency,
+        firmName,
         rfpTitle: pursuitTitle,
         evalCriteria,
         scopeSummary,
+        serviceLines: firmServiceLines,
       };
 
     case "technical_writer":
       return {
         agency,
+        firmName,
+        firmDescription,
         pursuitTitle,
         scopeSummary,
         serviceLines: firmServiceLines,
+        certifications: firmCertifications,
+        geographicFocus: firmGeographicFocus,
         evaluationCriteria: evalCriteria,
         winThemes: winThemesOutput,
         relevantProjects: projectsSummary,
@@ -287,6 +346,8 @@ async function buildSkillVariables(
     case "key_personnel":
       return {
         agency,
+        firmName,
+        firmDescription,
         pursuitTitle,
         serviceLines: firmServiceLines,
         evaluationCriteria: evalCriteria,
@@ -297,8 +358,12 @@ async function buildSkillVariables(
     case "past_performance":
       return {
         agency,
+        firmName,
+        firmDescription,
         pursuitTitle,
         serviceLines: firmServiceLines,
+        geographicFocus: firmGeographicFocus,
+        certifications: firmCertifications,
         evaluationCriteria: evalCriteria,
         selectedProjects: projectsSummary,
         pastProposals: pastProposalsSummary,
@@ -309,8 +374,10 @@ async function buildSkillVariables(
         rfpContext,
         technicalOutline,
         agency,
+        firmName,
         rfpTitle: pursuitTitle,
         scopeSummary,
+        firmSize,
         laborCategories:
           "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative.",
       };
@@ -320,6 +387,7 @@ async function buildSkillVariables(
         rfpContext,
         evalCriteria,
         agency,
+        firmName,
         rfpTitle: pursuitTitle,
         technicalApproach,
         keyPersonnel: keyPersonnelOutput,
@@ -329,7 +397,7 @@ async function buildSkillVariables(
       };
 
     default:
-      return { rfpContext, agency, rfpTitle: pursuitTitle };
+      return { rfpContext, agency, rfpTitle: pursuitTitle, firmName, firmDescription };
   }
 }
 
