@@ -640,6 +640,195 @@ function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
   );
 }
 
+// ─── RFP Parser Summary Card ─────────────────────────────────────────────────
+
+interface EvalCriterion { id?: string; title: string; weight: string; description?: string; }
+interface PersonnelReq { role: string; requiredCertifications?: string[]; minimumYearsExperience?: number; description?: string; }
+interface PageLimit { section: string; limit: string; }
+interface ConflictItem { type?: string; description: string; }
+
+interface ParsedRfpData {
+  projectTitle?: string;
+  agency?: string;
+  rfpNumber?: string;
+  submissionDeadline?: string;
+  estimatedValue?: string;
+  serviceLines?: string[];
+  evaluationCriteria?: EvalCriterion[];
+  keyPersonnelRequirements?: PersonnelReq[];
+  pageLimits?: PageLimit[];
+  mandatoryItems?: string[];
+  submissionFormat?: string;
+  scopeSummary?: string;
+  conflictsDetected?: ConflictItem[];
+}
+
+function RfpParserSummary({ data }: { data: ParsedRfpData }) {
+  const [showAll, setShowAll] = useState(false);
+  const criteria = data.evaluationCriteria ?? [];
+  const personnel = data.keyPersonnelRequirements ?? [];
+  const mandatory = data.mandatoryItems ?? [];
+  const pageLimits = data.pageLimits ?? [];
+  const conflicts = data.conflictsDetected ?? [];
+  const serviceLines = data.serviceLines ?? [];
+
+  return (
+    <div className="space-y-5">
+      {/* Header summary row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "Agency", value: data.agency ?? "—" },
+          { label: "RFP Number", value: data.rfpNumber ?? "—" },
+          { label: "Due Date", value: data.submissionDeadline ?? "—" },
+          { label: "Est. Value", value: data.estimatedValue ?? "—" },
+        ].map(({ label, value }) => (
+          <div key={label} className="rounded-lg border bg-muted/20 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
+            <p className="text-sm font-medium truncate" title={value}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Scope summary */}
+      {data.scopeSummary && (
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Scope Summary</p>
+          <p className="text-sm leading-relaxed text-foreground/90">{data.scopeSummary}</p>
+        </div>
+      )}
+
+      {/* Service lines */}
+      {serviceLines.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Service Lines</p>
+          <div className="flex flex-wrap gap-1.5">
+            {serviceLines.map((s, i) => (
+              <Badge key={i} variant="secondary" className="text-xs">{s}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Evaluation criteria */}
+      {criteria.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Evaluation Criteria</p>
+          <div className="rounded-lg border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Criterion</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted-foreground w-16">Weight</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted-foreground hidden sm:table-cell">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {criteria.map((c, i) => (
+                  <tr key={c.id ?? i} className="border-b last:border-0 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-medium">{c.title}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className="text-[10px] font-bold">{c.weight}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{c.description ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Key personnel requirements */}
+      {personnel.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Key Personnel Requirements</p>
+          <div className="space-y-2">
+            {personnel.map((p, i) => (
+              <div key={i} className="rounded-lg border bg-card px-4 py-3">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-sm font-semibold">{p.role}</span>
+                  {p.minimumYearsExperience != null && (
+                    <Badge variant="secondary" className="text-[10px] shrink-0">{p.minimumYearsExperience}+ yrs exp</Badge>
+                  )}
+                </div>
+                {p.description && <p className="text-xs text-muted-foreground leading-relaxed">{p.description}</p>}
+                {(p.requiredCertifications ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {p.requiredCertifications!.map((cert, j) => (
+                      <Badge key={j} variant="outline" className="text-[10px]">{cert}</Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mandatory items + page limits in two columns */}
+      {(mandatory.length > 0 || pageLimits.length > 0) && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {mandatory.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Mandatory Items ({mandatory.length})</p>
+              <ul className="space-y-1">
+                {(showAll ? mandatory : mandatory.slice(0, 5)).map((item, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500 mt-0.5" />
+                    {item}
+                  </li>
+                ))}
+                {!showAll && mandatory.length > 5 && (
+                  <button onClick={() => setShowAll(true)} className="text-xs text-primary hover:underline mt-1">+{mandatory.length - 5} more</button>
+                )}
+              </ul>
+            </div>
+          )}
+          {pageLimits.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Page Limits</p>
+              <ul className="space-y-1">
+                {pageLimits.map((pl, i) => (
+                  <li key={i} className="flex items-center justify-between text-xs rounded border px-2 py-1 bg-muted/20">
+                    <span className="truncate mr-2">{pl.section}</span>
+                    <Badge variant="outline" className="text-[10px] shrink-0">{pl.limit}</Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conflicts detected */}
+      {conflicts.length > 0 && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-4">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Conflicts / Ambiguities Detected ({conflicts.length})
+          </p>
+          <ul className="space-y-1">
+            {conflicts.map((c, i) => (
+              <li key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
+                <span className="shrink-0 mt-0.5">·</span>
+                {c.type ? <strong>{c.type}: </strong> : null}{c.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Submission format */}
+      {data.submissionFormat && (
+        <div className="rounded-lg border bg-muted/20 px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Submission Format</p>
+          <p className="text-xs leading-relaxed">{data.submissionFormat}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Generic JSON Viewer ──────────────────────────────────────────────────────
 
 function GenericJsonViewer({ data }: { data: unknown }) {
@@ -856,11 +1045,10 @@ function JsonRenderer({
 
   // Route to skill-specific renderer
   switch (skillName) {
+    case "rfp_parser":
+      return <RfpParserSummary data={parsed as ParsedRfpData} />;
     case "win_themes":
       return <WinThemeCards data={parsed as WinThemeOutput} />;
-    case "technical_outline":
-      // requirements_matrix_builder maps to technical_outline in the workflow
-      return <ComplianceChecklist data={parsed as RequirementsMatrixOutput} />;
     case "proposal_scorer":
       return <ProposalScorecard data={parsed as ProposalScorerOutput} />;
     default:
