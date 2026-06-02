@@ -19,6 +19,7 @@
 import AppLayout from "@/components/AppLayout";
 import { SkillOutputRenderer, type SkillOutputType } from "@/components/SkillOutputRenderer";
 import AssetMatchingPanel from "@/components/AssetMatchingPanel";
+import ProposalDraftWorkspace from "@/components/ProposalDraftWorkspace";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
@@ -450,6 +451,7 @@ export default function ProposalWorkspace() {
   const [localState, setLocalState] = useState<WorkflowState>({});
   const [showResetDialog, setShowResetDialog] = useState<WorkflowSkillName | null>(null);
   const [showAssetPanel, setShowAssetPanel] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"workflow" | "draft">("workflow");
   const abortRef = useRef(false);
 
   // ── Sync server → local state on session load ──────────────────────────────
@@ -888,8 +890,58 @@ export default function ProposalWorkspace() {
             </div>
           </div>
 
+          {/* ── Mode Tabs ────────────────────────────────────────────────── */}
+          <div className="flex items-center gap-0 px-4 border-b shrink-0 bg-background">
+            <button
+              onClick={() => setWorkspaceMode("workflow")}
+              className={[
+                "px-4 py-2 text-xs font-medium border-b-2 transition-colors",
+                workspaceMode === "workflow"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              ].join(" ")}
+            >
+              Skill Workflow
+            </button>
+            <button
+              onClick={() => setWorkspaceMode("draft")}
+              className={[
+                "px-4 py-2 text-xs font-medium border-b-2 transition-colors",
+                workspaceMode === "draft"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              ].join(" ")}
+            >
+              Proposal Draft
+            </button>
+          </div>
+
           {/* ── Body ─────────────────────────────────────────────────────── */}
           <div className="flex flex-1 min-h-0">
+            {/* ── Draft Mode: Three-panel Proposal Draft Workspace ────────── */}
+            {workspaceMode === "draft" && session && (
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ProposalDraftWorkspace
+                  sessionId={session.id}
+                  proposalId={proposalId ?? ""}
+                  pursuitTitle={(session.extractedData as any)?.projectTitle ?? undefined}
+                  dueDate={(session.extractedData as any)?.submissionDeadline ?? undefined}
+                />
+              </div>
+            )}
+            {workspaceMode === "draft" && !session && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-medium">No session yet</p>
+                  <p className="text-xs mt-1">Run the Skill Workflow first to generate proposal content.</p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Workflow Mode: Sequential Skill Pipeline ─────────────────── */}
+            {workspaceMode === "workflow" && (
+            <>
             {/* ── Left Sidebar: Skill Pipeline ─────────────────────────── */}
             <div className="w-56 shrink-0 border-r flex flex-col overflow-hidden bg-muted/10">
               <div className="px-3 py-2 border-b">
@@ -1364,6 +1416,8 @@ export default function ProposalWorkspace() {
                 </div>
               ) : null}
             </div>
+            </>
+            )}
           </div>
         </div>
       </AppLayout>

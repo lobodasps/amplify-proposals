@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments } from "../../drizzle/schema";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
@@ -29,6 +29,17 @@ import {
   SKILL_META,
 } from "../../shared/workflowTypes";
 import { shredSingleFile, escapeXml } from "./xmlShredder";
+import {
+  type SectionType,
+  type SectionStatus,
+  type ProposalSection,
+  type ProposalSectionsRecord,
+  type SectionGenerationContext,
+  SECTION_TO_SKILL_MAP,
+  DEFAULT_SECTIONS,
+  inferSectionType,
+  computeOverallCompliance,
+} from "../../shared/proposalSections";
 import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
 
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
@@ -62,7 +73,8 @@ function mergeJson<T extends Record<string, unknown>>(
  */
 async function buildSkillVariables(
   skillName: WorkflowSkillName,
-  session: typeof rfpSessions.$inferSelect
+  session: typeof rfpSessions.$inferSelect,
+  sectionCtx?: SectionGenerationContext
 ): Promise<Record<string, string>> {
   const outputs = (session.skillOutputs ?? {}) as SkillOutputs;
   const extracted = (session.extractedData ?? {}) as Partial<ParsedRfpData>;
@@ -214,6 +226,14 @@ async function buildSkillVariables(
       rfpWikiContent = wikiRows[0].wikiContent;
     }
   }
+
+  // ── Section context variables (Part 8 — injected for section-level generation) ─
+  const sectionType = sectionCtx?.sectionType ?? "";
+  const sectionTitle = sectionCtx?.sectionTitle ?? "";
+  const wordLimit = sectionCtx?.wordLimit ? String(sectionCtx.wordLimit) : "";
+  const rfpRequirementsForSection = sectionCtx?.rfpRequirements ?? (rfpWikiContent !== "" ? rfpWikiContent : rfpContext);
+  const previousScore = sectionCtx?.previousScore != null ? String(sectionCtx.previousScore) : "";
+  const scorerGaps = sectionCtx?.scorerGaps ?? "";
 
   // ── Skill-specific variable mapping ───────────────────────────────────────
   switch (skillName) {
@@ -1323,5 +1343,458 @@ export const rfpSessionsRouter = router({
         cached: false,
         running: true,
       };
+    }),
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // STEP 4 PROCEDURES — Section-level generation, scoring, and persistence
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the RFP-driven section structure for a session.
+   * Reads rfp_structured_index.sectionMap if available; falls back to DEFAULT_SECTIONS.
+   * Also returns current section data from proposals.sections jsonb.
+   */
+  getSections: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { sections: [], sectionsRecord: {} as ProposalSectionsRecord };
+
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) return { sections: [], sectionsRecord: {} as ProposalSectionsRecord };
+
+      // Load existing section data from proposals.sections
+      let sectionsRecord: ProposalSectionsRecord = {};
+      if (session.proposalId) {
+        const propRows = await db.select().from(proposals).where(eq(proposals.id, session.proposalId)).limit(1);
+        if (propRows[0]?.sections) {
+          sectionsRecord = propRows[0].sections as ProposalSectionsRecord;
+        }
+      }
+
+      // Try to load section_map from rfp_structured_index
+      let sectionDefs: Array<{ sectionType: SectionType; title: string; pageLimit: number; wordLimit: number; order: number }> = [];
+      if (session.pursuitId) {
+        const idxRows = await db.select().from(rfpStructuredIndex)
+          .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId))
+          .limit(1);
+        const idx = idxRows[0];
+        if (idx?.sectionMap) {
+          try {
+            const parsed = JSON.parse(idx.sectionMap) as Array<{ title: string; pageLimit?: number; order?: number }>;
+            sectionDefs = parsed.map((s, i) => ({
+              sectionType: inferSectionType(s.title),
+              title: s.title,
+              pageLimit: s.pageLimit ?? 0,
+              wordLimit: (s.pageLimit ?? 0) * 450,
+              order: s.order ?? i + 1,
+            }));
+          } catch { /* fall through to defaults */ }
+        }
+      }
+
+      if (sectionDefs.length === 0) {
+        sectionDefs = DEFAULT_SECTIONS.map(s => ({ ...s }));
+      }
+
+      // Merge with existing section data
+      const sections = sectionDefs.map(def => {
+        const existing = sectionsRecord[def.sectionType];
+        return {
+          ...def,
+          content: existing?.content ?? null,
+          editedContent: existing?.editedContent ?? null,
+          wordCount: existing?.wordCount ?? 0,
+          status: (existing?.status ?? "not_started") as SectionStatus,
+          generatedAt: existing?.generatedAt ?? null,
+          score: existing?.score ?? null,
+          scoredAt: existing?.scoredAt ?? null,
+          scorerOutput: existing?.scorerOutput ?? null,
+          editedAt: existing?.editedAt ?? null,
+          errorMessage: existing?.errorMessage ?? null,
+        } as ProposalSection;
+      });
+
+      return { sections, sectionsRecord };
+    }),
+
+  /**
+   * Update user-edited content for a section.
+   * Writes to proposals.sections[sectionType].editedContent.
+   */
+  updateSectionContent: protectedProcedure
+    .input(z.object({
+      sessionId: z.string().uuid(),
+      sectionType: z.string(),
+      editedContent: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session?.proposalId) throw new Error("Session has no linked proposal");
+
+      const propRows = await db.select().from(proposals).where(eq(proposals.id, session.proposalId)).limit(1);
+      const proposal = propRows[0];
+      if (!proposal) throw new Error("Proposal not found");
+
+      const existing = (proposal.sections ?? {}) as ProposalSectionsRecord;
+      const section = existing[input.sectionType] ?? {} as Partial<ProposalSection>;
+      const wordCount = input.editedContent.trim().split(/\s+/).filter(Boolean).length;
+
+      const updated: ProposalSectionsRecord = {
+        ...existing,
+        [input.sectionType]: {
+          ...section,
+          editedContent: input.editedContent,
+          editedAt: new Date().toISOString(),
+          wordCount,
+        } as ProposalSection,
+      };
+
+      await db.update(proposals).set({ sections: updated, updatedAt: new Date() }).where(eq(proposals.id, session.proposalId));
+      return { success: true, wordCount };
+    }),
+
+  /**
+   * Generate a single proposal section using its mapped writer skill,
+   * then immediately score it with proposal_scorer.
+   * Runs in setImmediate (fire-and-forget) — frontend polls getSections.
+   */
+  generateSection: protectedProcedure
+    .input(z.object({
+      sessionId: z.string().uuid(),
+      sectionType: z.string(),
+      sectionTitle: z.string(),
+      pageLimit: z.number().default(0),
+      wordLimit: z.number().default(0),
+      force: z.boolean().optional().default(false),
+      /** Inject previous scorer gaps for regeneration */
+      previousScore: z.number().nullable().optional(),
+      scorerGaps: z.string().nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      if (!session.proposalId) throw new Error("Session has no linked proposal — create a proposal first");
+
+      const sectionType = input.sectionType as SectionType;
+      const skillMapping = SECTION_TO_SKILL_MAP[sectionType] ?? SECTION_TO_SKILL_MAP["other"];
+
+      // Mark section as Generating immediately
+      const setPatch = async (patch: Partial<ProposalSection>) => {
+        const freshProp = await db.select().from(proposals).where(eq(proposals.id, session.proposalId!)).limit(1);
+        const existing = (freshProp[0]?.sections ?? {}) as ProposalSectionsRecord;
+        const updated = { ...existing, [sectionType]: { ...(existing[sectionType] ?? {}), ...patch } as ProposalSection };
+        await db.update(proposals).set({ sections: updated, updatedAt: new Date() }).where(eq(proposals.id, session.proposalId!));
+      };
+
+      await setPatch({ status: "generating", sectionType, title: input.sectionTitle, pageLimit: input.pageLimit, wordLimit: input.wordLimit, order: 0 });
+
+      setImmediate(async () => {
+        try {
+          // ── Build section context for buildSkillVariables ──────────────────
+          // Load rfpRequirements for this section from rfp_structured_index
+          let rfpRequirements = "";
+          if (session.pursuitId) {
+            const idxRows = await db.select().from(rfpStructuredIndex)
+              .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId)).limit(1);
+            if (idxRows[0]?.sectionMap) {
+              try {
+                const smap = JSON.parse(idxRows[0].sectionMap) as Array<{ title: string; requirements?: string }>;
+                const match = smap.find(s => inferSectionType(s.title) === sectionType);
+                rfpRequirements = match?.requirements ?? "";
+              } catch { /* ignore */ }
+            }
+          }
+
+          const sectionCtx: SectionGenerationContext = {
+            sectionType,
+            sectionTitle: input.sectionTitle,
+            wordLimit: input.wordLimit,
+            rfpRequirements,
+            winThemes: ((session.skillOutputs ?? {}) as Record<string, string>).win_themes ?? "",
+            previousScore: input.previousScore ?? null,
+            scorerGaps: input.scorerGaps ?? null,
+          };
+
+          // Map section type to writer skill — use "technical_writer" workflow step as proxy
+          // for the writer skill type lookup (buildSkillVariables handles the actual skill type)
+          const writerSkillType = skillMapping.writerSkill as Parameters<typeof invokeLLMWithSkill>[0]["skillType"];
+          const variables = await buildSkillVariables("technical_writer", session, sectionCtx);
+
+          // Add regeneration context if provided
+          if (input.previousScore != null && input.scorerGaps) {
+            variables.previousScore = String(input.previousScore);
+            variables.scorerGaps = input.scorerGaps;
+            variables.regenerationContext = `Previous score was ${input.previousScore}/100. The scorer identified these gaps: ${input.scorerGaps}. Rewrite this section addressing all identified gaps.`;
+          }
+
+          // Add section-specific variables
+          variables.sectionType = sectionType;
+          variables.sectionTitle = input.sectionTitle;
+          variables.wordLimit = String(input.wordLimit);
+          variables.pageLimit = String(input.pageLimit);
+
+          const writerResult = await invokeLLMWithSkill({ skillType: writerSkillType, variables });
+          const content = writerResult.choices[0]?.message?.content ?? "";
+          const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+          const generatedAt = new Date().toISOString();
+
+          // Save content and mark as Scoring
+          await setPatch({ content, wordCount, generatedAt, status: "scoring", errorMessage: null });
+
+          // ── Score the section ──────────────────────────────────────────────
+          let score: number | null = null;
+          let scorerOutput = null;
+          let sectionStatus: SectionStatus = "complete";
+
+          if (skillMapping.scorerSkill) {
+            try {
+              const scorerVars = await buildSkillVariables("proposal_scorer", session);
+              scorerVars.sectionType = sectionType;
+              scorerVars.sectionTitle = input.sectionTitle;
+              scorerVars.sectionContent = content;
+              scorerVars.technicalApproach = content; // scorer expects this variable
+
+              const scorerResult = await invokeLLMWithSkill({
+                skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
+                variables: scorerVars,
+                responseFormat: getResponseFormat("proposal_scorer"),
+              });
+
+              const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
+              const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
+              score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
+              scorerOutput = scorerParsed;
+              sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+            } catch (scorerErr) {
+              console.error(`[generateSection] scorer failed for ${sectionType}:`, scorerErr);
+              sectionStatus = "complete"; // still complete even if scorer fails
+            }
+          }
+
+          await setPatch({
+            status: sectionStatus,
+            score,
+            scoredAt: new Date().toISOString(),
+            scorerOutput,
+          });
+
+          // Update overall compliance score on the proposal
+          const finalProp = await db.select().from(proposals).where(eq(proposals.id, session.proposalId!)).limit(1);
+          const finalSections = (finalProp[0]?.sections ?? {}) as ProposalSectionsRecord;
+          const { overallScore } = computeOverallCompliance(finalSections);
+          await db.update(proposals).set({ complianceScore: String(overallScore), updatedAt: new Date() }).where(eq(proposals.id, session.proposalId!));
+
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[generateSection] failed for ${sectionType}:`, msg);
+          await setPatch({ status: "error", errorMessage: msg }).catch(() => {});
+        }
+      }); // end setImmediate
+
+      return { success: true, sectionType, running: true };
+    }),
+
+  /**
+   * Generate ALL proposal sections in sequence.
+   * First runs win_theme_generator and requirements_matrix_builder (if not already done),
+   * then generates each section in order.
+   * Runs entirely in setImmediate — frontend polls getSections for progress.
+   */
+  generateFullProposal: protectedProcedure
+    .input(z.object({
+      sessionId: z.string().uuid(),
+      /** Force regeneration even if sections already exist */
+      force: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      if (!session.proposalId) throw new Error("Session has no linked proposal");
+
+      // Immediately mark session as in_progress
+      await db.update(rfpSessions).set({ sessionStatus: "in_progress" }).where(eq(rfpSessions.id, input.sessionId));
+
+      setImmediate(async () => {
+        try {
+          // ── Step a: Ensure win_themes is run ──────────────────────────────
+          const currentOutputs = (session.skillOutputs ?? {}) as Record<string, string>;
+          if (!currentOutputs.win_themes) {
+            try {
+              const winVars = await buildSkillVariables("win_themes", session);
+              const winResult = await invokeLLMWithSkill({
+                skillType: "win_theme_generator" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
+                variables: winVars,
+              });
+              const winOutput = winResult.choices[0]?.message?.content ?? "";
+              const freshSession = (await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1))[0];
+              await db.update(rfpSessions).set({
+                skillOutputs: { ...((freshSession?.skillOutputs ?? {}) as Record<string, string>), win_themes: winOutput },
+                workflowState: { ...((freshSession?.workflowState ?? {}) as Record<string, unknown>), win_themes: { status: "complete", completedAt: new Date().toISOString() } } as any,
+              }).where(eq(rfpSessions.id, input.sessionId));
+              // Refresh session with new outputs
+              const refreshed = (await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1))[0];
+              if (refreshed) Object.assign(session, refreshed);
+            } catch (err) {
+              console.error("[generateFullProposal] win_themes failed:", err);
+            }
+          }
+
+          // ── Step b: Load section definitions ─────────────────────────────
+          let sectionDefs: Array<{ sectionType: SectionType; title: string; pageLimit: number; wordLimit: number; order: number }> = [];
+          if (session.pursuitId) {
+            const idxRows = await db.select().from(rfpStructuredIndex)
+              .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId)).limit(1);
+            if (idxRows[0]?.sectionMap) {
+              try {
+                const parsed = JSON.parse(idxRows[0].sectionMap) as Array<{ title: string; pageLimit?: number; order?: number }>;
+                sectionDefs = parsed.map((s, i) => ({
+                  sectionType: inferSectionType(s.title),
+                  title: s.title,
+                  pageLimit: s.pageLimit ?? 0,
+                  wordLimit: (s.pageLimit ?? 0) * 450,
+                  order: s.order ?? i + 1,
+                }));
+              } catch { /* fall through */ }
+            }
+          }
+          if (sectionDefs.length === 0) sectionDefs = DEFAULT_SECTIONS.map(s => ({ ...s }));
+
+          // ── Step c: Generate each section in order ────────────────────────
+          for (const def of sectionDefs) {
+            const { sectionType, title, pageLimit, wordLimit } = def;
+            const skillMapping = SECTION_TO_SKILL_MAP[sectionType] ?? SECTION_TO_SKILL_MAP["other"];
+
+            const setPatch = async (patch: Partial<ProposalSection>) => {
+              const freshProp = await db.select().from(proposals).where(eq(proposals.id, session.proposalId!)).limit(1);
+              const existing = (freshProp[0]?.sections ?? {}) as ProposalSectionsRecord;
+              const updated = { ...existing, [sectionType]: { ...(existing[sectionType] ?? {}), ...patch } as ProposalSection };
+              await db.update(proposals).set({ sections: updated, updatedAt: new Date() }).where(eq(proposals.id, session.proposalId!));
+            };
+
+            // Skip if already complete and not forcing
+            if (!input.force) {
+              const propRows = await db.select().from(proposals).where(eq(proposals.id, session.proposalId!)).limit(1);
+              const existing = (propRows[0]?.sections ?? {}) as ProposalSectionsRecord;
+              if (existing[sectionType]?.status === "complete" || existing[sectionType]?.status === "needs_attention") continue;
+            }
+
+            try {
+              await setPatch({ status: "generating", sectionType, title, pageLimit, wordLimit, order: def.order });
+
+              // Load rfpRequirements for this section
+              let rfpRequirements = "";
+              if (session.pursuitId) {
+                const idxRows = await db.select().from(rfpStructuredIndex)
+                  .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId)).limit(1);
+                if (idxRows[0]?.sectionMap) {
+                  try {
+                    const smap = JSON.parse(idxRows[0].sectionMap) as Array<{ title: string; requirements?: string }>;
+                    const match = smap.find(s => inferSectionType(s.title) === sectionType);
+                    rfpRequirements = match?.requirements ?? "";
+                  } catch { /* ignore */ }
+                }
+              }
+
+              // Re-read session to get latest outputs (win_themes may have just been written)
+              const freshSession = (await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1))[0] ?? session;
+
+              const sectionCtx: SectionGenerationContext = {
+                sectionType,
+                sectionTitle: title,
+                wordLimit,
+                rfpRequirements,
+                winThemes: ((freshSession.skillOutputs ?? {}) as Record<string, string>).win_themes ?? "",
+                previousScore: null,
+                scorerGaps: null,
+              };
+
+              const writerSkillType = skillMapping.writerSkill as Parameters<typeof invokeLLMWithSkill>[0]["skillType"];
+              const variables = await buildSkillVariables("technical_writer", freshSession, sectionCtx);
+              variables.sectionType = sectionType;
+              variables.sectionTitle = title;
+              variables.wordLimit = String(wordLimit);
+              variables.pageLimit = String(pageLimit);
+
+              const writerResult = await invokeLLMWithSkill({ skillType: writerSkillType, variables });
+              const content = writerResult.choices[0]?.message?.content ?? "";
+              const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+              const generatedAt = new Date().toISOString();
+
+              await setPatch({ content, wordCount, generatedAt, status: "scoring", errorMessage: null });
+
+              // Score the section
+              let score: number | null = null;
+              let scorerOutput = null;
+              let sectionStatus: SectionStatus = "complete";
+
+              if (skillMapping.scorerSkill) {
+                try {
+                  const scorerVars = await buildSkillVariables("proposal_scorer", freshSession);
+                  scorerVars.sectionType = sectionType;
+                  scorerVars.sectionTitle = title;
+                  scorerVars.sectionContent = content;
+                  scorerVars.technicalApproach = content;
+
+                  const scorerResult = await invokeLLMWithSkill({
+                    skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
+                    variables: scorerVars,
+                    responseFormat: getResponseFormat("proposal_scorer"),
+                  });
+
+                  const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
+                  const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
+                  score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
+                  scorerOutput = scorerParsed;
+                  sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+                } catch (scorerErr) {
+                  console.error(`[generateFullProposal] scorer failed for ${sectionType}:`, scorerErr);
+                  sectionStatus = "complete";
+                }
+              }
+
+              await setPatch({ status: sectionStatus, score, scoredAt: new Date().toISOString(), scorerOutput });
+
+            } catch (sectionErr) {
+              const msg = sectionErr instanceof Error ? sectionErr.message : String(sectionErr);
+              console.error(`[generateFullProposal] section ${sectionType} failed:`, msg);
+              await setPatch({ status: "error", errorMessage: msg }).catch(() => {});
+              // Continue to next section — do not abort
+            }
+          }
+
+          // ── Step d: Update overall compliance score ───────────────────────
+          const finalProp = await db.select().from(proposals).where(eq(proposals.id, session.proposalId!)).limit(1);
+          const finalSections = (finalProp[0]?.sections ?? {}) as ProposalSectionsRecord;
+          const { overallScore } = computeOverallCompliance(finalSections);
+          await db.update(proposals).set({
+            complianceScore: String(overallScore),
+            updatedAt: new Date(),
+          }).where(eq(proposals.id, session.proposalId!));
+
+          // Mark session complete
+          await db.update(rfpSessions).set({ sessionStatus: "complete" }).where(eq(rfpSessions.id, input.sessionId));
+
+          console.log(`[generateFullProposal] complete for session=${input.sessionId} overallScore=${overallScore}`);
+        } catch (err) {
+          console.error("[generateFullProposal] fatal error:", err);
+          await db.update(rfpSessions).set({ sessionStatus: "error" }).where(eq(rfpSessions.id, input.sessionId)).catch(() => {});
+        }
+      }); // end setImmediate
+
+      return { success: true, running: true };
     }),
 });

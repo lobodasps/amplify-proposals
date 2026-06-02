@@ -789,3 +789,22 @@
 - [x] Client: 'Edit Asset Selections' button in Proposal Workspace toolbar → Sheet side panel with AssetMatchingPanel
 - [x] Zero TypeScript errors, 25/25 tests passing
 - [x] Push to GitHub + checkpoint
+
+## Proposal Workspace Step 4 Phase A — Proposal Generation with Live Per-Section Scoring (v4.7)
+- [x] Shared types: SECTION_TO_SKILL_MAP (sectionType → writerSkill + scorerSkill), ProposalSection interface, SectionStatus type
+- [x] Shared types: DEFAULT_SECTIONS constant (8 default AEC proposal sections with page limits)
+- [x] Server: add generateSection procedure (generates one section + scores it, stores in proposal.sections JSON)
+- [x] Server: add generateFullProposal procedure (sequential generation of all sections with status updates)
+- [x] Server: update buildSkillVariables() with section context (sectionType, sectionTitle, wordLimit, rfpRequirements, winThemes, previousScore, scorerGaps)
+- [x] Client: three-panel workspace layout (left navigator 220px, center editor flexible, right scorecard 280px collapsible)
+- [x] Client: Section Navigator — RFP-driven section list with status badges, score badges, word count, Generate/Regenerate buttons
+- [x] Client: Section Editor — SkillOutputRenderer for content, Generate/Regenerate/Save buttons, word count display
+- [x] Client: Section Scorecard — score ring, criteria coverage checklist, page/word limit status, improvements list, win themes coverage
+- [x] Client: Generate Full Proposal button with confirmation dialog, sequential generation with progress indicator
+- [x] Client: Compliance dashboard bar at top (pursuit title, compliance %, sections complete, due date, Export Package button)
+- [x] Client: Regenerate with gap feedback injection (previous score + gaps from scorer)
+- [x] Client: editedContent tracking — preserve AI draft, show 'Edited' badge when user modifies
+- [ ] Live test: run Generate Full Proposal against OUTREACH VALUE ENGINEERING pursuit (pending user test)
+- [ ] Report: section statuses, scores, overall compliance, first 100 words of executive summary
+- [x] Zero TypeScript errors, 25/25 tests passing
+- [x] Push to GitHub + checkpoint
