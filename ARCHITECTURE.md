@@ -177,7 +177,9 @@ amplify-proposals/
 │   └── types.ts           # Shared TypeScript types
 ├── ARCHITECTURE.md        # This file
 ├── CLAUDE.md              # Same content (for Claude Code)
-└── todo.md                # Task tracking with completion status
+├── todo.md                # ACTIVE work only — the only file Manus reads for current work context
+├── archive.md             # All completed [x] items — append-only history
+└── backlog.md             # Full prioritized feature backlog (not yet started)
 ```
 
 ---
@@ -437,7 +439,7 @@ Images in "Needs Manual Review" show a larger thumbnail, the full Gemini output,
 
 ## Remaining Work
 
-The following major features are planned but not yet implemented. See `todo.md` for the full granular checklist.
+The following major features are planned but not yet implemented. See `backlog.md` for the full prioritized feature list. `todo.md` contains only the active in-progress and next-up items. `archive.md` contains all completed work.
 
 ### Near-Term
 
