@@ -27,8 +27,12 @@ function AnalysisCard({ analysis, onDelete }: { analysis: any; onDelete: () => v
   const [expanded, setExpanded] = useState(false);
   const [, navigate] = useLocation();
   let result: any = null;
-  try { result = analysis.analysisResult ? (typeof analysis.analysisResult === "string" ? JSON.parse(analysis.analysisResult) : analysis.analysisResult) : null; } catch {}
+  try {
+    const raw = analysis.rawAnalysis ?? analysis.analysisResult;
+    result = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : null;
+  } catch {}
 
+  const analyzedAt = analysis.analyzedAt ?? analysis.updatedAt ?? analysis.createdAt;
   const overallRisk = result?.riskFlags?.some((f: any) => (f.severity ?? "").toUpperCase() === "HIGH") ? "high" : result?.riskFlags?.some((f: any) => (f.severity ?? "").toUpperCase() === "MEDIUM") ? "medium" : "low";
 
   return (
@@ -41,9 +45,9 @@ function AnalysisCard({ analysis, onDelete }: { analysis: any; onDelete: () => v
               <span className="font-medium text-sm">{analysis.fileName ?? "Contract Document"}</span>
               {result && <RiskBadge level={overallRisk} />}
               {analysis.status === "processing" && <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">Processing…</Badge>}
-              {analysis.status === "failed" && <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-300">Failed</Badge>}
+              {(analysis.status === "failed" || analysis.status === "error") && <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-300">Failed</Badge>}
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Analyzed {formatDate(analysis.analyzedAt ?? analysis.createdAt)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Analyzed {formatDate(analyzedAt)}</p>
           </div>
           <div className="flex gap-1">
             {analysis.contractId && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/contracts/${analysis.contractId}`)}><ExternalLink className="h-3 w-3" /></Button>}

@@ -23,6 +23,7 @@ import { format, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { getCompanyBadgeClass, getStatusConfig, fmtCurrency, fmtCurrencyCompact } from "@/lib/contractUtils";
 import { EntitySwitcher } from "@/components/EntitySwitcher";
+import { useEntityContext } from "@/contexts/EntityContext";
 import { KNOWN_COMPANIES } from "../../../shared/contractNumbers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -525,6 +526,7 @@ function SortHeader({ col, label, sortColumn, sortDir, onSort, className }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Contracts() {
   const [, navigate] = useLocation();
+  const { activeEntityId } = useEntityContext();
   const { data: dbContracts, isLoading, refetch } = trpc.contracts.list.useQuery();
 
   // Filters
@@ -563,20 +565,27 @@ export default function Contracts() {
 
   const allContracts = dbContracts ?? [];
 
-  // Unique filter options
-  const uniqueClients = useMemo(() =>
-    Array.from(new Set(allContracts.map(c => c.clientName).filter(Boolean))) as string[], [allContracts]);
-  const uniqueOwners = useMemo(() =>
-    Array.from(new Set(allContracts.map(c => c.ownerName).filter(Boolean))) as string[], [allContracts]);
-  const uniquePMs = useMemo(() =>
-    Array.from(new Set(allContracts.map(c => (c as any).projectManagerName).filter(Boolean))) as string[], [allContracts]);
-  const uniqueAccountants = useMemo(() =>
-    Array.from(new Set(allContracts.map(c => (c as any).projectAccountantName).filter(Boolean))) as string[], [allContracts]);
+  // Entity-scoped contracts — contracts with no performingCompanyId are "historical" and show under all entities
+  const entityContracts = useMemo(() =>
+    activeEntityId
+      ? allContracts.filter(c => !c.performingCompanyId || c.performingCompanyId === activeEntityId)
+      : allContracts,
+  [allContracts, activeEntityId]);
 
-  // Parent → children map
+  // Unique filter options (scoped to entity)
+  const uniqueClients = useMemo(() =>
+    Array.from(new Set(entityContracts.map(c => c.clientName).filter(Boolean))) as string[], [entityContracts]);
+  const uniqueOwners = useMemo(() =>
+    Array.from(new Set(entityContracts.map(c => c.ownerName).filter(Boolean))) as string[], [entityContracts]);
+  const uniquePMs = useMemo(() =>
+    Array.from(new Set(entityContracts.map(c => (c as any).projectManagerName).filter(Boolean))) as string[], [entityContracts]);
+  const uniqueAccountants = useMemo(() =>
+    Array.from(new Set(entityContracts.map(c => (c as any).projectAccountantName).filter(Boolean))) as string[], [entityContracts]);
+
+  // Parent → children map (scoped to entity)
   const childrenByParent = useMemo(() => {
     const map = new Map<string, any[]>();
-    allContracts.forEach(c => {
+    entityContracts.forEach(c => {
       if (c.parentContractId) {
         const arr = map.get(c.parentContractId) ?? [];
         arr.push(c);
@@ -584,13 +593,13 @@ export default function Contracts() {
       }
     });
     return map;
-  }, [allContracts]);
+  }, [entityContracts]);
 
   // Rolled-up financials for parent contracts
   function getRolledUp(contractId: string): { value: number; authorized: number; billed: number } {
     const children = childrenByParent.get(contractId) ?? [];
     if (!children.length) {
-      const c = allContracts.find((x: any) => x.id === contractId);
+      const c = entityContracts.find((x: any) => x.id === contractId);
       return {
         value: Number(c?.value) || 0,
         authorized: Number(c?.computedContractValue ?? c?.value) || 0,
@@ -603,9 +612,9 @@ export default function Contracts() {
     }, { value: 0, authorized: 0, billed: 0 });
   }
 
-  // Filter top-level contracts
+  // Filter top-level contracts (already entity-scoped via entityContracts)
   const filteredTopLevel = useMemo(() => {
-    const topLevel = allContracts.filter(c => !c.parentContractId);
+    const topLevel = entityContracts.filter(c => !c.parentContractId);
     return topLevel.filter(c => {
       const q = searchTerm.toLowerCase();
       if (q && !`${c.contractNumber} ${c.projectNumber} ${c.title} ${c.clientName} ${c.ownerName}`.toLowerCase().includes(q)) return false;
@@ -616,7 +625,7 @@ export default function Contracts() {
       if (filterAccountant !== "ALL" && (c as any).projectAccountantName !== filterAccountant) return false;
       return true;
     });
-  }, [allContracts, searchTerm, filterStatus, filterClient, filterOwner, filterPM, filterAccountant]);
+  }, [entityContracts, searchTerm, filterStatus, filterClient, filterOwner, filterPM, filterAccountant]);
 
   // Sort
   const sortedTopLevel = useMemo(() => {
@@ -659,26 +668,26 @@ export default function Contracts() {
     return rows;
   }, [sortedTopLevel, expandedParents, childrenByParent]);
 
-  // KPI stats
+  // KPI stats (entity-scoped)
   const stats = useMemo(() => {
-    const active = allContracts.filter(c => c.status === "active");
-    const draft = allContracts.filter(c => c.status === "draft");
+    const active = entityContracts.filter(c => c.status === "active");
+    const draft = entityContracts.filter(c => c.status === "draft");
     const totalAuthorized = active.reduce((s, c) => s + (Number(c.computedContractValue ?? c.value) || 0), 0);
     const totalBilled = active.reduce((s, c) => s + (Number(c.totalBilledAmount) || 0), 0);
     const now = new Date();
     const in90 = addDays(now, 90);
-    const expiring = allContracts.filter(c =>
+    const expiring = entityContracts.filter(c =>
       c.endDate && new Date(c.endDate) <= in90 && new Date(c.endDate) >= now && c.status === "active"
     );
     const in30 = expiring.filter(c => new Date(c.endDate!) <= addDays(now, 30));
     const in60 = expiring.filter(c => new Date(c.endDate!) > addDays(now, 30) && new Date(c.endDate!) <= addDays(now, 60));
     const in90d = expiring.filter(c => new Date(c.endDate!) > addDays(now, 60));
-    const atRisk = allContracts.filter(c => {
+    const atRisk = entityContracts.filter(c => {
       const remaining = (Number(c.computedContractValue ?? c.value) || 0) - (Number(c.totalBilledAmount) || 0);
       return remaining < 0 && c.status === "active";
     });
     return { active: active.length, draft: draft.length, totalAuthorized, totalBilled, expiring, in30, in60, in90: in90d, atRisk: atRisk.length };
-  }, [allContracts]);
+  }, [entityContracts]);
 
   const hasFilters = searchTerm || filterStatus !== "ALL" || filterClient !== "ALL" || filterOwner !== "ALL" || filterPM !== "ALL" || filterAccountant !== "ALL";
 
@@ -705,7 +714,7 @@ export default function Contracts() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Contract Management</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {allContracts.length} contracts · {stats.active} active · {stats.draft} draft
+              {entityContracts.length} contracts · {stats.active} active · {stats.draft} draft
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -905,7 +914,7 @@ export default function Contracts() {
             {hasFilters && (
               <div className="flex items-center gap-3">
                 <p className="text-sm text-muted-foreground">
-                  Showing {filteredTopLevel.length} of {allContracts.filter(c => !c.parentContractId).length} top-level contracts
+                  Showing {filteredTopLevel.length} of {entityContracts.filter(c => !c.parentContractId).length} top-level contracts
                 </p>
                 <Button variant="ghost" size="sm" onClick={() => {
                   setSearchTerm(""); setFilterStatus("ALL");
@@ -927,8 +936,8 @@ export default function Contracts() {
                 <CardTitle className="text-base">Contracts</CardTitle>
                 <CardDescription className="text-xs mt-0.5">
                   {hasFilters
-                    ? `${filteredTopLevel.length} of ${allContracts.filter(c => !c.parentContractId).length} contracts`
-                    : `${allContracts.filter(c => !c.parentContractId).length} total contracts`}
+                    ? `${filteredTopLevel.length} of ${entityContracts.filter(c => !c.parentContractId).length} contracts`
+                    : `${entityContracts.filter(c => !c.parentContractId).length} total contracts`}
                   {" · Click a row to open contract detail · Click "}
                   <ChevronRight className="inline w-3 h-3" />
                   {" to expand task orders"}
@@ -937,7 +946,7 @@ export default function Contracts() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {allContracts.length === 0 ? (
+            {entityContracts.length === 0 ? (
               <div className="text-center py-16 px-6">
                 <FileSignature className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
                 <h3 className="text-lg font-medium">No contracts yet</h3>

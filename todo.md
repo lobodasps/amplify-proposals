@@ -22,6 +22,9 @@ Current version: v4.16
 
 ## 🟠 Known Issues
 
+- [x] Contract Management: entity filter (JPCL/Strans selector) does not filter contract list — reads activeEntityId from EntityContext, filters by performingCompanyId (v4.17)
+- [x] Contract Management: contract analyzer results not viewable — AnalysisCard was reading analysis.analysisResult but DB column is rawAnalysis; fixed field name (v4.17)
+
 - [ ] Some proposal sections may still render as raw JSON if the DB ai_skills outputType record was seeded incorrectly — use the "Re-render as Prose" button as a workaround; run seedDefaultSkills to re-seed if needed
 - [ ] Firm name and other firm variables showing as {{placeholder}} in generated content when firm_settings has not been filled in for the active entity
 - [ ] Asset matching Step 3 — verify scroll behavior with 10+ cards after CSS layout fix (v4.12)
