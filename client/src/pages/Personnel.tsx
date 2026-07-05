@@ -20,14 +20,7 @@ const SERVICE_LINE_COLORS: Record<string, string> = {
   "Environmental": "badge-environmental",
 };
 
-const DEMO_PERSONNEL = [
-  { id: 1, name: "Maria Torres, PE", title: "Senior Proposal Coordinator", email: "m.torres@firm.com", phone: "201-555-0101", yearsExperience: 14, serviceLines: JSON.stringify(["Special Inspections", "Construction Management"]), summary: "14 years of AEC proposal management with NJDOT, NYC DDC, and Port Authority experience." },
-  { id: 2, name: "James Rivera, AICP", title: "Business Development Manager", email: "j.rivera@firm.com", phone: "212-555-0102", yearsExperience: 18, serviceLines: JSON.stringify(["Construction Management", "Traffic Engineering"]), summary: "18 years in AEC business development, specializing in NYC agency relationships." },
-  { id: 3, name: "Aisha Patel, PE", title: "Traffic Engineering Lead", email: "a.patel@firm.com", phone: "973-555-0103", yearsExperience: 11, serviceLines: JSON.stringify(["Traffic Engineering"]), summary: "NYCDOT and NJDOT traffic signal and ITS project specialist." },
-  { id: 4, name: "Sarah Chen, RLA", title: "Landscape Architecture Principal", email: "s.chen@firm.com", phone: "212-555-0104", yearsExperience: 16, serviceLines: JSON.stringify(["Landscape / Streetscape"]), summary: "NYC streetscape and parks design with NJ Transit and NYC Parks experience." },
-  { id: 5, name: "Robert Kim, PE", title: "Environmental Practice Lead", email: "r.kim@firm.com", phone: "609-555-0105", yearsExperience: 20, serviceLines: JSON.stringify(["Environmental"]), summary: "NJDEP-licensed environmental engineer specializing in wetlands, Phase I/II ESA, and permitting." },
-  { id: 6, name: "David Okafor, SE", title: "Special Inspections Manager", email: "d.okafor@firm.com", phone: "201-555-0106", yearsExperience: 12, serviceLines: JSON.stringify(["Special Inspections"]), summary: "NICET Level IV certified inspector with extensive NJDOT bridge and structural experience." },
-];
+// No demo data — all personnel come from the live DB via trpc.personnel.list
 
 function AddPersonnelDialog({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
@@ -70,9 +63,8 @@ function AddPersonnelDialog({ onAdded }: { onAdded: () => void }) {
 
 export default function Personnel() {
   const [search, setSearch] = useState("");
-  const { data: dbPersonnel, isLoading } = trpc.personnel.list.useQuery(undefined as any);
-  const personnel = (dbPersonnel && dbPersonnel.length > 0) ? dbPersonnel : DEMO_PERSONNEL;
-  const filtered = personnel.filter((p: any) => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.title ?? "").toLowerCase().includes(search.toLowerCase()));
+  const { data: dbPersonnel = [], isLoading } = trpc.personnel.list.useQuery(undefined as any);
+  const filtered = dbPersonnel.filter((p: any) => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.title ?? "").toLowerCase().includes(search.toLowerCase()));
 
   return (
     <AppLayout>
@@ -91,6 +83,12 @@ export default function Personnel() {
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-xl" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <Users className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
+            <h3 className="font-semibold text-foreground mb-1">No team members yet</h3>
+            <p className="text-muted-foreground text-sm">Add your first team member to get started.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

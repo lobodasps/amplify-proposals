@@ -213,10 +213,12 @@ async function buildSkillVariables(
   let firmGeographicFocus = "New York, New Jersey, Connecticut";
   let firmStateRegistrations = "NJ, NY";
   let firmStrengthsList = "";
+  let firmSettingsEmpty = false;
   if (db) {
     // Try to load entity-scoped firm settings — fall back to any available row
     const firmRows = await db.select().from(firmSettings).limit(5);
     const firmRow = firmRows[0];
+    if (!firmRow) firmSettingsEmpty = true;
     if (firmRow) {
       firmName = firmRow.firmName || firmRow.legalName || firmName;
       firmLegalName = firmRow.legalName || firmRow.firmName || firmName;
@@ -1164,6 +1166,17 @@ export const rfpSessionsRouter = router({
 
         // ── Substitution validator: scan for unresolved {variable} or {{variable}} patterns ──
         const missingVariables: string[] = [];
+
+        // Firm settings guard: warn user if firm_settings is empty so they know to fill it in
+        // before running generation skills. This is a non-blocking warning — generation continues.
+        const FIRM_DEPENDENT_SKILLS: WorkflowSkillName[] = ["win_themes", "technical_writer", "key_personnel", "past_performance", "proposal_scorer"];
+        if (FIRM_DEPENDENT_SKILLS.includes(input.skillName as WorkflowSkillName)) {
+          // Check firm settings by looking for firmName being the default value
+          const firmNameVar = variables["firmName"] ?? variables["firm_name"];
+          if (!firmNameVar || firmNameVar === "Our firm" || firmNameVar === "[Not provided]") {
+            missingVariables.push("firm_settings:firmName — Go to Settings → Firm Profile to add your firm details");
+          }
+        }
         for (const [key, value] of Object.entries(variables)) {
           const unresolvedMatches = value.match(/\{\{?\w+\}?\}/g);
           if (unresolvedMatches) {

@@ -23,16 +23,7 @@ const PORTALS = [
   { id: 5, name: "Port Authority Procurement", url: "panynj.gov", status: "syncing", lastSync: "Syncing...", count: 3, color: "text-rose-500", bg: "bg-rose-50" },
 ];
 
-const DEMO_OPPORTUNITIES = [
-  { id: "1", title: "Bridge Inspection Services — Route 9 Corridor", agency: "NJDOT", type: "RFP", due: "Jun 15, 2026", value: "$2.4M", score: 92, serviceMatch: ["Special Inspections"], status: "new", source: "NJDOT Procurement" },
-  { id: "2", title: "Construction Management — PS 142 Renovation", agency: "NYC SCA", type: "RFQ", due: "Jun 22, 2026", value: "$4.8M", score: 88, serviceMatch: ["Construction Management"], status: "new", source: "NYC Procurement" },
-  { id: "3", title: "Traffic Engineering Study — Route 35 Corridor", agency: "Monmouth County", type: "RFP", due: "Jul 8, 2026", value: "$620K", score: 81, serviceMatch: ["Traffic Engineering"], status: "reviewed", source: "NJ State Procurement" },
-  { id: "4", title: "Streetscape Design — Downtown Revitalization", agency: "City of Newark", type: "RFQ", due: "Jul 15, 2026", value: "$1.1M", score: 76, serviceMatch: ["Landscape / Streetscape"], status: "new", source: "NJ State Procurement" },
-  { id: "5", title: "Phase I/II Environmental Site Assessment", agency: "NJDEP", type: "RFP", due: "Jul 30, 2026", value: "$480K", score: 84, serviceMatch: ["Environmental"], status: "new", source: "NJ State Procurement" },
-  { id: "6", title: "Structural Inspection — Pulaski Skyway Approaches", agency: "NJDOT", type: "RFP", due: "Aug 5, 2026", value: "$3.2M", score: 95, serviceMatch: ["Special Inspections"], status: "new", source: "NJDOT Procurement" },
-  { id: "7", title: "CM Services — NYC Parks Greenway Phase 2", agency: "NYC Parks", type: "RFQ", due: "Aug 12, 2026", value: "$2.9M", score: 79, serviceMatch: ["Construction Management", "Landscape / Streetscape"], status: "reviewed", source: "NYC Procurement" },
-  { id: "8", title: "Traffic Signal Modernization Program", agency: "NYCDOT", type: "RFP", due: "Aug 20, 2026", value: "$1.8M", score: 72, serviceMatch: ["Traffic Engineering"], status: "new", source: "NYC Procurement" },
-];
+// No demo data — all opportunities come from the live DB via trpc.opportunities.list
 
 const SERVICE_COLORS: Record<string, string> = {
   "Special Inspections": "bg-blue-100 text-blue-700",
@@ -366,8 +357,8 @@ export default function Opportunities() {
     toast.success("Synced 5 agency portals — 8 new opportunities found and AI-scored.");
   };
 
-  // Merge live DB opportunities with demo data for display
-  const liveForDisplay = liveOpps.map((o: any) => ({
+  // Map live DB opportunities to display format
+  const allOpps = liveOpps.map((o: any) => ({
     id: o.id,
     title: o.title,
     agency: o.clientName ?? "—",
@@ -380,11 +371,6 @@ export default function Opportunities() {
     source: o.source ?? "manual",
     isLive: true,
   }));
-
-  const allOpps = [
-    ...liveForDisplay,
-    ...DEMO_OPPORTUNITIES.map(o => ({ ...o, isLive: false })),
-  ];
 
   const filtered = allOpps.filter(o =>
     o.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -447,9 +433,9 @@ export default function Opportunities() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-primary" /> AI-Scored Opportunities
                 <Badge className="bg-primary/10 text-primary text-[10px]">{filtered.length} found</Badge>
-                {liveForDisplay.length > 0 && (
+                {allOpps.length > 0 && (
                   <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-300 bg-emerald-50">
-                    {liveForDisplay.length} from database
+                    {allOpps.length} from database
                   </Badge>
                 )}
               </CardTitle>

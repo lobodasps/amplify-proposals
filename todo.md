@@ -7,26 +7,45 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ## 🔴 Immediate Action Required
 
-- [ ] Reassign 7 `manus_builtin` skills to real provider keys in Settings → AI Skills (executive_summary_writer, firm_qualifications_writer, key_personnel_writer, project_experience_writer, requirements_matrix_builder, technical_approach_writer, win_theme_generator)
-- [ ] Apply updated GROUNDING RULES prompts to existing deployments: Settings → AI Skills → Reset to Default for each of the 4 generation skills (win_theme_generator, technical_approach_writer, key_personnel_writer, project_experience_writer) — or run `seedDefaultSkills({ force: true })` from admin panel
+- [ ] Reassign 7 `manus_builtin` skills to real provider keys in Settings → AI Skills
+- [ ] Apply updated GROUNDING RULES prompts: Settings → AI Skills → Reset to Default for each of the 4 generation skills
 
 ---
 
-## 🟠 Known Issues
+## 🟡 In Progress — Current Sprint
 
-- [ ] Some proposal sections may still render as raw JSON if the DB ai_skills outputType record was seeded incorrectly — use the "Re-render as Prose" button as a workaround; run seedDefaultSkills to re-seed if needed
-- [ ] Firm name and other firm variables showing as `{{placeholder}}` in generated content when firm_settings has not been filled in for the active entity
-- [ ] Asset matching Step 3 — verify scroll behavior with 10+ cards after CSS layout fix (v4.12)
+### Known Issues (3 fixes)
+- [ ] Fix outputType seeding: update `seedDefaultSkills` to upsert `outputType` on existing rows (not just insert-if-missing)
+- [ ] Fix firm placeholder guard: warn user in Workspace when `firm_settings` is empty instead of silently passing `[Not provided]`
+- [ ] Fix asset matching scroll: verify and fix scroll behavior with 10+ cards in AssetMatchingPanel
+
+### Remove Mock Data — Wire to Live DB
+- [x] `Proposals.tsx` — remove `DEMO_PROPOSALS` fallback; show empty state when DB returns 0 rows
+- [x] `Opportunities.tsx` — remove `DEMO_OPPORTUNITIES` fallback; show empty state
+- [x] `Personnel.tsx` — remove `DEMO_PERSONNEL` fallback; show empty state
+- [x] `Projects.tsx` — remove `DEMO_PROJECTS` fallback; show empty state
+- [x] `Staff.tsx` — remove `DEMO_STAFF` fallback; show empty state
+- [x] `Assets.tsx` — remove `ASSETS` fallback; wire to `trpc.assets.list` with live DB data
+- [x] `Pipeline.tsx` — remove hardcoded `PURSUITS` and `KPI_CARDS`; wire Kanban board to `pursuits.list` tRPC query with stage grouping; wire KPI cards to real counts
+- [x] `PursuitDetail.tsx` — remove hardcoded `PURSUIT`, `TASKS`, `REQUIREMENTS`; wire to `pursuits.getById` using URL param; tasks wired to `pursuits.getTasks`
+
+### Wire InDesignExport to Real Data
+- [ ] `InDesignExport.tsx` — replace `EXPORT_SECTIONS` and `EXPORT_ASSETS` with real session skill outputs and DAM documents
+
+### Token Usage Dashboard
+- [x] Token usage dashboard already exists in Settings → AI Skills → Usage tab (wired to `trpc.aiSkills.usageStats`); no additional work needed
+
+### pgvector Semantic Search
+- [ ] Enable `pgvector` extension in Supabase (run `CREATE EXTENSION IF NOT EXISTS vector`)
+- [ ] Add `embedding vector(1536)` column to `document_chunks` in `drizzle/schema.ts`; run `pnpm db:push`
+- [ ] Add `embedChunk(content)` helper in `server/embeddings.ts` using OpenAI `text-embedding-3-small`
+- [ ] Wire embedding generation into `chunkBuilder.ts`: after chunk insert, call `embedChunk` and update the row
+- [ ] Add `semanticSearch` tRPC procedure in `server/routers/dam.ts`: embed query, cosine similarity search, return top-K chunks with doc metadata
+- [ ] Add semantic search UI to Knowledge Hub: search bar with toggle (keyword / semantic), results list with chunk preview and source doc link
 
 ---
 
-## 🟡 Next Up — Core Workflow Gaps
-
-- [ ] **Proposal export to PDF** — Workspace produces structured content but has no export path; required before platform can be used in a live pursuit
-- [ ] **RFP file upload UI in Workspace** — direct drag-and-drop for users who skip the Launchpad
-- [ ] **PursuitDetail: wire tasks, team, and requirements tabs to real DB** — currently show mock data
-- [ ] **Proposals page: remove DEMO_PROPOSALS fallback** — masks real data and confuses users
-- [ ] **Fee estimator: wire to real billing rates from Timekeeping** — currently uses estimated values
+## 🟠 Known Issues (resolved in this sprint — move to ✅ when done)
 
 ---
 
@@ -36,11 +55,8 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [ ] Adobe UXP InDesign plugin for proposal layout export
 - [ ] SF 330 form auto-fill
 - [ ] PDF page rendering + photo extraction from documents (Stage 1: thumbnails; Stage 2: vision model photo extraction)
-- [ ] pgvector semantic search across Knowledge Hub
 - [ ] Navigation restructure (4 zones)
 - [ ] App-to-app toggle link (Amplify ↔ v0 timekeeping)
-- [ ] Word/PowerPoint export of completed proposal
+- [ ] Proposal export to Word/PowerPoint/PDF (on hold — pending design decision)
 - [ ] Mobile responsive pass
 - [ ] SSO/SAML
-- [ ] Stripe billing
-- [ ] Token usage logging per skill invocation + usage dashboard

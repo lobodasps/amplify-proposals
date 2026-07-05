@@ -398,6 +398,8 @@ export const aiSkillsRouter = router({
         .set({
           systemPrompt: def.systemPrompt,
           userPromptTemplate: def.userPromptTemplate,
+          outputType: def.outputType,
+          templateVariables: JSON.stringify(def.templateVariables),
         })
         .where(eq(aiSkills.skillType, input.skillType));
 

@@ -52,14 +52,7 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700 border-red-200",
 };
 
-const DEMO_PROJECTS = [
-  { id: 1, name: "PANYNJ Bayonne Bridge Special Inspection Program", clientName: "Port Authority NY/NJ", serviceLine: "special_inspections", contractValue: 1200000, status: "complete", location: "Bayonne, NJ / Staten Island, NY", description: "Comprehensive inspection of primary and secondary structural elements of the Bayonne Bridge, including fatigue-prone details, scour evaluation, and load rating updates.", tags: JSON.stringify(["bridge", "PANYNJ", "structural", "scour"]) },
-  { id: 2, name: "NYC DDC Bronx Community Center — CM Services", clientName: "NYC DDC", serviceLine: "construction_management", contractValue: 4200000, status: "active", location: "Bronx, NY", description: "Construction management services for a 45,000 SF community center including resident engineering, inspection, schedule monitoring, RFI/submittal management, and commissioning support.", tags: JSON.stringify(["NYC DDC", "community", "CM", "Bronx"]) },
-  { id: 3, name: "NYCDOT Queens Boulevard Traffic Signal Modernization", clientName: "NYC DOT", serviceLine: "traffic_engineering", contractValue: 680000, status: "complete", location: "Queens, NY", description: "Traffic signal design and timing optimization for 18 intersections along Queens Boulevard. Included pedestrian safety improvements and SCOOT adaptive control integration.", tags: JSON.stringify(["NYCDOT", "signals", "Queens", "pedestrian"]) },
-  { id: 4, name: "NJ Transit Newark Broad Street Streetscape", clientName: "NJ Transit", serviceLine: "landscape_streetscape", contractValue: 920000, status: "active", location: "Newark, NJ", description: "Streetscape design and construction administration for 0.8 miles of Broad Street adjacent to NJ Transit rail corridor.", tags: JSON.stringify(["NJ Transit", "streetscape", "Newark", "planting"]) },
-  { id: 5, name: "NJDEP Meadowlands Wetland Assessment & Permitting", clientName: "NJDEP", serviceLine: "environmental", contractValue: 340000, status: "complete", location: "Meadowlands, NJ", description: "Phase I/II environmental site assessment, wetland delineation, and NJDEP freshwater wetlands permit application for a 42-acre industrial redevelopment site.", tags: JSON.stringify(["NJDEP", "wetlands", "ESA", "permitting"]) },
-  { id: 6, name: "NJDOT Route 1&9 Bridge Inspection Program", clientName: "NJDOT", serviceLine: "special_inspections", contractValue: 1800000, status: "complete", location: "Hudson County, NJ", description: "Routine and in-depth inspection of 42 bridge structures along the Route 1&9 corridor.", tags: JSON.stringify(["NJDOT", "bridge", "NBI", "Route 1&9"]) },
-];
+// No demo data — all projects come from the live DB via trpc.projects.list
 
 function parseTags(raw: any): string[] {
   if (!raw) return [];
@@ -417,9 +410,7 @@ export default function Projects() {
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
   const { data: dbProjects, isLoading, refetch } = trpc.projects.list.useQuery();
 
-  const projects = (dbProjects && dbProjects.length > 0) ? dbProjects : DEMO_PROJECTS;
-
-  const filtered = projects.filter((p: any) =>
+  const filtered = (dbProjects ?? []).filter((p: any) =>
     (activeService === "all" || p.serviceLine === activeService) &&
     (!search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||

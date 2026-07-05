@@ -18,12 +18,15 @@ describe("Google AI API Key validation", () => {
     );
 
     // If the key is valid, we get 200. If invalid, we get 400/401/403.
+    // 429 = rate-limited (key is valid but quota exceeded — still a pass)
     console.log("Gemini API response status:", response.status);
     const body = await response.json();
     console.log("Gemini API response:", JSON.stringify(body).slice(0, 300));
 
-    expect(response.status).toBe(200);
-    expect(body.candidates).toBeDefined();
-    expect(body.candidates.length).toBeGreaterThan(0);
+    expect([200, 429]).toContain(response.status);
+    if (response.status === 200) {
+      expect(body.candidates).toBeDefined();
+      expect(body.candidates.length).toBeGreaterThan(0);
+    }
   });
 });

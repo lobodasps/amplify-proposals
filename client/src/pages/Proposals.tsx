@@ -46,14 +46,7 @@ const SERVICE_COLORS: Record<string, string> = {
   "Environmental": "badge-environmental",
 };
 
-const DEMO_PROPOSALS = [
-  { id: 1, title: "NJDOT Route 9 Bridge Inspection Services", clientName: "NJDOT", rfpNumber: "NJDOT-2026-SI-0042", status: "in_review", dueDate: new Date("2026-06-15"), estimatedValue: 2400000, serviceLine: "Special Inspections", coordinator: "M. Torres", compliance: 82, sections: 8, sectionsComplete: 6, lastUpdated: "2h ago", aiShredded: true },
-  { id: 2, title: "NYC DDC Community Center Construction Management", clientName: "NYC DDC", rfpNumber: "DDC-CM-2026-0118", status: "approved", dueDate: new Date("2026-06-03"), estimatedValue: 5100000, serviceLine: "Construction Management", coordinator: "J. Rivera", compliance: 96, sections: 12, sectionsComplete: 12, lastUpdated: "1d ago", aiShredded: true },
-  { id: 3, title: "NYCDOT Traffic Signal Modernization Study", clientName: "NYC DOT", rfpNumber: "NYCDOT-TE-2026-0077", status: "draft", dueDate: new Date("2026-07-08"), estimatedValue: 890000, serviceLine: "Traffic Engineering", coordinator: "A. Patel", compliance: 45, sections: 10, sectionsComplete: 4, lastUpdated: "3d ago", aiShredded: false },
-  { id: 4, title: "NJ Transit Station Streetscape Design Services", clientName: "NJ Transit", rfpNumber: "NJT-LS-2026-0033", status: "draft", dueDate: new Date("2026-08-01"), estimatedValue: 1200000, serviceLine: "Landscape / Streetscape", coordinator: "S. Chen", compliance: 30, sections: 9, sectionsComplete: 3, lastUpdated: "5d ago", aiShredded: false },
-  { id: 5, title: "NJDEP Wetlands Assessment & Permitting Program", clientName: "NJDEP", rfpNumber: "NJDEP-ENV-2026-0091", status: "submitted", dueDate: new Date("2026-06-28"), estimatedValue: 650000, serviceLine: "Environmental", coordinator: "R. Kim", compliance: 100, sections: 7, sectionsComplete: 7, lastUpdated: "1w ago", aiShredded: true },
-  { id: 6, title: "PANYNJ Terminal Expansion Special Inspections", clientName: "Port Authority NY/NJ", rfpNumber: "PANYNJ-SI-2026-0055", status: "awarded", dueDate: new Date("2026-05-01"), estimatedValue: 3800000, serviceLine: "Special Inspections", coordinator: "M. Torres", compliance: 100, sections: 11, sectionsComplete: 11, lastUpdated: "2w ago", aiShredded: true },
-];
+// No demo data — all proposals come from the live DB via trpc.proposals.list
 
 function ShredRfpDialog() {
   const [open, setOpen] = useState(false);
@@ -226,20 +219,15 @@ export default function Proposals() {
     onError: (e: any) => toast.error(e.message ?? "Failed to delete"),
   });
 
-  const proposals = (dbProposals && dbProposals.length > 0)
-    ? dbProposals.map((p: any) => ({
-        ...p,
-        serviceLine: "Special Inspections",
-        coordinator: "—",
-        compliance: 75,
-        sections: 8,
-        sectionsComplete: 6,
-        lastUpdated: "Recently",
-        aiShredded: false,
-        dueDate: p.dueDate ? new Date(p.dueDate) : null,
-        estimatedValue: p.estimatedValue ?? 0,
-      }))
-    : DEMO_PROPOSALS;
+  const proposals = (dbProposals ?? []).map((p: any) => ({
+    ...p,
+    compliance: 75,
+    sections: 8,
+    sectionsComplete: 6,
+    aiShredded: false,
+    dueDate: p.dueDate ? new Date(p.dueDate) : null,
+    estimatedValue: p.estimatedValue ?? 0,
+  }));
 
   const filtered = proposals.filter(p => {
     const matchSearch = !search || p.title.toLowerCase().includes(search.toLowerCase()) || (p.clientName ?? "").toLowerCase().includes(search.toLowerCase());

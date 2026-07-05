@@ -40,14 +40,7 @@ const SERVICE_LINE_COLORS: Record<string, string> = {
   "Environmental": "bg-amber-100 text-amber-700 border-amber-200",
 };
 
-const DEMO_STAFF = [
-  { id: 1, name: "Maria Torres, PE", title: "Senior Proposal Coordinator", email: "m.torres@firm.com", phone: "201-555-0101", yearsExperience: 14, serviceLines: JSON.stringify(["Special Inspections", "Construction Management"]), summary: "14 years of AEC proposal management with NJDOT, NYC DDC, and Port Authority experience." },
-  { id: 2, name: "James Rivera, AICP", title: "Business Development Manager", email: "j.rivera@firm.com", phone: "212-555-0102", yearsExperience: 18, serviceLines: JSON.stringify(["Construction Management", "Traffic Engineering"]), summary: "18 years in AEC business development, specializing in NYC agency relationships." },
-  { id: 3, name: "Aisha Patel, PE", title: "Traffic Engineering Lead", email: "a.patel@firm.com", phone: "973-555-0103", yearsExperience: 11, serviceLines: JSON.stringify(["Traffic Engineering"]), summary: "NYCDOT and NJDOT traffic signal and ITS project specialist." },
-  { id: 4, name: "Sarah Chen, RLA", title: "Landscape Architecture Principal", email: "s.chen@firm.com", phone: "212-555-0104", yearsExperience: 16, serviceLines: JSON.stringify(["Landscape / Streetscape"]), summary: "NYC streetscape and parks design with NJ Transit and NYC Parks experience." },
-  { id: 5, name: "Robert Kim, PE", title: "Environmental Practice Lead", email: "r.kim@firm.com", phone: "609-555-0105", yearsExperience: 20, serviceLines: JSON.stringify(["Environmental"]), summary: "NJDEP-licensed environmental engineer specializing in wetlands, Phase I/II ESA, and permitting." },
-  { id: 6, name: "David Okafor, SE", title: "Special Inspections Manager", email: "d.okafor@firm.com", phone: "201-555-0106", yearsExperience: 12, serviceLines: JSON.stringify(["Special Inspections"]), summary: "NICET Level IV certified inspector with extensive NJDOT bridge and structural experience." },
-];
+// No demo data — all staff come from the live DB via trpc.personnel.list
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -505,8 +498,8 @@ function StaffCard({ member, onOpenAttachments }: { member: any; onOpenAttachmen
 export default function Staff() {
   const [search, setSearch] = useState("");
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
-  const { data: dbStaff, isLoading, refetch } = trpc.personnel.list.useQuery(undefined as any);
-  const staff = (dbStaff && dbStaff.length > 0) ? dbStaff : DEMO_STAFF;
+  const { data: dbStaff = [], isLoading, refetch } = trpc.personnel.list.useQuery(undefined as any);
+  const staff = dbStaff;
 
   const filtered = staff.filter((p: any) =>
     !search ||

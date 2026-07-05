@@ -1815,6 +1815,16 @@ export async function seedDefaultSkills(): Promise<void> {
           outputType: def.outputType,
           enabled: true,
         });
+      } else {
+        // Reconcile outputType and templateVariables on existing rows so stale
+        // records don't cause raw-JSON rendering or missing {{evidenceContext}}
+        await db
+          .update(aiSkills)
+          .set({
+            outputType: def.outputType,
+            templateVariables: JSON.stringify(def.templateVariables),
+          })
+          .where(eq(aiSkills.skillType, skillType));
       }
     }
   } catch (err) {

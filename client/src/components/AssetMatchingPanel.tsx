@@ -400,17 +400,12 @@ export default function AssetMatchingPanel({
   const isLoading = loadingProjects || loadingResumes || loadingProposals;
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  // Scroll is owned by the parent Sheet (overflow-y-auto on SheetContent).
+  // This component must NOT create its own scroll container — doing so creates
+  // nested scroll that breaks with 10+ cards.
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        overflowY: "auto",
-        maxHeight: "calc(100vh - 160px)",
-        padding: "0",
-      }}
-    >
-      {/* ── Scrollable content area ── */}
+    <div style={{ display: "flex", flexDirection: "column", padding: "0" }}>
+      {/* ── Content area ── */}
       <div style={{ flex: "1 1 auto", padding: "0 0 8px 0" }}>
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">

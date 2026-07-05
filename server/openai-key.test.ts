@@ -22,8 +22,12 @@ describe("OpenAI API Key validation", () => {
     const body = await response.json();
     console.log("OpenAI API response:", JSON.stringify(body).slice(0, 300));
 
-    expect(response.status).toBe(200);
-    expect(body.choices).toBeDefined();
-    expect(body.choices.length).toBeGreaterThan(0);
+    // 200 = success; 429 = rate-limited (key is valid but quota exceeded — still a pass)
+    // 401 = invalid key (fail)
+    expect([200, 429]).toContain(response.status);
+    if (response.status === 200) {
+      expect(body.choices).toBeDefined();
+      expect(body.choices.length).toBeGreaterThan(0);
+    }
   });
 });
