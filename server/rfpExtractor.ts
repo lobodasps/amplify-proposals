@@ -18,6 +18,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { invokeLLMWithSkill } from "./_core/llmSkill";
 import { getDb } from "./db";
+import type { PdfScanClassification } from "../shared/types";
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
@@ -67,20 +68,52 @@ export function detectFileType(fileName: string, mimeType?: string): FileType {
 
 // ─── PDF Extraction ───────────────────────────────────────────────────────────
 
-async function extractPdf(buffer: Buffer): Promise<{ text: string; pageCount: number; isImagePdf: boolean }> {
+/**
+ * Classify a PDF as text, scanned, or mixed using per-page analysis.
+ *
+ * Strategy:
+ *   1. pdf-parse returns the full text and numpages.
+ *   2. We split the text into per-page buckets using the \f (form-feed) separator
+ *      that pdf-parse inserts between pages.
+ *   3. A page is "image-only" if it has fewer than 50 characters after trimming.
+ *   4. Classification:
+ *      - scanned : ≥ 60% of pages are image-only
+ *      - mixed   : 20–59% of pages are image-only
+ *      - text    : < 20% of pages are image-only
+ *
+ * Returns the full extracted text alongside the classification so the caller
+ * can decide whether to run vision LLM on all pages, some pages, or none.
+ */
+async function extractPdf(buffer: Buffer): Promise<{
+  text: string;
+  pageCount: number;
+  scanClassification: PdfScanClassification;
+  imagePageCount: number;
+}> {
   try {
-    // Dynamic import to avoid issues with pdf-parse's test file detection
     const pdfParseModule = await import("pdf-parse");
     const pdfParse = (pdfParseModule as any).default ?? pdfParseModule;
     const result = await pdfParse(buffer);
     const text = result.text?.trim() ?? "";
     const pageCount = result.numpages ?? 0;
-    // If very little text per page, it's likely a scanned/image PDF
-    const avgCharsPerPage = text.length / Math.max(pageCount, 1);
-    const isImagePdf = avgCharsPerPage < 50;
-    return { text, pageCount, isImagePdf };
+
+    // Per-page analysis: pdf-parse uses \f (form-feed, char code 12) as page separator
+    const pages = text.split("\f");
+    const imagePageCount = pages.filter((p: string) => p.trim().length < 50).length;
+    const imageFraction = pageCount > 0 ? imagePageCount / pageCount : 1;
+
+    let scanClassification: PdfScanClassification;
+    if (imageFraction >= 0.6) {
+      scanClassification = "scanned";
+    } else if (imageFraction >= 0.2) {
+      scanClassification = "mixed";
+    } else {
+      scanClassification = "text";
+    }
+
+    return { text, pageCount, scanClassification, imagePageCount };
   } catch {
-    return { text: "", pageCount: 0, isImagePdf: true };
+    return { text: "", pageCount: 0, scanClassification: "scanned", imagePageCount: 0 };
   }
 }
 
@@ -189,17 +222,36 @@ export async function extractFile(params: {
     const pdfResult = await extractPdf(buffer);
     pageCount = pdfResult.pageCount;
 
-    if (pdfResult.isImagePdf && fileUrl) {
-      // Scanned/image PDF — use vision LLM
+    if (pdfResult.scanClassification === "scanned" && fileUrl) {
+      // All/most pages are image-only — use vision LLM for the whole document
       detectedType = "pdf_image";
       hasImages = true;
       extractionMethod = "vision_llm";
       textContent = await describeWithVision(
         fileUrl,
         fileName,
-        "This appears to be a scanned or image-based PDF."
+        `This appears to be a fully scanned/image-based PDF (${pdfResult.imagePageCount} of ${pdfResult.pageCount} pages had no extractable text).`
       );
+    } else if (pdfResult.scanClassification === "mixed" && fileUrl) {
+      // Some pages are text, some are images — combine both extraction paths
+      detectedType = "pdf_image";
+      hasImages = true;
+      extractionMethod = "pdf_parse+vision_llm";
+      const visionText = await describeWithVision(
+        fileUrl,
+        fileName,
+        `This is a mixed PDF: ${pdfResult.imagePageCount} of ${pdfResult.pageCount} pages are image-only. Describe all image pages in detail, including any text visible in images, tables, diagrams, and forms.`
+      );
+      // Combine: text-extracted content first, then vision supplement for image pages
+      textContent = [
+        pdfResult.text,
+        "\n\n<!-- Vision LLM supplement for image-only pages -->\n",
+        visionText,
+      ]
+        .filter(Boolean)
+        .join("");
     } else {
+      // Fully text-extractable PDF
       textContent = pdfResult.text;
       extractionMethod = "pdf_parse";
       // Check if PDF mentions images/figures

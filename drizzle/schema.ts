@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   timestamp,
+  real,
 } from "drizzle-orm/pg-core";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -983,6 +984,11 @@ export const rfpSessions = pgTable("rfp_sessions", {
   // Live proposal score
   liveScore: integer("liveScore"),
   liveScoreDetails: jsonb("liveScoreDetails"),
+  // Phase 1 — Pipeline Upgrade: evidence provenance storage
+  // Stores evidence bundles assembled for each skill run, keyed by skill name
+  evidenceBundles: jsonb("evidenceBundles"),
+  // Stores the evidence bundle passed to the proposal_scorer for provenance display
+  scorerEvidenceInput: jsonb("scorerEvidenceInput"),
   // Metadata
   createdBy: uuid("createdBy"),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
@@ -1061,8 +1067,16 @@ export const damDocuments = pgTable("dam_documents", {
   // Page count detected before extraction (null for non-PDF or if detection failed)
   pageCount: integer("pageCount"),
 
-  // Tags (comma-separated keywords)
+  // Tags (comma-separated keywords — legacy; normalizedTags is the new retrieval backbone)
   tags: text("tags"),
+
+  // Phase 1 — Pipeline Upgrade: normalized tags and chunk tracking
+  // Array of canonical tag identifiers from normalized_tags table (e.g. ["traffic_engineering", "special_inspections"])
+  normalizedTags: jsonb("normalizedTags").$type<string[]>().default([]),
+  // Number of document_chunks rows created for this document (0 = not yet chunked)
+  chunkCount: integer("chunkCount").default(0).notNull(),
+  // Valid values: pending (not yet chunked), chunked (chunks created), error (chunking failed)
+  chunkStatus: text("chunkStatus").default("pending").notNull(),
 
   // Thumbnail URL for image docTypes (stored in S3, auto-generated on upload)
   thumbnailUrl: text("thumbnailUrl"),
@@ -1179,3 +1193,65 @@ export const providerApiKeys = pgTable("provider_api_keys", {
 
 export type ProviderApiKey = typeof providerApiKeys.$inferSelect;
 export type InsertProviderApiKey = typeof providerApiKeys.$inferInsert;
+
+// ─── Normalized Tags ─────────────────────────────────────────────────────────
+// Controlled vocabulary for service line tags.
+// Replaces free-form comma-separated tag strings with canonical identifiers.
+
+export const normalizedTags = pgTable("normalized_tags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Canonical identifier used in damDocuments.normalizedTags array, e.g. "traffic_engineering"
+  canonical: text("canonical").notNull().unique(),
+  // Human-readable label shown in the UI, e.g. "Traffic Engineering"
+  displayName: text("displayName").notNull(),
+  // Alternative forms that normalize to this tag, e.g. ["traffic eng", "traffic", "Traffic Eng."]
+  aliases: jsonb("aliases").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type NormalizedTag = typeof normalizedTags.$inferSelect;
+export type InsertNormalizedTag = typeof normalizedTags.$inferInsert;
+
+// ─── Document Chunks ─────────────────────────────────────────────────────────
+// Canonical normalized content units extracted from dam_documents.
+// Each chunk is a discrete, typed, provenance-bearing piece of content.
+// This is the central addition of Pipeline Upgrade Phase 1.
+
+export const documentChunks = pgTable("document_chunks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Parent document
+  damDocumentId: uuid("damDocumentId").notNull(),
+  /**
+   * Content type of this chunk. Valid values:
+   *   paragraph, table_row, list_item, highlight, personnel_entry,
+   *   project_summary, certification, evaluation_criterion, scope_item,
+   *   key_date, page_limit, win_theme
+   */
+  chunkType: text("chunkType").notNull(),
+  // Normalized text content of this chunk
+  content: text("content").notNull(),
+  // Page number, sheet name, or section reference in the source document
+  pageRef: text("pageRef"),
+  // Section heading or document section name
+  sectionRef: text("sectionRef"),
+  // Extraction confidence: 1.0 = deterministic, <1.0 = LLM-extracted or vision
+  confidence: real("confidence").default(1.0).notNull(),
+  /**
+   * How this chunk was extracted. Valid values:
+   *   deterministic — rule-based extraction from structured text
+   *   llm_structured — LLM returned structured JSON; chunk derived from it
+   *   llm_vision     — vision LLM transcribed an image or scanned page
+   *   rule_based     — regex/heuristic extraction
+   *   skipped_too_small — image too small to process
+   */
+  extractionMethod: text("extractionMethod").notNull().default("deterministic"),
+  // Type-specific structured data (e.g. for personnel_entry: {name, title, yearsExp, certifications[]})
+  metadata: jsonb("metadata"),
+  // Canonical service line tags from normalized_tags.canonical (e.g. ["traffic_engineering"])
+  serviceLineTags: jsonb("serviceLineTags").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type DocumentChunk = typeof documentChunks.$inferSelect;
+export type InsertDocumentChunk = typeof documentChunks.$inferInsert;

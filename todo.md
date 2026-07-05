@@ -13,6 +13,19 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 
 ## 🟡 Next Up
 
+### Pipeline Upgrade — Phase 1: Schema and Normalization Foundation — COMPLETE
+- [x] Add `document_chunks` table to `drizzle/schema.ts` (id, damDocumentId, chunkType, content, pageRef, sectionRef, confidence, extractionMethod, metadata, serviceLineTags, createdAt)
+- [x] Add `normalized_tags` table to `drizzle/schema.ts` (id, canonical, displayName, aliases)
+- [x] Add `normalizedTags` (text[]), `chunkCount` (int), `chunkStatus` (enum) columns to `damDocuments`
+- [x] Add `evidenceBundles` (jsonb), `scorerEvidenceInput` (jsonb) columns to `rfpSessions`
+- [x] Add `ChunkType`, `ExtractionMethod`, `ChunkStatus`, `PdfScanClassification` types to `shared/types.ts`
+- [x] Add `EvidenceItem`, `EvidenceBundle`, `EvidenceBundleMap`, `CriterionEvidenceCoverage` interfaces to `shared/workflowTypes.ts`
+- [x] Improve scanned PDF detection in `server/rfpExtractor.ts`: per-page analysis, `mixed` classification, combined pdf_parse+vision_llm path
+- [x] Run `pnpm db:push` — migration 0017 applied successfully
+- [x] TypeScript: zero errors
+- [x] 24/25 tests pass (1 pre-existing OpenAI 429 rate limit failure, unrelated)
+- [x] Checkpoint saved — stopped for review before Phase 2
+
 - [ ] Step 4 Phase B — Citation-backed proposal generation (inject specific project sheet excerpts, resume passages, and past proposal language as cited evidence into each section)
 - [ ] Section Scorecard — full scorer output display (criteria coverage %, gap list, improvement suggestions, win theme coverage)
 - [ ] RequirementsMatrixViewer renderer — table with requirementId, requirement text, proposalSection, status badge (for requirements_matrix_builder skill)

@@ -276,3 +276,73 @@ export function computeResumeState(
     erroredSkill,
   };
 }
+
+// ─── Pipeline Upgrade Phase 1 — Evidence Bundle Types ────────────────────────
+// These types define the evidence provenance layer added in Phase 1.
+// Phase 2 will populate them during chunk creation; Phase 3 will use them
+// in retrieval; Phase 4 will inject them into generation prompts.
+
+/**
+ * A single piece of evidence drawn from a document_chunks row.
+ * Carries full provenance so generation prompts can cite sources precisely.
+ */
+export interface EvidenceItem {
+  /** document_chunks.id */
+  chunkId: string;
+  /** dam_documents.id */
+  damDocumentId: string;
+  /** Human-readable document name (dam_documents.name) */
+  documentName: string;
+  /** dam_documents.docType (e.g. "project_sheet", "resume", "past_proposal") */
+  docType: string;
+  /** document_chunks.chunkType */
+  chunkType: string;
+  /** Normalized text content of the chunk */
+  content: string;
+  /** Page or section reference within the source document */
+  pageRef?: string;
+  /** Section heading within the source document */
+  sectionRef?: string;
+  /** Composite relevance score from Phase 3 hybrid retrieval (0–1) */
+  relevanceScore: number;
+  /** Canonical service line tags on this chunk */
+  serviceLineTags: string[];
+}
+
+/**
+ * A collection of evidence items assembled for a single skill run.
+ * Stored in rfpSessions.evidenceBundles keyed by workflow skill name.
+ */
+export interface EvidenceBundle {
+  /** Workflow skill name this bundle was assembled for */
+  skillName: string;
+  /** ISO timestamp when this bundle was assembled */
+  assembledAt: string;
+  /** Total number of candidate chunks evaluated before top-K selection */
+  candidateCount: number;
+  /** Top-K evidence items selected for injection into the skill prompt */
+  items: EvidenceItem[];
+  /** Canonical service line tags used to filter candidates */
+  queryTags: string[];
+  /** Free-text query used for full-text search pass */
+  queryText?: string;
+}
+
+/**
+ * Map of evidence bundles stored in rfpSessions.evidenceBundles.
+ * Keyed by WorkflowSkillName.
+ */
+export type EvidenceBundleMap = Partial<Record<string, EvidenceBundle>>;
+
+/**
+ * Phase 5 addition: evidence coverage per evaluation criterion.
+ * Stored in rfpSessions.scorerEvidenceInput after Phase 4 is live.
+ */
+export interface CriterionEvidenceCoverage {
+  criterionId: string;
+  criterionTitle: string;
+  /** 0–1 ratio of claims in the generated section that are backed by evidence */
+  evidenceCoverage: number;
+  /** Claims in the generated section that could not be matched to any evidence item */
+  unsupportedClaims: string[];
+}

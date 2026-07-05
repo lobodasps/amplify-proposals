@@ -234,3 +234,54 @@ export interface FirmProfile {
   preferredAgencies: string[];
   avoidedAgencies: string[];
 }
+
+// ─── Pipeline Upgrade Phase 1 — Chunk and Retrieval Types ────────────────────
+
+/**
+ * Content type of a document_chunks row.
+ * Determines how the chunk is used in retrieval and generation.
+ */
+export type ChunkType =
+  | "paragraph"
+  | "table_row"
+  | "list_item"
+  | "highlight"
+  | "personnel_entry"
+  | "project_summary"
+  | "certification"
+  | "evaluation_criterion"
+  | "scope_item"
+  | "key_date"
+  | "page_limit"
+  | "win_theme";
+
+/**
+ * How a chunk was extracted from its source document.
+ *   deterministic    — rule-based extraction from structured text (confidence: 1.0)
+ *   llm_structured   — LLM returned structured JSON; chunk derived from it (confidence: ~0.85)
+ *   llm_vision       — vision LLM transcribed an image or scanned page (confidence: ~0.75–0.80)
+ *   rule_based       — regex/heuristic extraction (confidence: 0.9)
+ *   skipped_too_small — image too small to process (confidence: 0.0)
+ */
+export type ExtractionMethod =
+  | "deterministic"
+  | "llm_structured"
+  | "llm_vision"
+  | "rule_based"
+  | "skipped_too_small";
+
+/**
+ * Chunk creation status on a dam_documents row.
+ *   pending  — document indexed but chunks not yet created
+ *   chunked  — document_chunks rows created successfully
+ *   error    — chunk creation failed (see dam_documents.extractedText for error details)
+ */
+export type ChunkStatus = "pending" | "chunked" | "error";
+
+/**
+ * Scanned PDF classification result.
+ *   text    — all pages are text-extractable
+ *   scanned — all/most pages are image-only (>60% below 50 chars/page)
+ *   mixed   — 20–60% of pages are image-only; requires both pdf-parse and vision LLM
+ */
+export type PdfScanClassification = "text" | "scanned" | "mixed";
