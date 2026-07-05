@@ -162,3 +162,12 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] `server/phase7.test.ts`: 26 tests covering all tracks (5 Track A, 10 Track B, 11 Track C)
 - [x] TypeScript: zero errors; 185/187 tests pass (2 pre-existing API rate-limit failures: OpenAI 429, Gemini 503)
 - [x] Checkpoint saved — stopped for review before Phase 8
+
+### Pipeline Upgrade — Phase 8 Track C: Generation Skill Prompt Grounding — COMPLETE
+- [x] Add `{{evidenceContext}}` to `win_theme_generator` userPromptTemplate and templateVariables; added 4-rule GROUNDING RULES block to systemPrompt
+- [x] Add `{{evidenceContext}}` to `technical_approach_writer` userPromptTemplate and templateVariables; added 4-rule GROUNDING RULES block to systemPrompt
+- [x] Add `{{evidenceContext}}` to `key_personnel_writer` userPromptTemplate and templateVariables; added 4-rule GROUNDING RULES block to systemPrompt
+- [x] Add `{{evidenceContext}}` to `project_experience_writer` userPromptTemplate and templateVariables; added 4-rule GROUNDING RULES block to systemPrompt
+- [x] Write `server/phase8.test.ts`: 57 tests covering evidenceContext in templateVariables (4), {{evidenceContext}} token in userPromptTemplate (4), grounding instruction phrases (12 = 4 skills × 3 phrases), legacy variable preservation (33 = all legacy vars across 4 skills), evidenceContext last in array (4), proposal_scorer Phase 5 regression (2), outputType preservation (4)
+- [x] TypeScript: zero errors; 243/244 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review

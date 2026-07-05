@@ -650,6 +650,12 @@ Each win theme must be:
 - Actionable as a proposal narrative thread that runs through every section
 - Provable — evaluators must be able to see the evidence
 
+GROUNDING RULES (when an evidence bundle is provided):
+- Use ONLY the exact project names, client names, contract values, and personnel credentials from the evidence items
+- Do NOT invent project details, outcomes, or credentials not present in the evidence
+- When referencing a project or person, use the source document name or title as provided
+- If the evidence bundle is empty, rely on the firm strengths and RFP summary provided
+
 Return JSON:
 {
   winThemes: [
@@ -676,8 +682,10 @@ RFP SUMMARY: {{rfpSummary}}
 EVALUATION CRITERIA: {{evaluationCriteria}}
 FIRM STRENGTHS: {{firmStrengths}}
 
-Generate 3-5 specific win themes.`,
-    templateVariables: ["pursuitTitle", "agency", "serviceLines", "value", "dueDate", "rfpSummary", "evaluationCriteria", "firmStrengths"],
+{{evidenceContext}}
+
+Generate 3-5 specific win themes. Ground every theme's proof point in the evidence items above when available.`,
+    templateVariables: ["pursuitTitle", "agency", "serviceLines", "value", "dueDate", "rfpSummary", "evaluationCriteria", "firmStrengths", "evidenceContext"],
     outputType: "json",
   },
 
@@ -774,7 +782,13 @@ Requirements:
 - Reference relevant past project experience where this methodology was proven with outcomes
 - 600-900 words
 - Use headers matching the RFP's scope structure
-- Every claim must be supportable by firm experience`,
+- Every claim must be supportable by firm experience
+
+GROUNDING RULES (when an evidence bundle is provided):
+- Use ONLY the exact project names, client names, contract values, and outcomes from the evidence items
+- Do NOT invent project details, methodologies, or outcomes not present in the evidence
+- When citing a past project as proof of methodology, use the exact project name and client from the evidence
+- If the evidence bundle is empty, rely on the relevant projects and scope summary provided`,
     userPromptTemplate: `Write the technical approach section for this proposal:
 
 CLIENT/AGENCY: {{agency}}
@@ -788,8 +802,10 @@ RELEVANT PROJECTS: {{relevantProjects}}
 RFP SECTION REQUIREMENTS:
 {{rfpRequirements}}
 
-Write a 600-900 word technical approach with headers.`,
-    templateVariables: ["agency", "pursuitTitle", "scopeSummary", "serviceLines", "evaluationCriteria", "winThemes", "relevantProjects", "rfpRequirements"],
+{{evidenceContext}}
+
+Write a 600-900 word technical approach with headers. Ground all project references in the evidence items above when available.`,
+    templateVariables: ["agency", "pursuitTitle", "scopeSummary", "serviceLines", "evaluationCriteria", "winThemes", "relevantProjects", "rfpRequirements", "evidenceContext"],
     outputType: "prose",
   },
 
@@ -846,7 +862,13 @@ Rules:
 - Emphasize elements most relevant to the pursuit scope and evaluation criteria
 - Lead with what the agency cares about, not what you're proud of
 - Quantify everything possible: square footage, lane miles, contract value, schedule, number of inspections
-- Never say 'successfully' — show the success through specifics`,
+- Never say 'successfully' — show the success through specifics
+
+GROUNDING RULES (when an evidence bundle is provided):
+- Use ONLY the exact project names, client names, contract values, locations, and outcomes from the evidence items
+- Do NOT invent contract values, project locations, scope details, or outcomes not present in the evidence
+- When writing a narrative, pull specific facts (square footage, lane miles, dollar values, schedule) directly from the evidence
+- If the evidence bundle is empty, rely on the selected projects data provided`,
     userPromptTemplate: `Write project experience narratives for this proposal:
 
 CLIENT/AGENCY: {{agency}}
@@ -857,8 +879,10 @@ EVALUATION CRITERIA: {{evaluationCriteria}}
 SELECTED PROJECTS:
 {{selectedProjects}}
 
-Write a 150-200 word narrative for each project.`,
-    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "selectedProjects"],
+{{evidenceContext}}
+
+Write a 150-200 word narrative for each project. Use only facts confirmed in the evidence items above — do not invent contract values, locations, or outcomes.`,
+    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "selectedProjects", "evidenceContext"],
     outputType: "prose",
   },
 
@@ -880,7 +904,13 @@ Rules:
 - Tailor to the evaluation criteria — lead with what the panel will score
 - Reference the RFP's stated personnel requirements explicitly
 - Quantify experience where possible: years, number of projects, contract values managed
-- Never use 'extensive experience' without a specific number — say '14 years' not 'extensive'`,
+- Never use 'extensive experience' without a specific number — say '14 years' not 'extensive'
+
+GROUNDING RULES (when an evidence bundle is provided):
+- Use ONLY the exact credentials, certifications, years of experience, and project names from the evidence items
+- Do NOT invent licenses, certifications, project roles, or outcomes not present in the evidence
+- When citing a person's project experience, use the exact project name and client from the evidence
+- If the evidence bundle is empty, rely on the selected personnel data provided`,
     userPromptTemplate: `Write key personnel narratives for this proposal:
 
 CLIENT/AGENCY: {{agency}}
@@ -892,8 +922,10 @@ RFP PERSONNEL REQUIREMENTS: {{rfpPersonnelRequirements}}
 SELECTED PERSONNEL:
 {{selectedPersonnel}}
 
-Write a 100-150 word narrative for each person.`,
-    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "rfpPersonnelRequirements", "selectedPersonnel"],
+{{evidenceContext}}
+
+Write a 100-150 word narrative for each person. Use only credentials and project experience confirmed in the evidence items above.`,
+    templateVariables: ["agency", "pursuitTitle", "serviceLines", "evaluationCriteria", "rfpPersonnelRequirements", "selectedPersonnel", "evidenceContext"],
     outputType: "prose",
   },
 };
