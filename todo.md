@@ -26,6 +26,14 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] 24/25 tests pass (1 pre-existing OpenAI 429 rate limit failure, unrelated)
 - [x] Checkpoint saved — stopped for review before Phase 2
 
+### Pipeline Upgrade — Phase 2: Chunk Creation in triggerExtract + Backfill — COMPLETE
+- [x] Write `server/chunkBuilder.ts` — pure function `buildChunksFromDocument(doc, extractedMeta)` implementing locked docType→ChunkType mapping
+- [x] Wire chunk creation into `triggerExtract` Path 0 (image), Path A (xml_shredder), Path B (llm_single_pass): delete-then-insert, set chunkStatus/chunkCount, fail-safe (chunk error must not break extraction success)
+- [x] Add `backfillChunks` admin procedure to `dam.ts`: batch process all documents with `chunkStatus = 'pending'`, per-document error isolation, progress logging
+- [x] Write `server/chunkBuilder.test.ts` unit tests: 30 tests covering all docTypes, idempotency, 80-char threshold, blank-skip, exempt short chunks
+- [x] TypeScript: zero errors; 54/55 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review before Phase 3
+
 - [ ] Step 4 Phase B — Citation-backed proposal generation (inject specific project sheet excerpts, resume passages, and past proposal language as cited evidence into each section)
 - [ ] Section Scorecard — full scorer output display (criteria coverage %, gap list, improvement suggestions, win theme coverage)
 - [ ] RequirementsMatrixViewer renderer — table with requirementId, requirement text, proposalSection, status badge (for requirements_matrix_builder skill)

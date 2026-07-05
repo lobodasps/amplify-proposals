@@ -17,7 +17,8 @@ import { z } from "zod";
 import { eq, desc, and, sql, like } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { damDocuments, personnel, projects } from "../../drizzle/schema";
+import { damDocuments, personnel, projects, documentChunks } from "../../drizzle/schema";
+import { buildChunksFromDocument } from "../chunkBuilder";
 import { storageGet } from "../storage";
 import { invokeLLM, type Message } from "../_core/llm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
@@ -734,6 +735,24 @@ export const damRouter = router({
             tagArr.join(" "),
           ].filter(Boolean).join("\n");
 
+          // Build chunks before updating the document row
+          const imageChunks = buildChunksFromDocument(
+            { id: doc.id, docType: "image", title: doc.title ?? doc.fileName },
+            captionData
+          );
+          let imageChunkCount = 0;
+          let imageChunkStatus: string = "chunked";
+          try {
+            await db.delete(documentChunks).where(eq(documentChunks.damDocumentId, doc.id));
+            if (imageChunks.length > 0) {
+              await db.insert(documentChunks).values(imageChunks);
+            }
+            imageChunkCount = imageChunks.length;
+          } catch (chunkErr: any) {
+            console.error(`[triggerExtract] chunk insert failed for ${doc.id}:`, chunkErr?.message);
+            imageChunkStatus = "error";
+          }
+
           await db
             .update(damDocuments)
             .set({
@@ -747,6 +766,8 @@ export const damRouter = router({
               imageQuality: captionData.qualityRating ?? null,
               hasPersonnel: captionData.hasPersonnel ?? null,
               structureType: captionData.structureType ?? null,
+              chunkCount: imageChunkCount,
+              chunkStatus: imageChunkStatus,
             })
             .where(eq(damDocuments.id, input.id));
 
@@ -756,6 +777,7 @@ export const damRouter = router({
             caption: captionData.caption ?? null,
             structureType: captionData.structureType ?? null,
             qualityRating: captionData.qualityRating ?? null,
+            chunkCount: imageChunkCount,
           };
         }
 
@@ -797,6 +819,25 @@ export const damRouter = router({
             pageCount: detectedPageCount,
           });
 
+          // Build and persist chunks (fail-safe: chunk error must not break extraction)
+          const shredderChunks = buildChunksFromDocument(
+            { id: doc.id, docType: doc.docType, title: doc.title ?? doc.fileName,
+              projectName: doc.projectName ?? undefined },
+            result.extractedMeta as Record<string, any>
+          );
+          let shredderChunkCount = 0;
+          let shredderChunkStatus: string = "chunked";
+          try {
+            await db.delete(documentChunks).where(eq(documentChunks.damDocumentId, doc.id));
+            if (shredderChunks.length > 0) {
+              await db.insert(documentChunks).values(shredderChunks);
+            }
+            shredderChunkCount = shredderChunks.length;
+          } catch (chunkErr: any) {
+            console.error(`[triggerExtract/xml_shredder] chunk insert failed for ${doc.id}:`, chunkErr?.message);
+            shredderChunkStatus = "error";
+          }
+
           await db
             .update(damDocuments)
             .set({
@@ -809,6 +850,8 @@ export const damRouter = router({
               extractionMethod: "xml_shredder",
               processingStatus: "indexed",
               processingError: null,
+              chunkCount: shredderChunkCount,
+              chunkStatus: shredderChunkStatus,
             })
             .where(eq(damDocuments.id, input.id));
 
@@ -817,6 +860,7 @@ export const damRouter = router({
             extractionMethod: "xml_shredder",
             pageCount: result.pageCount,
             imageCount: result.extractedMeta.images?.length ?? 0,
+            chunkCount: shredderChunkCount,
           };
         }
 
@@ -877,6 +921,26 @@ export const damRouter = router({
         const resolvedFirmRole: string | null =
           typeof extracted.firmRole === "string" ? extracted.firmRole : null;
 
+        // Build and persist chunks (fail-safe: chunk error must not break extraction)
+        const singlePassChunks = buildChunksFromDocument(
+          { id: doc.id, docType: doc.docType, title: doc.title ?? doc.fileName,
+            staffName: doc.staffName ?? undefined,
+            projectName: doc.projectName ?? undefined },
+          extracted
+        );
+        let singlePassChunkCount = 0;
+        let singlePassChunkStatus: string = "chunked";
+        try {
+          await db.delete(documentChunks).where(eq(documentChunks.damDocumentId, doc.id));
+          if (singlePassChunks.length > 0) {
+            await db.insert(documentChunks).values(singlePassChunks);
+          }
+          singlePassChunkCount = singlePassChunks.length;
+        } catch (chunkErr: any) {
+          console.error(`[triggerExtract/llm_single_pass] chunk insert failed for ${doc.id}:`, chunkErr?.message);
+          singlePassChunkStatus = "error";
+        }
+
         await db
           .update(damDocuments)
           .set({
@@ -889,6 +953,8 @@ export const damRouter = router({
             extractionMethod: chosenMethod,
             processingStatus: "indexed",
             processingError: null,
+            chunkCount: singlePassChunkCount,
+            chunkStatus: singlePassChunkStatus,
           })
           .where(eq(damDocuments.id, input.id));
 
@@ -897,6 +963,7 @@ export const damRouter = router({
           extractionMethod: chosenMethod,
           pageCount: detectedPageCount,
           imageCount: extracted.images?.length ?? 0,
+          chunkCount: singlePassChunkCount,
         };
       } catch (err: any) {
         await db
@@ -1461,7 +1528,7 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         conditions.push(sql`(${sql.join(typeConditions, sql` OR `)})`);
       }
 
-      const rows = await db
+            const rows = await db
         .select({
           id: damDocuments.id,
           title: damDocuments.title,
@@ -1476,7 +1543,110 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         .where(and(...conditions))
         .orderBy(desc(damDocuments.createdAt))
         .limit(15);
-
       return rows;
+    }),
+
+  // ── Admin: backfill document_chunks for all indexed documents ─────────────
+  // Processes documents with chunkStatus = 'pending' (or 'error' if retryErrors=true).
+  // Per-document error isolation: one failure does not stop the batch.
+  // Safe to run multiple times — delete-then-insert ensures idempotency.
+  backfillChunks: protectedProcedure
+    .input(
+      z.object({
+        batchSize: z.number().int().min(1).max(100).default(50),
+        retryErrors: z.boolean().default(false),
+        docType: z.string().optional(), // limit to a specific docType
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Admin-only: batch backfill is a destructive bulk operation
+      if (ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      // Build filter: pending docs (and optionally error docs)
+      const statusValues = input.retryErrors
+        ? ["pending", "error"]
+        : ["pending"];
+
+      const conditions = [
+        sql`${damDocuments.chunkStatus} = ANY(ARRAY[${sql.join(statusValues.map(v => sql`${v}`), sql`, `)}])`,
+        sql`${damDocuments.processingStatus} = 'indexed'`,
+        sql`${damDocuments.extractedMeta} IS NOT NULL`,
+      ];
+      if (input.docType) {
+        conditions.push(eq(damDocuments.docType, input.docType));
+      }
+
+      const candidates = await db
+        .select({
+          id: damDocuments.id,
+          docType: damDocuments.docType,
+          title: damDocuments.title,
+          fileName: damDocuments.fileName,
+          staffName: damDocuments.staffName,
+          projectName: damDocuments.projectName,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(and(...conditions))
+        .limit(input.batchSize);
+
+      let processed = 0;
+      let succeeded = 0;
+      let failed = 0;
+      const errors: Array<{ id: string; docType: string; error: string }> = [];
+
+      for (const doc of candidates) {
+        processed++;
+        try {
+          const meta = (doc.extractedMeta ?? {}) as Record<string, any>;
+          const chunks = buildChunksFromDocument(
+            {
+              id: doc.id,
+              docType: doc.docType,
+              title: doc.title ?? doc.fileName,
+              staffName: doc.staffName ?? undefined,
+              projectName: doc.projectName ?? undefined,
+            },
+            meta
+          );
+
+          // Delete-then-insert for idempotency
+          await db.delete(documentChunks).where(eq(documentChunks.damDocumentId, doc.id));
+          if (chunks.length > 0) {
+            await db.insert(documentChunks).values(chunks);
+          }
+
+          await db
+            .update(damDocuments)
+            .set({ chunkCount: chunks.length, chunkStatus: "chunked" })
+            .where(eq(damDocuments.id, doc.id));
+
+          succeeded++;
+          console.log(`[backfillChunks] ${doc.id} (${doc.docType}): ${chunks.length} chunks`);
+        } catch (err: any) {
+          failed++;
+          const msg = err?.message ?? "Unknown error";
+          errors.push({ id: doc.id, docType: doc.docType, error: msg });
+          console.error(`[backfillChunks] ${doc.id} (${doc.docType}) failed:`, msg);
+          // Mark as error so retryErrors=true can pick it up next run
+          await db
+            .update(damDocuments)
+            .set({ chunkStatus: "error" })
+            .where(eq(damDocuments.id, doc.id))
+            .catch(() => {}); // best-effort
+        }
+      }
+
+      return {
+        processed,
+        succeeded,
+        failed,
+        remaining: candidates.length === input.batchSize ? "more" : "none",
+        errors,
+      };
     }),
 });
