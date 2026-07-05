@@ -934,7 +934,9 @@ function resolveDefaultModel(provider: Provider): string {
  * 3. ENV-level keys (GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY)
  * Never falls back to Manus built-in — this product must work outside of Manus.
  */
-let _cachedProviderApiKeys: Array<{ id: string; provider: string; apiKey: string; baseUrl: string | null; defaultModel: string | null; isDefault: boolean }> | null = null;
+export type SdkType = "openai_compatible" | "google_gemini" | "anthropic";
+
+let _cachedProviderApiKeys: Array<{ id: string; provider: string; sdkType: SdkType; apiKey: string; baseUrl: string | null; defaultModel: string | null; isDefault: boolean }> | null = null;
 let _providerKeysCacheTimestamp = 0;
 const PROVIDER_KEYS_CACHE_TTL_MS = 30_000; // 30s cache
 
@@ -951,6 +953,7 @@ export async function loadProviderApiKeysFromDb(): Promise<typeof _cachedProvide
       _cachedProviderApiKeys = rows.map((r) => ({
         id: r.id,
         provider: r.provider,
+        sdkType: (r.sdkType ?? "openai_compatible") as SdkType,
         apiKey: r.apiKey,
         baseUrl: r.baseUrl ?? null,
         defaultModel: r.defaultModel ?? null,
@@ -972,7 +975,7 @@ export function invalidateProviderKeysCache(): void {
 }
 
 /** Get the default provider key row (isDefault=true), or null if none configured */
-export async function getDefaultProviderKey(): Promise<{ provider: string; apiKey: string; baseUrl: string | null; defaultModel: string | null } | null> {
+export async function getDefaultProviderKey(): Promise<{ provider: string; sdkType: SdkType; apiKey: string; baseUrl: string | null; defaultModel: string | null } | null> {
   const keys = await loadProviderApiKeysFromDb();
   if (!keys) return null;
   return keys.find((k) => k.isDefault) ?? null;
@@ -1007,6 +1010,25 @@ async function loadLegacyProviderKeysFromDb(): Promise<Record<string, string>> {
     // DB unavailable
   }
   return _cachedLegacyKeys ?? {};
+}
+
+/**
+ * Resolves the sdkType for a provider string.
+ * Looks up the provider_api_keys table first (explicit sdkType stored per key).
+ * Falls back to a heuristic for legacy/well-known provider names.
+ * This is the ONLY place that maps provider strings to SDK routing — routing code
+ * must NEVER branch on provider name strings directly.
+ */
+async function resolveSdkType(provider: Provider): Promise<SdkType> {
+  const providerKeys = await loadProviderApiKeysFromDb();
+  if (providerKeys) {
+    const match = providerKeys.find((k) => k.provider === provider);
+    if (match) return match.sdkType;
+  }
+  // Legacy heuristic for well-known names (backward compat only)
+  if (provider === "google_gemini" || provider === "manus_builtin") return "google_gemini";
+  if (provider === "anthropic") return "anthropic";
+  return "openai_compatible";
 }
 
 async function resolveApiKey(provider: Provider): Promise<string> {
@@ -1067,10 +1089,10 @@ function interpolate(template: string, vars: Record<string, string>): string {
  * Manus built-in (which routes to Gemini via OpenAI-compat) also supports file_url.
  * For other providers, file_url parts are converted to a text note explaining the file.
  */
-function sanitizeMessagesForProvider(messages: SkillMessage[], provider: Provider): SkillMessage[] {
-  // google_gemini is handled by callGeminiNative which does its own conversion
-  // manus_builtin routes to Gemini via OpenAI-compat which supports file_url
-  const supportsFileUrl = provider === "google_gemini" || provider === "manus_builtin";
+function sanitizeMessagesForProvider(messages: SkillMessage[], sdkTypeOrProvider: SdkType | string): SkillMessage[] {
+  // google_gemini SDK handles file_url natively via callGeminiNative
+  // All other SDK types (openai_compatible, anthropic) require stripping file_url parts
+  const supportsFileUrl = sdkTypeOrProvider === "google_gemini" || sdkTypeOrProvider === "manus_builtin";
   if (supportsFileUrl) return messages;
 
   return messages.map((msg) => {
@@ -1534,6 +1556,8 @@ export async function invokeLLMWithSkill(
     : defaults?.defaultProvider ?? "google_gemini") as Provider;
   const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
   const apiKey = await resolveApiKey(provider);
+  // sdkType drives routing — decoupled from the provider name string
+  const sdkType = await resolveSdkType(provider);
   const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
   const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults?.userPromptTemplate ?? "";
 
@@ -1553,28 +1577,27 @@ export async function invokeLLMWithSkill(
   }
 
   // 3. Sanitize content parts for the target provider
-  messages = sanitizeMessagesForProvider(messages, provider);
+  messages = sanitizeMessagesForProvider(messages, sdkType);
 
-  // 4. Dispatch to provider
+  // 4. Dispatch to provider — branch on sdkType, NEVER on provider name string
   let tokensIn = 0;
   let tokensOut = 0;
   let result: SkillInvokeResult;
 
   try {
-    if (provider === "google_gemini" || provider === "manus_builtin") {
+    if (sdkType === "google_gemini") {
       // Native Google Generative AI SDK — full file_url/fileUri support
-      // manus_builtin is treated as google_gemini for backward compat
       const resp = await callGeminiNative(apiKey, model, messages, responseFormat, maxTokens, params.onRetry);
       result = resp.result;
       tokensIn = resp.tokensIn;
       tokensOut = resp.tokensOut;
-    } else if (provider === "anthropic") {
+    } else if (sdkType === "anthropic") {
       const resp = await callAnthropic(apiKey, model, messages, responseFormat, maxTokens);
       result = resp.result;
       tokensIn = resp.tokensIn;
       tokensOut = resp.tokensOut;
     } else {
-      // OpenAI, Azure, custom → OpenAI-compatible endpoint
+      // openai_compatible — covers OpenAI, Azure, Mistral, Groq, Together, DeepSeek, etc.
       const endpoint = resolveEndpoint(provider, skillRow?.baseUrl);
       const resp = await callOpenAICompat(endpoint, apiKey, model, messages, responseFormat, maxTokens);
       result = resp.result;
@@ -1619,9 +1642,10 @@ export async function invokeLLMWithSkill(
 
     if (defaultProviderKey && defaultProviderKey.provider !== provider) {
       const fallbackProvider = defaultProviderKey.provider as Provider;
+      const fallbackSdkType = defaultProviderKey.sdkType;
       const fallbackModel = defaultProviderKey.defaultModel || resolveDefaultModel(fallbackProvider);
       console.warn(
-        `[llmSkill] ${provider} failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to default provider: ${fallbackProvider}/${fallbackModel}`
+        `[llmSkill] ${provider} (sdkType=${sdkType}) failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to default provider: ${fallbackProvider} (sdkType=${fallbackSdkType})/${fallbackModel}`
       );
       try {
         const fallbackApiKey = defaultProviderKey.apiKey;
@@ -1629,19 +1653,21 @@ export async function invokeLLMWithSkill(
         let fallbackTokensIn = 0;
         let fallbackTokensOut = 0;
 
-        const fallbackMessages = sanitizeMessagesForProvider(messages, fallbackProvider);
+        // Sanitize and dispatch using fallback sdkType — not the fallback provider name
+        const fallbackMessages = sanitizeMessagesForProvider(messages, fallbackSdkType);
 
-        if (fallbackProvider === "google_gemini" || fallbackProvider === "manus_builtin") {
+        if (fallbackSdkType === "google_gemini") {
           const resp = await callGeminiNative(fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens, params.onRetry);
           fallbackResult = resp.result;
           fallbackTokensIn = resp.tokensIn;
           fallbackTokensOut = resp.tokensOut;
-        } else if (fallbackProvider === "anthropic") {
+        } else if (fallbackSdkType === "anthropic") {
           const resp = await callAnthropic(fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens);
           fallbackResult = resp.result;
           fallbackTokensIn = resp.tokensIn;
           fallbackTokensOut = resp.tokensOut;
         } else {
+          // openai_compatible
           const fallbackEndpoint = resolveEndpoint(fallbackProvider, defaultProviderKey.baseUrl);
           const resp = await callOpenAICompat(fallbackEndpoint, fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens);
           fallbackResult = resp.result;

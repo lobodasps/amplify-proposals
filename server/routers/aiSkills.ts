@@ -28,6 +28,8 @@ export const providerApiKeysRouter = router({
         name: z.string().min(1),
         /** Free-form provider identifier — e.g. "openai", "google_gemini", "mistral", "together", or any custom string */
         provider: z.string().min(1),
+        /** SDK routing type — decoupled from provider name */
+        sdkType: z.enum(["openai_compatible", "google_gemini", "anthropic"]).optional().default("openai_compatible"),
         // Use "__KEEP_EXISTING__" to preserve the current API key when editing
         apiKey: z.string().min(1),
         baseUrl: z.string().nullable().optional(),
@@ -49,6 +51,7 @@ export const providerApiKeysRouter = router({
         const updatePayload: Record<string, unknown> = {
           name: input.name,
           provider: input.provider,
+          sdkType: input.sdkType ?? "openai_compatible",
           baseUrl: input.baseUrl ?? null,
           defaultModel: input.defaultModel ?? null,
           isDefault: input.isDefault ?? false,
@@ -69,6 +72,7 @@ export const providerApiKeysRouter = router({
         await db.insert(providerApiKeys).values({
           name: input.name,
           provider: input.provider,
+          sdkType: input.sdkType ?? "openai_compatible",
           apiKey: input.apiKey,
           baseUrl: input.baseUrl ?? null,
           defaultModel: input.defaultModel ?? null,
@@ -112,24 +116,31 @@ export const providerApiKeysRouter = router({
   testConnection: protectedProcedure
     .input(
       z.object({
-        /** Free-form provider identifier — same values stored in provider_api_keys.provider */
+        /** Free-form provider identifier — stored in provider_api_keys.provider (NOT used for routing) */
         provider: z.string().min(1),
+        /**
+         * SDK routing type — determines which client library / HTTP format to use.
+         * Must be one of: "openai_compatible" | "google_gemini" | "anthropic"
+         * If omitted, falls back to legacy heuristic (google_gemini/anthropic by name, else openai_compatible).
+         */
+        sdkType: z.enum(["openai_compatible", "google_gemini", "anthropic"]).optional(),
         /** Raw API key to test — required unless existingId is provided */
         apiKey: z.string().optional(),
         /** ID of a saved key — used when the user hasn't entered a new key */
         existingId: z.string().uuid().optional(),
-        /** Base URL for Azure / custom providers */
+        /** Base URL for OpenAI-compatible providers that aren't api.openai.com */
         baseUrl: z.string().nullable().optional(),
-        /** Model to ping (optional; falls back to provider default) */
+        /** Model to ping (optional; falls back to SDK default) */
         model: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
       const start = Date.now();
 
-      // Resolve the API key
+      // Resolve the API key and base URL
       let resolvedKey = input.apiKey;
       let resolvedBaseUrl = input.baseUrl ?? null;
+      let resolvedSdkType = input.sdkType;
 
       if (!resolvedKey && input.existingId) {
         const db = await getDb();
@@ -138,17 +149,27 @@ export const providerApiKeysRouter = router({
         if (!rows[0]) throw new Error("Provider key not found.");
         resolvedKey = rows[0].apiKey;
         resolvedBaseUrl = resolvedBaseUrl ?? rows[0].baseUrl ?? null;
+        // Use the saved sdkType if not explicitly provided in the request
+        if (!resolvedSdkType) resolvedSdkType = (rows[0].sdkType ?? "openai_compatible") as "openai_compatible" | "google_gemini" | "anthropic";
       }
 
       if (!resolvedKey) throw new Error("No API key provided.");
 
-      // Minimal test prompt
+      // Final sdkType: explicit input > saved row > legacy heuristic
+      const sdkType: "openai_compatible" | "google_gemini" | "anthropic" =
+        resolvedSdkType ??
+        (input.provider === "google_gemini" || input.provider === "manus_builtin" ? "google_gemini" :
+          input.provider === "anthropic" ? "anthropic" : "openai_compatible");
+
+      // Minimal test prompt — this is a REAL inference call, not a health check.
+      // A model typo will fail here, not at proposal generation time.
       const testMessages = [
         { role: "user" as const, content: "Reply with exactly one word: OK" },
       ];
 
       try {
-        if (input.provider === "google_gemini") {
+        // Branch on sdkType — NEVER on provider name string
+        if (sdkType === "google_gemini") {
           const { GoogleGenerativeAI } = await import("@google/generative-ai");
           const genAI = new GoogleGenerativeAI(resolvedKey);
           const model = input.model || "gemini-2.0-flash";
@@ -157,7 +178,7 @@ export const providerApiKeysRouter = router({
           const text = result.response.text()?.trim();
           return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text?.slice(0, 60)}"` };
 
-        } else if (input.provider === "anthropic") {
+        } else if (sdkType === "anthropic") {
           const model = input.model || "claude-3-haiku-20240307";
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -181,15 +202,12 @@ export const providerApiKeysRouter = router({
           return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text.slice(0, 60)}"` };
 
         } else {
-          // OpenAI, Azure, custom, or any unknown provider — treat as OpenAI-compatible
-          const isAzure = input.provider === "azure_openai";
+          // openai_compatible — covers OpenAI, Azure, Mistral, Groq, Together, DeepSeek, Fireworks, Ollama, etc.
           const baseUrl = resolvedBaseUrl
             ? resolvedBaseUrl.replace(/\/$/, "")
-            : isAzure
-              ? null
-              : "https://api.openai.com/v1";
+            : "https://api.openai.com/v1";
 
-          if (!baseUrl) throw new Error(`Provider "${input.provider}" requires a Base URL (it is not a known provider with a default endpoint).`);
+          if (!baseUrl) throw new Error(`This provider requires a Base URL. Set it in the Base URL field above.`);
 
           const model = input.model || "gpt-4o-mini";
           const endpoint = `${baseUrl}/chat/completions`;

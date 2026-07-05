@@ -838,7 +838,7 @@ function ProviderKeysCard() {
 
   const [showForm, setShowForm] = useState(false);
   const [editKey, setEditKey] = useState<any>(null);
-  const [form, setForm] = useState({ name: "", provider: "google_gemini" as string, apiKey: "", baseUrl: "", defaultModel: "", isDefault: false });
+  const [form, setForm] = useState({ name: "", provider: "google_gemini" as string, sdkType: "google_gemini" as "openai_compatible" | "google_gemini" | "anthropic", apiKey: "", baseUrl: "", defaultModel: "", isDefault: false });
   const [testResult, setTestResult] = useState<{ success: boolean; model: string; latencyMs: number; message: string } | null>(null);
 
   const handleTestConnection = () => {
@@ -848,6 +848,7 @@ function ProviderKeysCard() {
     testConnection.mutate(
       {
         provider: form.provider as any,
+        sdkType: form.sdkType,
         apiKey: isNewKey ? form.apiKey : undefined,
         existingId: !isNewKey && editKey ? editKey.id : undefined,
         baseUrl: form.baseUrl || null,
@@ -861,14 +862,14 @@ function ProviderKeysCard() {
   };
 
   const openAdd = () => {
-    setForm({ name: "", provider: "google_gemini", apiKey: "", baseUrl: "", defaultModel: "", isDefault: (keys as any[]).length === 0 });
+    setForm({ name: "", provider: "google_gemini", sdkType: "google_gemini", apiKey: "", baseUrl: "", defaultModel: "", isDefault: (keys as any[]).length === 0 });
     setEditKey(null);
     setTestResult(null);
     setShowForm(true);
   };
 
   const openEdit = (k: any) => {
-    setForm({ name: k.name, provider: k.provider, apiKey: "", baseUrl: k.baseUrl ?? "", defaultModel: k.defaultModel ?? "", isDefault: k.isDefault });
+    setForm({ name: k.name, provider: k.provider, sdkType: k.sdkType ?? "openai_compatible", apiKey: "", baseUrl: k.baseUrl ?? "", defaultModel: k.defaultModel ?? "", isDefault: k.isDefault });
     setEditKey(k);
     setTestResult(null);
     setShowForm(true);
@@ -884,6 +885,7 @@ function ProviderKeysCard() {
       id: editKey?.id,
       name: form.name,
       provider: form.provider as any,
+      sdkType: form.sdkType,
       // When editing: if no new key entered, send a placeholder that the server will ignore
       // The server upsert only updates apiKey when a real value is provided
       apiKey: isNewKey ? form.apiKey : (editKey ? "__KEEP_EXISTING__" : ""),
@@ -928,8 +930,11 @@ function ProviderKeysCard() {
                       <span className="text-sm font-medium truncate">{k.name}</span>
                       {k.isDefault && <Badge className="text-xs bg-primary/10 text-primary border-primary/30 shrink-0">Default</Badge>}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-muted-foreground">{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-muted-foreground">{k.provider}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                        {k.sdkType === "google_gemini" ? "Gemini SDK" : k.sdkType === "anthropic" ? "Anthropic" : "OpenAI-compat"}
+                      </span>
                       <span className="text-xs text-muted-foreground font-mono">{k.apiKey}</span>
                       {k.defaultModel && <span className="text-xs text-muted-foreground">• {k.defaultModel}</span>}
                     </div>
@@ -980,6 +985,37 @@ function ProviderKeysCard() {
               </datalist>
               <p className="text-xs text-muted-foreground">
                 Type any provider identifier. Well-known providers (openai, anthropic, google_gemini, azure_openai) have built-in endpoints. All others require a Base URL.
+              </p>
+            </div>
+            {/* SDK Type — explicit routing selector, decoupled from provider name */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                SDK / Protocol
+                <span className="text-muted-foreground ml-1">(how to talk to this provider)</span>
+              </Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { value: "openai_compatible", label: "OpenAI-compatible", desc: "OpenAI, Azure, Mistral, Groq, Together, DeepSeek, Ollama, etc." },
+                  { value: "google_gemini", label: "Google Gemini", desc: "Google Generative AI SDK (gemini-* models)" },
+                  { value: "anthropic", label: "Anthropic", desc: "Anthropic Messages API (claude-* models)" },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, sdkType: opt.value }))}
+                    className={`text-left px-2.5 py-2 rounded-md border text-xs transition-colors ${
+                      form.sdkType === opt.value
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-border hover:border-muted-foreground/50 text-muted-foreground"
+                    }`}
+                    title={opt.desc}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This controls which SDK/protocol is used — not the provider name. You can name a key anything and still pick the right protocol.
               </p>
             </div>
             <div className="space-y-1.5">

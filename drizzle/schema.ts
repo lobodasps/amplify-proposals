@@ -1156,11 +1156,20 @@ export type InsertFirmSettings = typeof firmSettings.$inferInsert;
 
 export const providerApiKeys = pgTable("provider_api_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),           // Display name, e.g. "Google AI (Gemini)"
-  // Valid values: openai, anthropic, google_gemini, azure_openai, custom
+  name: text("name").notNull(),           // Display name, e.g. "Gemini Flash Experimental"
+  // Free-form human label, e.g. "google_gemini", "gemini-flash", "mistral", "groq" — NOT used for routing
   provider: text("provider").notNull(),
+  /**
+   * SDK routing type — determines WHICH client library / HTTP format is used.
+   * Valid values:
+   *   "openai_compatible" — OpenAI Chat Completions API (default for all unknown providers)
+   *   "google_gemini"     — Google Generative AI SDK (@google/generative-ai)
+   *   "anthropic"         — Anthropic Messages API (raw fetch, anthropic-version header)
+   * Decoupled from `provider` so you can name a key anything and still pick the right SDK.
+   */
+  sdkType: text("sdkType").notNull().default("openai_compatible"),
   apiKey: text("apiKey").notNull(),        // Stored as-is (server-side only)
-  baseUrl: text("baseUrl"),               // Required for azure_openai and custom
+  baseUrl: text("baseUrl"),               // Required for azure_openai and any custom endpoint
   isDefault: boolean("isDefault").default(false).notNull(),
   // Default model to use when this provider is selected as fallback
   defaultModel: text("defaultModel"),

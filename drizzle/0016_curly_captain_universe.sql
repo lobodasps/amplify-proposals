@@ -1,0 +1,1 @@
+ALTER TABLE "provider_api_keys" ADD COLUMN "sdkType" text DEFAULT 'openai_compatible' NOT NULL;
