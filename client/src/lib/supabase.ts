@@ -12,5 +12,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    // Namespace auth storage so this app doesn't collide with other apps
+    // sharing the same Supabase project (e.g. V0 prototypes on the same domain)
+    storageKey: "amplify-proposals-auth",
   },
 });
