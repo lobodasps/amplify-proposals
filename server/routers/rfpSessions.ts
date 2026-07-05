@@ -429,7 +429,12 @@ async function buildSkillVariables(
           "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative.",
       };
 
-    case "proposal_scorer":
+    case "proposal_scorer": {
+      const { evidenceContext: scorerEvidence } = await buildEvidenceBundle(
+        allEvidenceDocIds,
+        "proposal_scorer",
+        rfpServiceLinesArr
+      );
       return {
         rfpContext,
         evalCriteria,
@@ -441,7 +446,11 @@ async function buildSkillVariables(
         pastPerformance,
         winThemes: winThemesOutput,
         scoreTarget: "full proposal draft",
+        // Phase 5: evidence bundle context for factual claim checking
+        // (empty string when no chunks available — scorer returns empty unsupportedClaims)
+        evidenceContext: scorerEvidence,
       };
+    }
 
     default:
       return { rfpContext, agency, rfpTitle: pursuitTitle, firmName, firmDescription };
@@ -585,8 +594,24 @@ function getResponseFormat(skillName: WorkflowSkillName) {
             topGaps: { type: "array", items: { type: "string" } },
             topImprovements: { type: "array", items: { type: "string" } },
             summary: { type: "string" },
+            // Phase 5: evidence coverage fields (optional — absent when no evidence bundle was available)
+            evidenceCoverage: { type: "number" },
+            unsupportedClaims: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  section: { type: "string" },
+                  claim: { type: "string" },
+                  reason: { type: "string" },
+                  relatedCriterion: { type: "string" },
+                },
+                required: ["section", "claim", "reason", "relatedCriterion"],
+                additionalProperties: false,
+              },
+            },
           },
-          required: ["overallScore", "sectionScores", "criteriaScores", "topGaps", "topImprovements", "summary"],
+          required: ["overallScore", "sectionScores", "criteriaScores", "topGaps", "topImprovements", "summary", "evidenceCoverage", "unsupportedClaims"],
           additionalProperties: false,
         },
       },
@@ -1406,7 +1431,7 @@ export const rfpSessionsRouter = router({
             })()
           : undefined;
 
-      // For proposal_scorer: also save liveScore
+      // For proposal_scorer: also save liveScore and scorerEvidenceInput (Phase 5)
       const scorerPatch =
         input.skillName === "proposal_scorer"
           ? (() => {
@@ -1421,6 +1446,35 @@ export const rfpSessionsRouter = router({
               }
             })()
           : undefined;
+
+      // Phase 5: Persist scorerEvidenceInput for provenance/debugging
+      // Non-blocking — failure must not prevent liveScore from being saved
+      let scorerEvidenceInputPatch: { scorerEvidenceInput: unknown } | undefined;
+      if (input.skillName === "proposal_scorer") {
+        try {
+          const freshPursuitForScorer = freshSession.pursuitId && db
+            ? await db.select().from(pursuits).where(eq(pursuits.id, freshSession.pursuitId)).limit(1).then(r => r[0] ?? null)
+            : null;
+          const scorerDocIds = freshPursuitForScorer
+            ? [
+                ...(Array.isArray(freshPursuitForScorer.selectedProjectIds) ? freshPursuitForScorer.selectedProjectIds as string[] : []),
+                ...(Array.isArray(freshPursuitForScorer.selectedPastProposalIds) ? freshPursuitForScorer.selectedPastProposalIds as string[] : []),
+                ...(Array.isArray(freshPursuitForScorer.selectedPersonnel)
+                  ? (freshPursuitForScorer.selectedPersonnel as Array<{ damDocumentId: string }>).map(p => p.damDocumentId)
+                  : []),
+              ].filter(Boolean)
+            : [];
+          const scorerServiceLinesArr = Array.isArray(freshPursuitForScorer?.serviceLines)
+            ? (freshPursuitForScorer!.serviceLines as string[]).map((s: string) => s.trim()).filter(Boolean)
+            : freshPursuitForScorer?.serviceLines
+              ? String(freshPursuitForScorer.serviceLines).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : [];
+          const { bundle: scorerBundle } = await buildEvidenceBundle(scorerDocIds, "proposal_scorer", scorerServiceLinesArr);
+          scorerEvidenceInputPatch = { scorerEvidenceInput: scorerBundle };
+        } catch (scorerBundleErr) {
+          console.warn("[executeSkill] scorerEvidenceInput persistence failed:", scorerBundleErr);
+        }
+      }
 
       // Phase 4: Store evidence bundle for this skill run (additive merge into evidenceBundles JSONB)
       // Only for the four evidence-enabled skills; others produce no bundle.
@@ -1467,6 +1521,7 @@ export const rfpSessionsRouter = router({
           ...(extractedDataPatch ? { extractedData: extractedDataPatch } : {}),
           ...(scorerPatch ?? {}),
           ...(evidenceBundlesPatch ?? {}),
+          ...(scorerEvidenceInputPatch ?? {}),
         })
         .where(eq(rfpSessions.id, input.sessionId));
 

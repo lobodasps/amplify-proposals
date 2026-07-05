@@ -394,8 +394,19 @@ For each criterion:
 3. Identify specific gaps or missing elements
 4. Provide 1-3 concrete improvement suggestions
 
-Also provide an overall compliance score and a priority list of the top 3 most critical gaps to fix first.`,
-    templateVariables: ["scoreTarget", "agency", "rfpTitle", "evaluationCriteria", "contentToScore"],
+Also provide an overall compliance score and a priority list of the top 3 most critical gaps to fix first.
+
+EVIDENCE BUNDLE (verified source material from the firm's knowledge base):
+{{evidenceContext}}
+
+EVIDENCE INSTRUCTIONS:
+If the evidence bundle above is non-empty, check the proposal content for factual claims that cannot be verified against the provided evidence.
+Focus only on specific, checkable facts: project names, client/agency names, contract values, personnel names, certifications, dates, and quantities.
+Do NOT flag stylistic language, general capability statements, or claims that are plausible but simply not in the evidence.
+For each unsupported factual claim found, record: the proposal section, the exact claim, the reason it cannot be matched, and the related evaluation criterion if applicable.
+If the evidence bundle is empty, or all factual claims are supported, return an empty unsupportedClaims array.
+Set evidenceCoverage to a 0-1 ratio: (supported factual claims) / (total factual claims checked). If no claims were checked or no evidence was available, return 1.0.`,
+    templateVariables: ["scoreTarget", "agency", "rfpTitle", "evaluationCriteria", "contentToScore", "evidenceContext"],
     outputType: "json",
   },
 

@@ -469,6 +469,13 @@ interface ScoredCriterion {
   improvements?: string[];
 }
 
+interface UnsupportedClaimItem {
+  section: string;
+  claim: string;
+  reason: string;
+  relatedCriterion?: string;
+}
+
 interface ProposalScorerOutput {
   overallScore?: number;
   criteria?: ScoredCriterion[];
@@ -478,6 +485,9 @@ interface ProposalScorerOutput {
   // Some LLM outputs use slightly different keys
   criteriaScores?: ScoredCriterion[];
   complianceScore?: number;
+  // Phase 5: evidence-aware scoring fields
+  evidenceCoverage?: number;
+  unsupportedClaims?: UnsupportedClaimItem[];
 }
 
 function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
@@ -531,6 +541,8 @@ function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
   const criteria = data.criteria ?? data.criteriaScores ?? [];
   const gaps = data.topGaps ?? [];
   const improvements = data.improvements ?? [];
+  const unsupportedClaims = data.unsupportedClaims ?? [];
+  const evidenceCoverage = data.evidenceCoverage;
 
   const overallColor =
     overall >= 80
@@ -639,6 +651,81 @@ function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Phase 5: Evidence Coverage + Unsupported Claims */}
+      {(evidenceCoverage !== undefined || unsupportedClaims.length > 0) && (
+        <>
+          <Separator />
+          {evidenceCoverage !== undefined && (
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold text-muted-foreground uppercase tracking-wider">
+                    Evidence Coverage
+                  </span>
+                  <span className={`font-bold ${
+                    evidenceCoverage >= 0.8
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : evidenceCoverage >= 0.5
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-red-600 dark:text-red-400"
+                  }`}>
+                    {Math.round(evidenceCoverage * 100)}%
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      evidenceCoverage >= 0.8
+                        ? "bg-emerald-500"
+                        : evidenceCoverage >= 0.5
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                    }`}
+                    style={{ width: `${Math.round(evidenceCoverage * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Ratio of factual claims in the proposal backed by verified source material.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {unsupportedClaims.length > 0 && (
+            <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-4">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Unsupported Claims ({unsupportedClaims.length})
+              </p>
+              <p className="text-[10px] text-amber-600/80 dark:text-amber-400/70 mb-3 leading-relaxed">
+                The following factual claims in the proposal could not be matched to verified source material. Review and correct before submission.
+              </p>
+              <ul className="space-y-3">
+                {unsupportedClaims.map((c, i) => (
+                  <li key={i} className="text-xs border-t border-amber-200/60 dark:border-amber-800/60 pt-2 first:border-0 first:pt-0">
+                    <div className="flex items-start gap-1.5 mb-0.5">
+                      <span className="shrink-0 mt-0.5 text-amber-500">·</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-amber-800 dark:text-amber-300">{c.section}: </span>
+                        <span className="text-amber-700 dark:text-amber-300">{c.claim}</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-amber-600/80 dark:text-amber-400/70 pl-3.5 leading-relaxed">
+                      {c.reason}
+                    </p>
+                    {c.relatedCriterion && (
+                      <p className="text-[10px] text-amber-500/70 dark:text-amber-500/60 pl-3.5 mt-0.5">
+                        Criterion: {c.relatedCriterion}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -110,3 +110,18 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] Write `server/evidenceBundleBuilder.test.ts`: 29 tests covering bundle assembly per skill, empty-bundle fallback, confidence filtering, source-type caps, provenance fields, service line boost, evidenceContext format
 - [x] TypeScript: zero errors; 116/117 tests pass (1 pre-existing OpenAI 429 rate limit failure)
 - [x] Checkpoint saved — stopped for review before Phase 5
+
+### Pipeline Upgrade — Phase 5: Evidence-Aware Scoring — COMPLETE
+- [x] Extend `ScorerOutput` in `shared/workflowTypes.ts`: add `evidenceCoverage?: number` (0–1, 70/30 weighted) and `unsupportedClaims?: UnsupportedClaim[]` while preserving all existing fields
+- [x] Add `UnsupportedClaim` interface: `{ section: string; claim: string; reason: string; relatedCriterion?: string }`
+- [x] Extend scorer JSON schema in `getResponseFormat("proposal_scorer")`: add `evidenceCoverage` and `unsupportedClaims` (array of objects with section/claim/reason/relatedCriterion) — `additionalProperties: false` preserved on inner objects
+- [x] Update `buildSkillVariables("proposal_scorer")`: inject `evidenceContext` from `buildEvidenceBundle` — additive only, no existing variables removed
+- [x] Update `DEFAULT_SKILLS.proposal_scorer.userPromptTemplate` in `llmSkill.ts`: add `{{evidenceContext}}` block and instructions to check factual claims and return `unsupportedClaims` — all legacy variables unchanged
+- [x] Update `DEFAULT_SKILLS.proposal_scorer.templateVariables` to include `evidenceContext`
+- [x] Persist `scorerEvidenceInput` in `executeSkill`: after LLM call for `proposal_scorer`, store assembled `EvidenceBundle` into `rfpSessions.scorerEvidenceInput` (additive, non-blocking)
+- [x] Update `ProposalScorecard` in `SkillOutputRenderer.tsx`: render `unsupportedClaims` as amber warning list (section + claim + reason + optional criterion) — warning only, does not change score display or liveScore
+- [x] Add `evidenceCoverage` progress bar (green/amber/red) to `ProposalScorecard`
+- [x] Update `ProposalScorerOutput` interface in `SkillOutputRenderer.tsx` to include `evidenceCoverage?: number` and `unsupportedClaims?: UnsupportedClaimItem[]`
+- [x] Write 21 Phase 5 unit tests in `server/scorerEvidence.test.ts`: type extensions, UnsupportedClaim shape, 70/30 formula, empty evidence → neutral coverage, JSON schema backward compat, rendering contract, scorerEvidenceInput persistence
+- [x] TypeScript: zero errors; 136/137 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review before Phase 6

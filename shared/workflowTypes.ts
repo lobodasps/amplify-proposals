@@ -165,6 +165,24 @@ export interface ParsedRfpData {
 
 // ─── Proposal Scorer Output ───────────────────────────────────────────────────
 
+// ─── Phase 5: Unsupported Claim ──────────────────────────────────────────────
+
+/**
+ * A factual claim in the generated proposal that could not be matched to any
+ * evidence item in the assembled bundle. Returned by the scorer when evidence
+ * context is available.
+ */
+export interface UnsupportedClaim {
+  /** Proposal section where the claim appears (e.g. "Technical Approach") */
+  section: string;
+  /** The specific factual claim that lacks evidence support */
+  claim: string;
+  /** Why the claim could not be matched to evidence (e.g. "No project sheet mentions this value") */
+  reason: string;
+  /** Optional: the evaluation criterion this claim was intended to address */
+  relatedCriterion?: string;
+}
+
 export interface ScorerCriterionScore {
   criterionId: string;
   criterionTitle: string;
@@ -181,6 +199,18 @@ export interface ScorerOutput {
   topGaps: string[];
   topImprovements: string[];
   summary: string;
+  /**
+   * Phase 5: 0–1 ratio of factual claims in the proposal that are backed by
+   * evidence items in the assembled bundle. Absent when no evidence was available.
+   * Adjusted score formula: rawScore × (0.7 + 0.3 × evidenceCoverage).
+   */
+  evidenceCoverage?: number;
+  /**
+   * Phase 5: Factual claims in the generated proposal that could not be matched
+   * to any evidence item. Empty array when all claims are supported or when
+   * no evidence bundle was available.
+   */
+  unsupportedClaims?: UnsupportedClaim[];
 }
 
 // ─── executeSkill Input/Output ────────────────────────────────────────────────
@@ -345,8 +375,8 @@ export interface EvidenceBundle {
 export type EvidenceBundleMap = Partial<Record<string, EvidenceBundle>>;
 
 /**
- * Phase 5 addition: evidence coverage per evaluation criterion.
- * Stored in rfpSessions.scorerEvidenceInput after Phase 4 is live.
+ * Phase 5: evidence coverage per evaluation criterion.
+ * Stored in rfpSessions.scorerEvidenceInput for provenance and UI display.
  */
 export interface CriterionEvidenceCoverage {
   criterionId: string;
