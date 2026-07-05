@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 
 export default function Login() {
@@ -15,9 +15,15 @@ export default function Login() {
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated — must be in useEffect to avoid setState-in-render
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Render nothing while redirecting
   if (isAuthenticated) {
-    navigate("/dashboard", { replace: true });
     return null;
   }
 

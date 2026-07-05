@@ -135,3 +135,30 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] Write 23 Phase 6 unit tests in `server/phase6.test.ts`: procedure shape (4), Sources button visibility (4), telemetry metadata shape (4), empty-state logic (4), metadata column type compat (2), EvidenceItem rendering contract (5)
 - [x] TypeScript: zero errors; 159/160 tests pass (1 pre-existing OpenAI 429 rate limit failure)
 - [x] Checkpoint saved — stopped for review
+
+### Pipeline Upgrade — Phase 7: Renderer Routing, Scorecard Full Display, Citation Groundwork — COMPLETE
+
+#### Track A — Renderer Routing
+- [x] Add `case "requirements_matrix_builder"` → `<ComplianceChecklist>` to `SkillOutputRenderer` switch
+- [x] Add `case "conflict_detector"` → `<ConflictCards>` to `SkillOutputRenderer` switch
+- [x] `GenericJsonViewer` no longer appears for either skill; switch uses `(skillName as string)` cast to accept non-workflow skill names
+- [x] `ComplianceChecklistOutput` type alias added as `RequirementsMatrixOutput`
+
+#### Track B — Section Scorecard Full Display
+- [x] `criteriaScores` sorted deterministically: score desc, then criterion name asc (stable)
+- [x] `topImprovements` aliased: prefers `data.topImprovements`, falls back to `data.improvements ?? []`
+- [x] `winThemesCoverage` matrix rendered only when field is present and non-empty (guard: `Array.isArray && length > 0`)
+- [x] `WinThemeCoverageEntry` interface added with `theme`, `coveredInSections`, `coverageScore`, `notes`
+- [x] All sections degrade gracefully when fields are absent (null guard, empty-array guard, undefined coverageScore → scorePct=null)
+
+#### Track C — Citation Formatter Groundwork
+- [x] `CitationFormat = "none" | "inline"` type exported from `evidenceBundleBuilder.ts`
+- [x] `formatEvidenceContext` exported and accepts optional `citationFormat` parameter (default `"none"`)
+- [x] `"inline"` mode appends `[Source: {sourceDocTitle}, p.{pageRef}]` after each item's content
+- [x] `"none"` mode (default) produces byte-for-byte identical output to pre-Phase-7 behavior
+- [x] Null/empty/undefined `pageRef` handled gracefully — no `p.null`, `p.undefined`, or dangling brackets
+
+#### Tests and Delivery
+- [x] `server/phase7.test.ts`: 26 tests covering all tracks (5 Track A, 10 Track B, 11 Track C)
+- [x] TypeScript: zero errors; 185/187 tests pass (2 pre-existing API rate-limit failures: OpenAI 429, Gemini 503)
+- [x] Checkpoint saved — stopped for review before Phase 8

@@ -476,6 +476,13 @@ interface UnsupportedClaimItem {
   relatedCriterion?: string;
 }
 
+interface WinThemeCoverageEntry {
+  theme: string;
+  coveredInSections?: string[];
+  coverageScore?: number;
+  notes?: string;
+}
+
 interface ProposalScorerOutput {
   overallScore?: number;
   criteria?: ScoredCriterion[];
@@ -485,6 +492,11 @@ interface ProposalScorerOutput {
   // Some LLM outputs use slightly different keys
   criteriaScores?: ScoredCriterion[];
   complianceScore?: number;
+  // Phase 7 Track B: full scorecard display fields
+  /** Ranked improvement suggestions (preferred key; falls back to improvements[]) */
+  topImprovements?: string[];
+  /** Win theme coverage matrix — rendered only when present and non-empty */
+  winThemesCoverage?: WinThemeCoverageEntry[];
   // Phase 5: evidence-aware scoring fields
   evidenceCoverage?: number;
   unsupportedClaims?: UnsupportedClaimItem[];
@@ -538,9 +550,19 @@ function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
 
 function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
   const overall = data.overallScore ?? data.complianceScore ?? 0;
-  const criteria = data.criteria ?? data.criteriaScores ?? [];
+  // Phase 7 Track B: deterministic sort — score desc, then criterion name asc (stable)
+  const rawCriteria = data.criteria ?? data.criteriaScores ?? [];
+  const criteria = [...rawCriteria].sort((a, b) => {
+    const scoreDiff = b.score - a.score;
+    if (scoreDiff !== 0) return scoreDiff;
+    return a.criterion.localeCompare(b.criterion);
+  });
   const gaps = data.topGaps ?? [];
-  const improvements = data.improvements ?? [];
+  // Phase 7 Track B: prefer topImprovements, fall back to improvements
+  const improvements = data.topImprovements ?? data.improvements ?? [];
+  const winThemesCoverage = Array.isArray(data.winThemesCoverage) && data.winThemesCoverage.length > 0
+    ? data.winThemesCoverage
+    : null;
   const unsupportedClaims = data.unsupportedClaims ?? [];
   const evidenceCoverage = data.evidenceCoverage;
 
@@ -569,88 +591,176 @@ function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
         </div>
       </div>
 
-      {/* Criteria bars */}
+      {/* Phase 7 Track B: Criteria Scores table (deterministic sort: score desc, name asc) */}
       {criteria.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Criteria Scores
           </p>
-          {criteria.map((c, i) => {
-            const max = c.maxScore ?? 100;
-            const pct = Math.round((c.score / max) * 100);
-            const barColor =
-              pct >= 80
-                ? "bg-emerald-500"
-                : pct >= 60
-                  ? "bg-amber-500"
-                  : "bg-red-500";
-            return (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium truncate mr-2">{c.criterion}</span>
-                  <span className={`font-bold shrink-0 ${pct >= 80 ? "text-emerald-600 dark:text-emerald-400" : pct >= 60 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
-                    {c.score}/{max}
-                    {c.weight ? ` (wt: ${c.weight})` : ""}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${barColor}`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                {(c.gaps ?? []).length > 0 && (
-                  <ul className="space-y-0.5 pl-2">
-                    {c.gaps!.map((g, j) => (
-                      <li key={j} className="text-[10px] text-muted-foreground flex items-start gap-1">
-                        <span className="shrink-0 mt-0.5 text-red-400">·</span>
-                        {g}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
+          <div className="rounded-lg border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Criterion</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted-foreground w-32">Score</th>
+                  <th className="text-right px-3 py-2 font-semibold text-muted-foreground w-16 hidden sm:table-cell">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {criteria.map((c, i) => {
+                  const max = c.maxScore ?? 100;
+                  const pct = Math.round((c.score / max) * 100);
+                  const barColor = pct >= 80 ? "bg-emerald-500" : pct >= 60 ? "bg-amber-500" : "bg-red-500";
+                  const scoreColor = pct >= 80
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : pct >= 60
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400";
+                  return (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-2">
+                        <span className="font-medium leading-snug">{c.criterion}</span>
+                        {(c.gaps ?? []).length > 0 && (
+                          <ul className="mt-1 space-y-0.5">
+                            {c.gaps!.map((g, j) => (
+                              <li key={j} className="text-[10px] text-muted-foreground flex items-start gap-1">
+                                <span className="shrink-0 mt-0.5 text-red-400">·</span>
+                                {g}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className={`font-bold text-[10px] shrink-0 ${scoreColor}`}>{c.score}/{max}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground hidden sm:table-cell">
+                        {c.weight ? String(c.weight) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       <Separator />
 
-      {/* Top gaps */}
+      {/* Phase 7 Track B: Top Priority Gaps — red-bordered panel */}
       {gaps.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Top Priority Gaps
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-950/20 p-4">
+          <p className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Top Priority Gaps ({gaps.length})
           </p>
-          <ol className="space-y-1.5">
+          <ol className="space-y-2">
             {gaps.map((g, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] font-bold mt-0.5">
+              <li key={i} className="flex items-start gap-2.5 text-xs border-t border-red-200/60 dark:border-red-800/60 pt-2 first:border-0 first:pt-0">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[9px] font-bold mt-0.5">
                   {i + 1}
                 </span>
-                {g}
+                <span className="text-red-800 dark:text-red-300 leading-relaxed">{g}</span>
               </li>
             ))}
           </ol>
         </div>
       )}
 
-      {/* Improvements */}
+      {/* Phase 7 Track B: Improvement Suggestions — green-bordered ranked list */}
       {improvements.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Improvement Suggestions
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 p-4">
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Improvement Suggestions ({improvements.length})
           </p>
-          <ul className="space-y-1.5">
+          <ol className="space-y-2">
             {improvements.map((imp, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500 mt-0.5" />
-                {imp}
+              <li key={i} className="flex items-start gap-2.5 text-xs border-t border-emerald-200/60 dark:border-emerald-800/60 pt-2 first:border-0 first:pt-0">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-[9px] font-bold mt-0.5">
+                  {i + 1}
+                </span>
+                <span className="text-emerald-800 dark:text-emerald-300 leading-relaxed">{imp}</span>
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
+      )}
+
+      {/* Phase 7 Track B: Win Themes Coverage Matrix */}
+      {winThemesCoverage && (
+        <>
+          <Separator />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Win Theme Coverage
+            </p>
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/50 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Theme</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground w-24 hidden sm:table-cell">Coverage</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground hidden md:table-cell">Sections</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground hidden lg:table-cell">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {winThemesCoverage.map((entry, i) => {
+                    const score = entry.coverageScore;
+                    const scorePct = score != null ? Math.max(0, Math.min(100, score)) : null;
+                    const scoreColor = scorePct == null
+                      ? "text-muted-foreground"
+                      : scorePct >= 80
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : scorePct >= 50
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400";
+                    return (
+                      <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-3 py-2 font-medium leading-snug">{entry.theme}</td>
+                        <td className="px-3 py-2 hidden sm:table-cell">
+                          {scorePct != null ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    scorePct >= 80 ? "bg-emerald-500" : scorePct >= 50 ? "bg-amber-500" : "bg-red-500"
+                                  }`}
+                                  style={{ width: `${scorePct}%` }}
+                                />
+                              </div>
+                              <span className={`font-bold text-[10px] ${scoreColor}`}>{scorePct}%</span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground hidden md:table-cell">
+                          {(entry.coveredInSections ?? []).length > 0
+                            ? entry.coveredInSections!.join(", ")
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground hidden lg:table-cell">
+                          {entry.notes ?? "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Phase 5: Evidence Coverage + Unsupported Claims */}
@@ -1105,6 +1215,9 @@ function ProseEditor({
 
 // ─── JSON Renderer Router ─────────────────────────────────────────────────────
 
+// Phase 7 Track A: type alias for ComplianceChecklist data
+type ComplianceChecklistOutput = RequirementsMatrixOutput;
+
 function JsonRenderer({
   skillName,
   output,
@@ -1113,7 +1226,7 @@ function JsonRenderer({
   onSaved,
   onRerender,
 }: {
-  skillName: WorkflowSkillName;
+  skillName: WorkflowSkillName | string;
   output: string;
   sessionId: string;
   isComplete: boolean;
@@ -1135,13 +1248,19 @@ function JsonRenderer({
   }
 
   // Route to skill-specific renderer
-  switch (skillName) {
+  // Cast to string so the switch accepts non-WorkflowSkillName values (Track A, Phase 7)
+  switch (skillName as string) {
     case "rfp_parser":
       return <RfpParserSummary data={parsed as ParsedRfpData} />;
     case "win_themes":
       return <WinThemeCards data={parsed as WinThemeOutput} />;
     case "proposal_scorer":
       return <ProposalScorecard data={parsed as ProposalScorerOutput} />;
+    // Track A (Phase 7): wire dedicated renderer components
+    case "requirements_matrix_builder":
+      return <ComplianceChecklist data={parsed as ComplianceChecklistOutput} />;
+    case "conflict_detector":
+      return <ConflictCards data={parsed as ConflictDetectorOutput} />;
     default:
       // For all other JSON skills (rfp_parser, key_personnel, past_performance, fee_estimator)
       // show a clean generic viewer with an edit button

@@ -302,10 +302,31 @@ export async function buildEvidenceBundle(
 // ─── Evidence context formatter ───────────────────────────────────────────────
 
 /**
+ * Citation format options for formatEvidenceContext.
+ *
+ * - `"none"` (default): preserves the existing output format exactly.
+ *   All current callers receive this behavior unchanged.
+ * - `"inline"`: appends a `[Source: {title}, p.{page}]` marker after each
+ *   evidence item's content, making the context citation-ready for future
+ *   prompt updates that ask the LLM to reproduce inline citations.
+ *   Handles null/undefined pageRef gracefully (omits the page component).
+ */
+export type CitationFormat = "none" | "inline";
+
+/**
  * Format evidence items into a structured string for injection into skill
  * variables. Groups by source document, preserves provenance.
+ *
+ * @param items - Evidence items to format
+ * @param skillName - Skill name for the bundle header
+ * @param citationFormat - `"none"` (default) preserves existing output;
+ *   `"inline"` appends citation markers to each item's content.
  */
-function formatEvidenceContext(items: EvidenceItem[], skillName: string): string {
+export function formatEvidenceContext(
+  items: EvidenceItem[],
+  skillName: string,
+  citationFormat: CitationFormat = "none"
+): string {
   if (items.length === 0) return "";
 
   // Group by source document
@@ -332,7 +353,19 @@ function formatEvidenceContext(items: EvidenceItem[], skillName: string): string
       const pageNote = item.pageRef ? ` (p.${item.pageRef})` : "";
       const typeNote = item.chunkType.replace(/_/g, " ");
       sections.push(`  [${typeNote}${pageNote}]`);
-      sections.push(`  ${item.content.trim()}`);
+
+      if (citationFormat === "inline") {
+        // Phase 7 Track C: append citation marker after content.
+        // Handles null/undefined pageRef gracefully — omits page component.
+        const pageRef = item.pageRef != null && item.pageRef !== ""
+          ? `, p.${item.pageRef}`
+          : "";
+        const citation = `[Source: ${item.sourceDocTitle}${pageRef}]`;
+        sections.push(`  ${item.content.trim()} ${citation}`);
+      } else {
+        // Default ("none"): identical to pre-Phase-7 output
+        sections.push(`  ${item.content.trim()}`);
+      }
       sections.push("");
     }
   }
