@@ -1515,8 +1515,73 @@ export async function invokeLLMWithSkill(
 
     return result;
   } catch (err: any) {
-    // Log the failure
     const durationMs = Date.now() - startTime;
+
+    // ── Manus built-in fallback ──────────────────────────────────────────────
+    // If the configured provider key is missing/invalid (no key configured, or
+    // the API returned 401/403/auth error), automatically retry with the Manus
+    // built-in Gemini key so the user gets a result instead of a hard failure.
+    const isAuthError =
+      err.message?.includes("No Anthropic API key") ||
+      err.message?.includes("No OpenAI API key") ||
+      err.message?.includes("No Google AI API key") ||
+      err.message?.includes("401") ||
+      err.message?.includes("403") ||
+      err.message?.includes("authentication") ||
+      err.message?.includes("Unauthorized") ||
+      err.message?.includes("Invalid API key");
+
+    if (isAuthError && provider !== "manus_builtin" && ENV.forgeApiKey) {
+      console.warn(
+        `[llmSkill] ${provider} key missing/invalid for ${skillType} — falling back to Manus built-in Gemini`
+      );
+      try {
+        const fallbackKey = ENV.forgeApiKey;
+        const fallbackEndpoint = ENV.forgeApiUrl
+          ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
+          : "https://forge.manus.im/v1/chat/completions";
+        const fallbackModel = "gemini-2.5-flash-preview-05-20";
+        // Re-sanitize messages for manus_builtin (OpenAI-compat, supports file_url)
+        const fallbackMessages = sanitizeMessagesForProvider(messages, "manus_builtin");
+        const resp = await callOpenAICompat(
+          fallbackEndpoint,
+          fallbackKey,
+          fallbackModel,
+          fallbackMessages,
+          responseFormat,
+          maxTokens
+        );
+        const fallbackResult = resp.result;
+        fallbackResult._provider = "manus_builtin";
+        fallbackResult._model = fallbackModel;
+        const cost = estimateCost(fallbackModel, resp.tokensIn, resp.tokensOut);
+        fallbackResult._usage = { tokensIn: resp.tokensIn, tokensOut: resp.tokensOut, estimatedCost: cost };
+        logUsage({
+          skillType,
+          provider: "manus_builtin",
+          model: fallbackModel,
+          tokensIn: resp.tokensIn,
+          tokensOut: resp.tokensOut,
+          durationMs: Date.now() - startTime,
+          success: true,
+        });
+        return fallbackResult;
+      } catch (fallbackErr: any) {
+        // Fallback also failed — log and throw original error
+        logUsage({
+          skillType,
+          provider: "manus_builtin",
+          model: "gemini-2.5-flash-preview-05-20",
+          tokensIn: 0,
+          tokensOut: 0,
+          durationMs: Date.now() - startTime,
+          success: false,
+          errorMessage: fallbackErr.message,
+        });
+      }
+    }
+    // ── End fallback ─────────────────────────────────────────────────────────
+
     logUsage({ skillType, provider, model, tokensIn: 0, tokensOut: 0, durationMs, success: false, errorMessage: err.message });
     throw err;
   }
