@@ -291,22 +291,30 @@ export interface EvidenceItem {
   chunkId: string;
   /** dam_documents.id */
   damDocumentId: string;
-  /** Human-readable document name (dam_documents.name) */
-  documentName: string;
+  /** Human-readable document name (dam_documents.name or projectName) */
+  documentName?: string;
+  /** Human-readable title of the source document (projectName or title) */
+  sourceDocTitle: string;
   /** dam_documents.docType (e.g. "project_sheet", "resume", "past_proposal") */
-  docType: string;
+  docType?: string;
+  /** Resolved source document type (same as docType, explicit alias for Phase 4) */
+  sourceDocType: string;
   /** document_chunks.chunkType */
   chunkType: string;
   /** Normalized text content of the chunk */
   content: string;
-  /** Page or section reference within the source document */
-  pageRef?: string;
+  /** Page or section reference within the source document (null when unavailable) */
+  pageRef?: string | null;
   /** Section heading within the source document */
-  sectionRef?: string;
+  sectionRef?: string | null;
   /** Composite relevance score from Phase 3 hybrid retrieval (0–1) */
   relevanceScore: number;
-  /** Canonical service line tags on this chunk */
-  serviceLineTags: string[];
+  /** Extraction method used to produce this chunk */
+  extractionMethod: string;
+  /** Confidence score from the extraction pipeline (0–1) */
+  confidence: number;
+  /** Canonical service line tags on this chunk (optional — not always populated) */
+  serviceLineTags?: string[];
 }
 
 /**
@@ -316,14 +324,16 @@ export interface EvidenceItem {
 export interface EvidenceBundle {
   /** Workflow skill name this bundle was assembled for */
   skillName: string;
-  /** ISO timestamp when this bundle was assembled */
-  assembledAt: string;
+  /** Unix timestamp (ms) when this bundle was assembled */
+  assembledAt: number;
   /** Total number of candidate chunks evaluated before top-K selection */
-  candidateCount: number;
+  candidateCount?: number;
   /** Top-K evidence items selected for injection into the skill prompt */
   items: EvidenceItem[];
+  /** DAM document IDs that were searched to build this bundle */
+  sourceDocIds: string[];
   /** Canonical service line tags used to filter candidates */
-  queryTags: string[];
+  queryTags?: string[];
   /** Free-text query used for full-text search pass */
   queryText?: string;
 }

@@ -29,6 +29,8 @@ import {
   SKILL_META,
 } from "../../shared/workflowTypes";
 import { shredSingleFile, escapeXml } from "./xmlShredder";
+import { buildEvidenceBundle } from "../evidenceBundleBuilder";
+import type { EvidenceBundleMap } from "../../shared/workflowTypes";
 import {
   type SectionType,
   type SectionStatus,
@@ -271,6 +273,19 @@ async function buildSkillVariables(
   const previousScore = sectionCtx?.previousScore != null ? String(sectionCtx.previousScore) : "";
   const scorerGaps = sectionCtx?.scorerGaps ?? "";
 
+  // ── Phase 4: Evidence bundle assembly (additive — never removes legacy vars) ─
+  // Collect all selected DAM document IDs for evidence retrieval
+  const allEvidenceDocIds = [
+    ...pursuitSelectedProjectIds,
+    ...pursuitSelectedPastProposalIds,
+    ...pursuitSelectedPersonnel.map((p) => p.damDocumentId),
+  ].filter(Boolean);
+
+  // Service lines for relevance scoring (array form)
+  const rfpServiceLinesArr = pursuitServiceLines
+    ? pursuitServiceLines.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
   // ── Skill-specific variable mapping ───────────────────────────────────────
   switch (skillName) {
     case "rfp_parser": {
@@ -291,7 +306,12 @@ async function buildSkillVariables(
       };
     }
 
-    case "win_themes":
+    case "win_themes": {
+      const { evidenceContext: winThemeEvidence } = await buildEvidenceBundle(
+        allEvidenceDocIds,
+        "win_themes",
+        rfpServiceLinesArr
+      );
       return {
         pursuitTitle,
         agency,
@@ -313,7 +333,10 @@ async function buildSkillVariables(
           `Key Personnel:\n${personnelSummary}`,
           `Past Proposals:\n${pastProposalsSummary}`,
         ].filter(Boolean).join("\n\n"),
+        // Phase 4: evidence bundle context (empty string when no chunks available)
+        evidenceContext: winThemeEvidence,
       };
+    }
 
     case "technical_outline":
       return {
@@ -327,7 +350,12 @@ async function buildSkillVariables(
         serviceLines: firmServiceLines,
       };
 
-    case "technical_writer":
+    case "technical_writer": {
+      const { evidenceContext: techWriterEvidence } = await buildEvidenceBundle(
+        allEvidenceDocIds,
+        "technical_writer",
+        rfpServiceLinesArr
+      );
       return {
         agency,
         firmName,
@@ -341,9 +369,17 @@ async function buildSkillVariables(
         winThemes: winThemesOutput,
         relevantProjects: projectsSummary,
         rfpRequirements: rfpWikiContent || rfpContext,
+        // Phase 4: evidence bundle context (empty string when no chunks available)
+        evidenceContext: techWriterEvidence,
       };
+    }
 
-    case "key_personnel":
+    case "key_personnel": {
+      const { evidenceContext: keyPersonnelEvidence } = await buildEvidenceBundle(
+        allEvidenceDocIds,
+        "key_personnel",
+        rfpServiceLinesArr
+      );
       return {
         agency,
         firmName,
@@ -353,9 +389,17 @@ async function buildSkillVariables(
         evaluationCriteria: evalCriteria,
         rfpPersonnelRequirements: keyPersonnelReqs,
         selectedPersonnel: personnelSummary,
+        // Phase 4: evidence bundle context (empty string when no chunks available)
+        evidenceContext: keyPersonnelEvidence,
       };
+    }
 
-    case "past_performance":
+    case "past_performance": {
+      const { evidenceContext: pastPerfEvidence } = await buildEvidenceBundle(
+        allEvidenceDocIds,
+        "past_performance",
+        rfpServiceLinesArr
+      );
       return {
         agency,
         firmName,
@@ -367,7 +411,10 @@ async function buildSkillVariables(
         evaluationCriteria: evalCriteria,
         selectedProjects: projectsSummary,
         pastProposals: pastProposalsSummary,
+        // Phase 4: evidence bundle context (empty string when no chunks available)
+        evidenceContext: pastPerfEvidence,
       };
+    }
 
     case "fee_estimator":
       return {
@@ -1375,6 +1422,42 @@ export const rfpSessionsRouter = router({
             })()
           : undefined;
 
+      // Phase 4: Store evidence bundle for this skill run (additive merge into evidenceBundles JSONB)
+      // Only for the four evidence-enabled skills; others produce no bundle.
+      const EVIDENCE_SKILLS = new Set(["win_themes", "technical_writer", "key_personnel", "past_performance"]);
+      let evidenceBundlesPatch: { evidenceBundles: EvidenceBundleMap } | undefined;
+      if (EVIDENCE_SKILLS.has(input.skillName)) {
+        try {
+          // Re-assemble the doc IDs from the fresh session (same logic as buildSkillVariables)
+          const freshPursuit = freshSession.pursuitId && db
+            ? await db.select().from(pursuits).where(eq(pursuits.id, freshSession.pursuitId)).limit(1).then(r => r[0] ?? null)
+            : null;
+          const bundleDocIds = freshPursuit
+            ? [
+                ...(Array.isArray(freshPursuit.selectedProjectIds) ? freshPursuit.selectedProjectIds as string[] : []),
+                ...(Array.isArray(freshPursuit.selectedPastProposalIds) ? freshPursuit.selectedPastProposalIds as string[] : []),
+                ...(Array.isArray(freshPursuit.selectedPersonnel)
+                  ? (freshPursuit.selectedPersonnel as Array<{ damDocumentId: string }>).map(p => p.damDocumentId)
+                  : []),
+              ].filter(Boolean)
+            : [];
+          const freshServiceLines = Array.isArray(freshPursuit?.serviceLines)
+            ? (freshPursuit!.serviceLines as string[]).join(",")
+            : "";
+          const freshServiceLinesArr = freshServiceLines
+            ? freshServiceLines.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const { bundle } = await buildEvidenceBundle(bundleDocIds, input.skillName, freshServiceLinesArr);
+          const existingBundles = (freshSession.evidenceBundles ?? {}) as EvidenceBundleMap;
+          evidenceBundlesPatch = {
+            evidenceBundles: { ...existingBundles, [input.skillName]: bundle } as EvidenceBundleMap,
+          };
+        } catch (bundleErr) {
+          // Non-blocking — log and continue without storing bundle
+          console.warn(`[executeSkill] evidence bundle storage failed for ${input.skillName}:`, bundleErr);
+        }
+      }
+
       await db
         .update(rfpSessions)
         .set({
@@ -1383,6 +1466,7 @@ export const rfpSessionsRouter = router({
           sessionStatus: allComplete ? "complete" : "in_progress",
           ...(extractedDataPatch ? { extractedData: extractedDataPatch } : {}),
           ...(scorerPatch ?? {}),
+          ...(evidenceBundlesPatch ?? {}),
         })
         .where(eq(rfpSessions.id, input.sessionId));
 

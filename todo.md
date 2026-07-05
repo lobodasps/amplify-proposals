@@ -101,3 +101,12 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 ### Contract Management (v4.17)
 - [x] Entity filter (JPCL/Strans selector) filters contract list by performingCompanyId
 - [x] Contract analyzer results viewable — fixed rawAnalysis field name
+
+### Pipeline Upgrade — Phase 4: Evidence Bundles in Generation — COMPLETE
+- [x] Write `server/evidenceBundleBuilder.ts` — `buildEvidenceBundle(docIds, skillName, rfpServiceLines)` returning skill-specific ranked/capped EvidenceBundle
+- [x] Implement skill-specific chunk type caps and source type ranking per the Phase 4 spec
+- [x] Update `buildSkillVariables` in `rfpSessions.ts`: inject `evidenceContext` string alongside ALL legacy summary variables (additive, no removals)
+- [x] Store assembled `EvidenceBundleMap` in `rfpSessions.evidenceBundles` after each relevant skill run
+- [x] Write `server/evidenceBundleBuilder.test.ts`: 29 tests covering bundle assembly per skill, empty-bundle fallback, confidence filtering, source-type caps, provenance fields, service line boost, evidenceContext format
+- [x] TypeScript: zero errors; 116/117 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review before Phase 5
