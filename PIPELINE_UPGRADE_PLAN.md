@@ -3,7 +3,7 @@
 
 **Version:** 1.0  
 **Date:** July 5, 2026  
-**Status:** DRAFT — Awaiting approval before any code changes  
+**Status:** COMPLETE — Phases 1–5 implemented and deployed (Phases 6–8 extended the plan; see todo.md for full history)  
 **Scope:** Proposal ingestion, retrieval, generation, and scoring pipeline  
 
 ---
@@ -495,21 +495,13 @@ The rollout is divided into five phases. Each phase is independently deployable 
 
 **Acceptance criteria:** Asset matching returns results ranked by composite score. `matchQuality` field is present on all results. Fallback behavior still works when no chunks exist. TypeScript: zero errors. Existing tests pass.
 
-### Phase 4 — Evidence Bundles for Generation (Backend + Prompts, ~4 days)
+### Phase 4 — Evidence Bundles for Generation (Backend + Prompts, ~4 days) — **COMPLETE (v2680f6e6)**
 
-**What:** Update `buildSkillVariables()` in `server/routers/rfpSessions.ts` to assemble `EvidenceBundle` objects from `document_chunks` for the selected assets. Update the variable maps for `win_themes`, `technical_writer`, `key_personnel`, and `past_performance` to include evidence bundle items as structured template variables. Store the assembled bundle in `rfp_sessions.evidenceBundles`. Update skill prompts (via `ai_skills` table, not hardcoded) to instruct citation.
+**Delivered:** `server/evidenceBundleBuilder.ts` with skill-specific caps, source-type ranking, service line boost, confidence filtering. `buildSkillVariables()` injects `evidenceContext` into win_themes, technical_writer, key_personnel, past_performance. `rfp_sessions.evidenceBundles` populated after each skill run. 29 unit tests in `server/evidenceBundleBuilder.test.ts`. TypeScript: zero errors. 116/117 tests pass.
 
-**What does NOT change:** The sequential workflow, skill chain, and output storage are unchanged. The scorer is unchanged in this phase.
+### Phase 5 — Evidence-Aware Scoring (Backend + Prompts + UI, ~3 days) — **COMPLETE (v1f207c57)**
 
-**Acceptance criteria:** `buildSkillVariables` returns evidence bundle items as named variables. Skill outputs reference specific project names and personnel from the evidence bundle. `rfp_sessions.evidenceBundles` is populated after each skill run. TypeScript: zero errors.
-
-### Phase 5 — Evidence-Aware Scoring (Backend + Prompts + UI, ~3 days)
-
-**What:** Update `proposal_scorer` inputs in `buildSkillVariables()` to include the evidence bundle. Extend the scorer's JSON schema in `shared/workflowTypes.ts` to include `evidenceCoverage` and `unsupportedClaims`. Update the `SkillOutputRenderer` for `proposal_scorer` to display unsupported claims as an amber warning list. Update `rfp_sessions.scorerEvidenceInput`.
-
-**What does NOT change:** The `overallScore` and existing scorecard fields are preserved. The `liveScore` column continues to reflect `overallScore`.
-
-**Acceptance criteria:** Scorer output includes `evidenceCoverage` and `unsupportedClaims`. UI displays unsupported claims list. `liveScore` is unchanged. TypeScript: zero errors. All tests pass.
+**Delivered:** `ScorerOutput` extended with `evidenceCoverage` (0–1, 70/30 formula) and `unsupportedClaims[]`. `UnsupportedClaim` interface added. Scorer JSON schema extended. `ProposalScorecard` renders evidence coverage bar (green/amber/red) and unsupported claims amber panel. `rfp_sessions.scorerEvidenceInput` populated. `liveScore` unchanged. 21 unit tests in `server/scorerEvidence.test.ts`. TypeScript: zero errors. 136/137 tests pass.
 
 ---
 
@@ -538,7 +530,7 @@ The rollout is divided into five phases. Each phase is independently deployable 
 
 ### 11.3 Regression Checks
 
-- All 25+ existing Vitest tests must pass after each phase.
+- All 244 Vitest tests must pass after each phase (244 tests across 12 files as of v e27416d2).
 - TypeScript must report zero errors after each phase.
 - The Proposal Launchpad upload → Go/No-Go → Asset Matching → Workspace flow must complete end-to-end after each phase.
 - The `liveScore` value must be present and non-zero after `proposal_scorer` runs.

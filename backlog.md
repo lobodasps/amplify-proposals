@@ -2,7 +2,7 @@
 
 > Full prioritized list of planned features not yet started.
 > Active work is tracked in `todo.md`. Completed work is in `archive.md`.
-> Last updated: 2026-06-03
+> Last updated: 2026-07-05
 
 ---
 
@@ -10,10 +10,10 @@
 
 These items complete the primary proposal generation loop and are the next logical build targets after Step 4B.
 
-- [ ] **Step 4B — Citation-backed generation**: inject specific project sheet excerpts, resume passages, and past proposal language as cited evidence into each section. Each citation should include source document name, page, and relevance score.
-- [ ] **Section Scorecard full display**: show full scorer output — criteria coverage %, gap list with specific missing items, improvement suggestions ranked by impact, win theme coverage matrix.
-- [ ] **RequirementsMatrixViewer renderer**: table with requirementId, requirement text, proposalSection mapping, compliance status badge (Met / Partial / Not Addressed), mandatory flag, and page reference.
-- [ ] **ConflictDetectorViewer renderer**: conflict cards with severity badge (Critical / Major / Minor), conflictType, affected sections, description, and resolution recommendation.
+- [x] **Step 4B — Citation-backed generation**: `evidenceContext` injected into win_themes, technical_writer, key_personnel, past_performance; GROUNDING RULES in all 4 system prompts; `formatEvidenceContext(citationFormat: "inline")` for source attribution. **Done in Phases 4 + 8.**
+- [x] **Section Scorecard full display**: criteriaScores sorted table (score desc, name asc), topGaps red-bordered panel, topImprovements green-bordered panel, winThemesCoverage matrix, evidenceCoverage bar, unsupportedClaims amber panel. **Done in Phases 5 + 7.**
+- [x] **RequirementsMatrixViewer renderer**: `requirements_matrix_builder` skill now routes to `<ComplianceChecklist>` in `SkillOutputRenderer`. **Done in Phase 7 Track A.**
+- [x] **ConflictDetectorViewer renderer**: `conflict_detector` skill now routes to `<ConflictCards>` in `SkillOutputRenderer`. **Done in Phase 7 Track A.**
 - [ ] **Tailored Resume generator**: per-section resume tailoring — take base resume from Knowledge Hub, reformat to match RFP key personnel requirements (role title, years exp, certifications, project relevance).
 - [ ] **Proposal export — Word/DOCX**: export completed proposal sections as a formatted Word document with proper heading styles, page breaks, and table of contents.
 - [ ] **Proposal export — PDF**: export completed proposal as PDF with firm branding, page numbers, and section headers.

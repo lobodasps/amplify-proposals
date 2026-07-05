@@ -18,10 +18,10 @@ This document describes the current technical architecture of the Amplify Propos
 | Database | Supabase Postgres | Session pooler (port 6543) |
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
-| LLM | Configurable | Defaults to models defined in Settings > AI Skills; supports OpenAI, Anthropic, Google Gemini per task type |
+| LLM | Fully configurable | Per-skill via `provider_api_keys` table; `sdkType` controls routing (openai_compatible / google_gemini / anthropic); any provider name allowed |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
-| Testing | Vitest | 25 tests across 4 files |
+| Testing | Vitest | 244 tests across 12 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
 ---
@@ -30,7 +30,7 @@ This document describes the current technical architecture of the Amplify Propos
 
 The Supabase Postgres instance contains **two sets of tables** in the same `public` schema:
 
-### Amplify Tables (44 tables, managed by Drizzle ORM)
+### Amplify Tables (47+ tables, managed by Drizzle ORM)
 
 These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which runs `drizzle-kit generate && drizzle-kit migrate`). All primary keys are UUID strings generated with `gen_random_uuid()`. Key tables include:
 
@@ -48,7 +48,10 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `proposals` | Proposal records linked to pursuits |
 | `rfp_sessions` | Proposal Workspace AI skill workflow state; `extractedData.rfpFiles[]` stores multi-file manifest |
 | `opportunities` | Public opportunity ingestion records |
-| `ai_skill_configs` | Configurable AI skill prompts |
+| `ai_skills` | Configurable AI skill prompts, provider, model, outputType per skill |
+| `provider_api_keys` | Named LLM provider keys with sdkType, baseUrl, defaultModel, isDefault flag |
+| `document_chunks` | Chunked content from DAM documents for evidence bundle assembly |
+| `normalized_tags` | Canonical tag vocabulary with aliases |
 | `document_shreds` | XML-shredded RFP sections |
 | `rfp_wikis` | Compiled RFP wiki documents |
 | `assets` | General file assets with tagging |
@@ -78,6 +81,8 @@ Authentication uses **Supabase Auth** with email/password login. The flow is:
 4. **Route Protection**: All routes except `/login` are wrapped in a `ProtectedRoute` component that redirects unauthenticated users. Queries use `enabled: isAuthenticated && !loading` to prevent unauthenticated tRPC calls.
 
 There is **no Manus OAuth** in this project — it was replaced with Supabase Auth during the migration.
+
+**Cross-app session isolation:** The Supabase client in `client/src/lib/supabase.ts` is initialized with `auth: { storageKey: "amplify-proposals-auth" }`. This namespaces the session in `localStorage` so that a separate app sharing the same Supabase project (e.g., the v0 timekeeping app) cannot inject a stale session and trigger an auth redirect loop.
 
 ---
 
@@ -128,17 +133,11 @@ Postgres `numeric` columns return strings from Drizzle ORM. All arithmetic on th
 
 All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function accepts a `messages` array (system + user roles) and optional `response_format`. There is **no top-level `system` parameter** — system prompts must be passed as `{ role: "system", content: "..." }` in the messages array. For document analysis, use `file_url` content type with a signed URL from `storageGet()`.
 
-**The LLM layer is now fully configurable.** The `ai_skill_configs` table stores per-task provider, model, system prompt, and user prompt template. Global provider API keys (OpenAI, Anthropic, Google Gemini) are stored in `app_settings` and resolved at call time. The Settings > AI Skills tab exposes the full configuration UI. The planned `llmConfigs` table referenced in earlier sessions has been superseded by this implementation.
+**The LLM layer is fully configurable.** The `ai_skills` table stores per-skill provider, model, system prompt, user prompt template, and outputType. Provider API keys are stored in the `provider_api_keys` table (not `app_settings`). The Settings > AI Skills tab and Provider API Keys manager expose the full configuration UI.
 
-| Task | Configurable? | Planned Providers |
-|------|--------------|-------------------|
-| RFP Shredding | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Resume Tailoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Go/No-Go Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Opportunity Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Contract Analyzer | Yes | OpenAI, Anthropic, Gemini, Manus |
-| DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
-| DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
+**Evidence grounding (Phase 4+8):** `buildSkillVariables()` assembles an `EvidenceBundle` from `document_chunks` for the selected DAM assets and injects `{{evidenceContext}}` into the four generation skills (`win_theme_generator`, `technical_approach_writer`, `key_personnel_writer`, `project_experience_writer`). Each skill's system prompt includes a GROUNDING RULES block instructing the LLM to use only exact names, values, and credentials from the evidence bundle.
+
+**Evidence-aware scoring (Phase 5):** The `proposal_scorer` skill receives the evidence bundle and returns `evidenceCoverage` (0–1, 70/30 formula) and `unsupportedClaims[]` alongside the existing scorecard fields.
 
 The `invokeLLMWithSkill()` helper checks the `ai_skills` table for a task-specific config (provider, model, API key, prompts). If the DB row has null provider/model, it falls back to `DEFAULT_SKILLS` in `server/_core/llmSkill.ts`. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
 

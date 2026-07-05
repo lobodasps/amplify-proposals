@@ -1,6 +1,6 @@
 # Amplify Proposals — Feature Catalog
 
-**Version:** 4.21 (Jul 5, 2026)
+**Version:** 4.29 (Jul 5, 2026)
 **Status:** Features marked **[LIVE]** are fully implemented and deployed. Features marked **[PLANNED]** are designed but not yet built.
 
 ---
@@ -66,8 +66,12 @@ The Launchpad is a two-step wizard that converts a raw RFP package into a struct
 | Error recovery with retry | LIVE | Per-skill error state |
 | Live proposal score in progress sidebar | LIVE | 0–100 running score |
 | RFP data flow from Launchpad to Workspace | LIVE | rfpSession carries parsed RFP data |
-| Key personnel skill reads real staff data | PLANNED | Currently uses extracted RFP context |
-| Past performance skill reads real project briefs | PLANNED | Currently uses extracted RFP context |
+| Key personnel skill reads real staff data | LIVE | Reads real DAM resume documents via evidence bundle (Phase 4) |
+| Past performance skill reads real project briefs | LIVE | Reads real DAM project sheet documents via evidence bundle (Phase 4) |
+| Evidence bundle assembly per skill | LIVE | Phase 4; ranked/capped chunks from document_chunks; win_themes, technical_writer, key_personnel, past_performance, proposal_scorer |
+| Evidence context injected into generation prompts | LIVE | Phase 4+8; GROUNDING RULES in all 4 generation skill system prompts |
+| Sources panel (Evidence Sources Sheet) | LIVE | Phase 6; per-skill evidence items with doc title, chunk type, confidence, page ref |
+| Citation formatter (inline mode) | LIVE | Phase 7 Track C; `formatEvidenceContext(citationFormat: "inline")` appends source attribution |
 | Fee estimator reads real billing rates | PLANNED | Currently uses estimated values |
 | Proposal export to PDF | PLANNED | |
 | Adobe InDesign handoff | PLANNED | UXP plugin |
@@ -78,6 +82,12 @@ The Launchpad is a two-step wizard that converts a raw RFP package into a struct
 |---------|--------|-------|
 | Section-level scoring against RFP evaluation criteria | LIVE | |
 | Score history per pursuit | LIVE | Stored in proposalScores table |
+| Evidence coverage score (0–1, 70/30 formula) | LIVE | Phase 5; shown as color-coded progress bar |
+| Unsupported claims amber warning list | LIVE | Phase 5; flags factual claims not found in evidence bundle |
+| Criteria scores sorted table with weight column | LIVE | Phase 7; sorted by score desc, then name asc |
+| Top gaps red-bordered panel | LIVE | Phase 7; ranked list with affected criterion |
+| Top improvements green-bordered panel | LIVE | Phase 7; ranked list with expected impact |
+| Win themes coverage matrix | LIVE | Phase 7; renders when field present; theme/sections/score/notes |
 
 ### 1.7 Agent Guidelines **[LIVE]**
 
@@ -265,7 +275,7 @@ This category covers the firm's institutional memory — every document, resume,
 | Per-task LLM routing (different model per skill) | LIVE | |
 | AI skill outputType column (prose / json / json\_with\_prose) | LIVE | Controls Proposal Workspace rendering |
 | dam\_image\_caption AEC specialist skill | LIVE | 9-field structured vision output |
-| Token usage logging per skill invocation | PLANNED | |
+| Token usage logging per skill invocation | LIVE | Phase 6; `llm_usage_logs.metadata` JSONB; scorer analytics logged per run |
 | Token usage visibility dashboard | PLANNED | |
 
 ---
@@ -312,7 +322,8 @@ This category covers the firm's institutional memory — every document, resume,
 | Superjson serialization (Date stays Date) | LIVE | |
 | UUID primary keys throughout | LIVE | |
 | TypeScript strict mode, zero errors | LIVE | Enforced at every checkpoint |
-| Vitest test suite (25 tests) | LIVE | |
+| Vitest test suite (244 tests across 12 files) | LIVE | |
+| Supabase auth `storageKey` isolation | LIVE | Prevents cross-app session collision when sharing Supabase project |
 | GitHub sync | LIVE | Auto-push on checkpoint |
 | Manus hosting (Cloud Run + CDN) | LIVE | amplifypro-nzkhudzp.manus.space |
 | Mobile-responsive optimization | PLANNED | |

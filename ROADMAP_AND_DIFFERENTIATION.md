@@ -1,6 +1,6 @@
 # Amplify Proposals — Roadmap & Competitive Differentiation
 
-**Version:** 3.7 (May 31, 2026)
+**Version:** 4.29 (Jul 5, 2026)
 **Purpose:** Prioritized development backlog with competitive context and strategic recommendations.
 
 ---
@@ -17,8 +17,8 @@ These items complete the primary user journey from RFP to proposal. Nothing in T
 
 | # | Item | Why It Matters |
 |---|------|---------------|
-| 1 | **Proposal Workspace: wire key_personnel skill to real staff data** | The `key_personnel` skill currently uses extracted RFP context. It needs to query the `personnel` table and return actual staff records with real qualifications. This is the most-requested feature for proposal teams. |
-| 2 | **Proposal Workspace: wire past_performance skill to real project briefs** | Same issue — the skill needs to query `dam_documents` for `docType = 'project_sheet'` and return real past project data matched to the RFP scope. |
+| 1 | ~~**Proposal Workspace: wire key_personnel skill to real staff data**~~ **DONE (Phase 4)** | Evidence bundle assembly reads real resume chunks from `document_chunks`; `evidenceContext` injected into key_personnel skill with GROUNDING RULES. |
+| 2 | ~~**Proposal Workspace: wire past_performance skill to real project briefs**~~ **DONE (Phase 4)** | Evidence bundle reads real project_sheet chunks from `document_chunks`; `evidenceContext` injected into past_performance and win_themes skills. |
 | 3 | **Proposal Workspace: wire fee_estimator to real billing rates from Timekeeping** | The fee estimator currently uses estimated values. Connecting it to the v0 `billing_rules` table would produce defensible, firm-specific fee proposals. |
 | 4 | **Proposal export to PDF** | The Workspace produces structured content but has no export path. A clean PDF export (even a simple one) is required before the platform can be used in a live pursuit. |
 | 5 | **RFP file upload UI in Workspace** | The Workspace currently assumes the RFP file was uploaded via the Launchpad. A direct drag-and-drop on the Workspace page is needed for users who skip the Launchpad. |
@@ -53,7 +53,7 @@ These items transform Amplify from a "smart document manager" into a genuine AI 
 | 16 | **RFP Wiki context injection into Workspace** | Fetch the compiled wiki for the pursuit's RFP and inject it as `firmContext` in every skill call. This gives the model full cross-referenced RFP context rather than just the raw document. |
 | 17 | **Multi-approach advisor in generateSection** | "Suggest Approaches" button shows 3 approaches with pros/cons before generating. This is the single highest-impact UX improvement for proposal quality. |
 | 18 | **Per-section success criteria checklist** | Wire Agent Guidelines into the Workspace so users must confirm criteria before a section generates. Reduces AI hallucination and improves reviewer confidence. |
-| 19 | **LLM token usage logging and dashboard** | Log every LLM call (skill name, model, input tokens, output tokens, cost estimate) to a `token_usage` table. Show a dashboard in Settings. This is essential for cost management at scale. |
+| 19 | ~~**LLM token usage logging**~~ **PARTIALLY DONE (Phase 6)** | Scorer analytics logged to `llm_usage_logs.metadata` JSONB per run. Full per-skill token logging and dashboard still planned. |
 | 20 | **PDF image extraction from DAM documents** | Stage 1: render PDF pages to PNG thumbnails on upload. Stage 2: vision LLM pass to identify and extract photographs as standalone image assets. This would make the Knowledge Hub a complete visual archive. |
 
 ---

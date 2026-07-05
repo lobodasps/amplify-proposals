@@ -21,7 +21,7 @@ This document describes the current technical architecture of the Amplify Propos
 | LLM | Fully configurable | Per-skill via `provider_api_keys` table; `sdkType` controls routing (openai_compatible / google_gemini / anthropic); any provider name allowed |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
-| Testing | Vitest | 25+ tests across 5 files |
+| Testing | Vitest | 244 tests across 12 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
 ---
@@ -79,6 +79,8 @@ Authentication uses **Supabase Auth** with email/password login. The flow is:
 4. **Route Protection**: All routes except `/login` are wrapped in a `ProtectedRoute` component that redirects unauthenticated users. Queries use `enabled: isAuthenticated && !loading` to prevent unauthenticated tRPC calls.
 
 There is **no Manus OAuth** in this project — it was replaced with Supabase Auth during the migration.
+
+**Cross-app session isolation:** The Supabase client in `client/src/lib/supabase.ts` is initialized with `auth: { storageKey: "amplify-proposals-auth" }`. This namespaces the session in `localStorage` so that a separate app sharing the same Supabase project (e.g., the v0 timekeeping app) cannot inject a stale session and trigger an auth redirect loop.
 
 ---
 
@@ -757,3 +759,9 @@ The LLM provider system was completely rebuilt to remove all hardcoded provider 
 | `7e63c2bb` | Test Connection button in Provider API Keys modal |
 | `168303f1` | Free-form provider field — any provider name allowed |
 | `69a71d9c` | sdkType column: routing fully decoupled from provider name string |
+| `2680f6e6` | Phase 4: evidenceBundleBuilder.ts, evidenceContext injection into 4 generation skills, evidenceBundles JSONB persistence |
+| `1f207c57` | Phase 5: ScorerOutput extended with evidenceCoverage + unsupportedClaims; ProposalScorecard amber panel; scorerEvidenceInput column |
+| `d3a71d42` | Phase 6: EvidenceSourcesPanel, getEvidenceSources procedure, scorer analytics telemetry in llm_usage_logs.metadata |
+| `b054f5af` | Phase 7: requirements_matrix_builder/conflict_detector renderer routing; ProposalScorecard full display (sorted table, gap/improvement panels, winThemesCoverage matrix); citationFormat parameter on formatEvidenceContext |
+| `b7d35e97` | Auth fix: Supabase storageKey isolation to prevent cross-app session collision |
+| `e27416d2` | Phase 8 Track C: GROUNDING RULES added to all 4 generation skill system prompts; evidenceContext in templateVariables |

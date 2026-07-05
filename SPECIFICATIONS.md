@@ -1,6 +1,6 @@
 # Amplify Proposals — Product Specification
 
-**Version:** 3.7 (May 31, 2026)
+**Version:** 4.29 (Jul 5, 2026)
 **Status:** Active Development — Production-Ready Core
 **Audience:** Engineering, Product, Investors, Prospective Integrators
 
