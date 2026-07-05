@@ -1493,6 +1493,8 @@ async function logUsage(params: {
   durationMs: number;
   success: boolean;
   errorMessage?: string;
+  /** Phase 6: optional structured metadata for scorer analytics */
+  metadata?: Record<string, unknown>;
 }): Promise<void> {
   try {
     const db = await getDb();
@@ -1508,6 +1510,7 @@ async function logUsage(params: {
       durationMs: params.durationMs,
       success: params.success,
       errorMessage: params.errorMessage ?? null,
+      metadata: params.metadata ?? null,
     });
   } catch {
     // Never let logging failures break the main flow

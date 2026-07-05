@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex } from "../../drizzle/schema";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex, llmUsageLogs } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
@@ -705,6 +705,33 @@ export const rfpSessionsRouter = router({
         .where(eq(rfpSessions.id, input.id))
         .limit(1);
       return rows[0] ?? null;
+    }),
+
+  // ── Phase 6: Get evidence sources for a session (Sources panel) ───────────
+  // Returns the stored evidence bundles, scorer evidence input, and live score
+  // details for provenance display. liveScoreDetails carries evidenceCoverage
+  // and unsupportedClaims from the scorer output.
+  getEvidenceSources: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null };
+      const rows = await db
+        .select({
+          evidenceBundles: rfpSessions.evidenceBundles,
+          scorerEvidenceInput: rfpSessions.scorerEvidenceInput,
+          liveScoreDetails: rfpSessions.liveScoreDetails,
+        })
+        .from(rfpSessions)
+        .where(eq(rfpSessions.id, input.sessionId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null };
+      return {
+        evidenceBundles: row.evidenceBundles ?? null,
+        scorerEvidenceInput: row.scorerEvidenceInput ?? null,
+        liveScoreDetails: row.liveScoreDetails ?? null,
+      };
     }),
 
   // ── List sessions for a pursuit ───────────────────────────────────────────
@@ -1473,6 +1500,37 @@ export const rfpSessionsRouter = router({
           scorerEvidenceInputPatch = { scorerEvidenceInput: scorerBundle };
         } catch (scorerBundleErr) {
           console.warn("[executeSkill] scorerEvidenceInput persistence failed:", scorerBundleErr);
+        }
+      }
+
+      // Phase 6: Scorer analytics telemetry — log evidenceCoverage + unsupportedClaims count
+      // Non-blocking; failure must not affect the main flow.
+      if (input.skillName === "proposal_scorer" && scorerPatch?.liveScore !== undefined) {
+        try {
+          let scorerMeta: Record<string, unknown> | undefined;
+          try {
+            const parsedForMeta = JSON.parse(llmOutput);
+            scorerMeta = {
+              evidenceCoverage: typeof parsedForMeta.evidenceCoverage === "number" ? parsedForMeta.evidenceCoverage : null,
+              unsupportedClaimsCount: Array.isArray(parsedForMeta.unsupportedClaims) ? parsedForMeta.unsupportedClaims.length : 0,
+              overallScore: typeof parsedForMeta.overallScore === "number" ? parsedForMeta.overallScore : null,
+              sessionId: input.sessionId,
+            };
+          } catch { /* ignore parse errors */ }
+          if (scorerMeta && db) {
+            await db.insert(llmUsageLogs).values({
+              skillType: "proposal_scorer_analytics",
+              provider: "analytics",
+              model: "n/a",
+              tokensIn: 0,
+              tokensOut: 0,
+              durationMs: 0,
+              success: true,
+              metadata: scorerMeta,
+            });
+          }
+        } catch (analyticsErr) {
+          console.warn("[executeSkill] scorer analytics telemetry failed:", analyticsErr);
         }
       }
 

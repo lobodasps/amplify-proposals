@@ -1106,6 +1106,8 @@ export const llmUsageLogs = pgTable("llm_usage_logs", {
   success: boolean("success").notNull().default(true),
   errorMessage: text("errorMessage"),
   userId: uuid("userId"),
+  /** Phase 6: optional structured metadata for scorer analytics (evidenceCoverage, unsupportedClaimsCount, etc.) */
+  metadata: jsonb("metadata"),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 });
 

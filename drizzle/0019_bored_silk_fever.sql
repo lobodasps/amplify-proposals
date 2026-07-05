@@ -1,0 +1,1 @@
+ALTER TABLE "llm_usage_logs" ADD COLUMN "metadata" jsonb;

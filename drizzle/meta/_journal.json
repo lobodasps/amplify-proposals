@@ -134,6 +134,13 @@
       "when": 1783274244270,
       "tag": "0018_shiny_carmella_unuscione",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783277209494,
+      "tag": "0019_bored_silk_fever",
+      "breakpoints": true
     }
   ]
 }

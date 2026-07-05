@@ -19,6 +19,7 @@
 import AppLayout from "@/components/AppLayout";
 import { SkillOutputRenderer, type SkillOutputType } from "@/components/SkillOutputRenderer";
 import AssetMatchingPanel from "@/components/AssetMatchingPanel";
+import EvidenceSourcesPanel from "@/components/EvidenceSourcesPanel";
 import ProposalDraftWorkspace from "@/components/ProposalDraftWorkspace";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -69,6 +70,7 @@ import {
   ArrowLeft,
   Zap,
   Clock,
+  Database,
 } from "lucide-react";
 import {
   ORDERED_SKILLS,
@@ -482,6 +484,7 @@ export default function ProposalWorkspace() {
   const [localState, setLocalState] = useState<WorkflowState>({});
   const [showResetDialog, setShowResetDialog] = useState<WorkflowSkillName | null>(null);
   const [showAssetPanel, setShowAssetPanel] = useState(false);
+  const [showSourcesPanel, setShowSourcesPanel] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"workflow" | "draft">("workflow");
   const abortRef = useRef(false);
 
@@ -861,6 +864,24 @@ export default function ProposalWorkspace() {
                   <TooltipContent>
                     Proposal Score (from Skill 8 — Proposal Scorer)
                   </TooltipContent>
+                </Tooltip>
+              )}
+
+              {/* Evidence Sources Panel */}
+              {activeSessionId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSourcesPanel(true)}
+                      className="gap-1.5 text-xs"
+                    >
+                      <Database className="h-3.5 w-3.5" />
+                      Sources
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Inspect evidence sources used by each AI skill</TooltipContent>
                 </Tooltip>
               )}
 
@@ -1484,6 +1505,26 @@ export default function ProposalWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Evidence Sources Side Panel ───────────────────────────── */}
+      <Sheet open={showSourcesPanel} onOpenChange={setShowSourcesPanel}>
+        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col h-full p-0">
+          <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
+            <SheetTitle className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              Evidence Sources
+            </SheetTitle>
+            <p className="text-xs text-muted-foreground">
+              Source documents and excerpts assembled for each AI skill run.
+            </p>
+          </SheetHeader>
+          <div className="flex-1 overflow-hidden">
+            {activeSessionId && (
+              <EvidenceSourcesPanel sessionId={activeSessionId} />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ── Asset Matching Side Panel ─────────────────────────────────── */}
       <Sheet open={showAssetPanel} onOpenChange={setShowAssetPanel}>

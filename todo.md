@@ -125,3 +125,13 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] Write 21 Phase 5 unit tests in `server/scorerEvidence.test.ts`: type extensions, UnsupportedClaim shape, 70/30 formula, empty evidence → neutral coverage, JSON schema backward compat, rendering contract, scorerEvidenceInput persistence
 - [x] TypeScript: zero errors; 136/137 tests pass (1 pre-existing OpenAI 429 rate limit failure)
 - [x] Checkpoint saved — stopped for review before Phase 6
+
+### Pipeline Upgrade — Phase 6: Sources Panel, Telemetry, and Validation — COMPLETE
+- [x] Add `getEvidenceSources` tRPC procedure to `rfpSessions.ts`: returns `{ evidenceBundles, scorerEvidenceInput }` for a session using a targeted SELECT (no full row load)
+- [x] Build `EvidenceSourcesPanel` component: collapsible per-skill sections with doc title, source type badge, chunk type badge, confidence badge, page/section ref, expandable content preview; scorer section shows coverage bar and unsupported claims list
+- [x] Add "Sources" button to Proposal Workspace top bar (next to "Assets" button) — opens `EvidenceSourcesPanel` as a right-side Sheet; visible whenever `activeSessionId` is set
+- [x] Add scorer analytics telemetry: after each `proposal_scorer` run, log `evidenceCoverage`, `unsupportedClaimsCount`, `overallScore`, `sessionId` to `llm_usage_logs.metadata` JSONB with `skillType=proposal_scorer_analytics` (additive, non-blocking)
+- [x] Add `metadata` JSONB column to `llm_usage_logs` schema + `pnpm db:push` migration applied
+- [x] Write 23 Phase 6 unit tests in `server/phase6.test.ts`: procedure shape (4), Sources button visibility (4), telemetry metadata shape (4), empty-state logic (4), metadata column type compat (2), EvidenceItem rendering contract (5)
+- [x] TypeScript: zero errors; 159/160 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review
