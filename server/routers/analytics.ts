@@ -25,31 +25,43 @@ export const analyticsRouter = router({
       const yearStart = new Date(now.getFullYear(), 0, 1);
       const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-      // 4 parallel query groups — Drizzle ORM handles Date params correctly
+      // 3 parallel queries — pursuitsByStatus computed in JS to avoid GROUP BY SQL issues
       const [
         allPursuits,
-        pursuitsByStatusWithValue,
         allProposals,
         [recentSessions, recentPursuitUpdates],
       ] = await Promise.all([
-        // Q1: all pursuits (lightweight — just status + estimatedValue + dueDate)
-        db.select({ status: pursuits.status, estimatedValue: pursuits.estimatedValue, dueDate: pursuits.dueDate }).from(pursuits),
-        // Q2: per-status count + value (single GROUP BY)
+        // Q1: all pursuits (status + estimatedValue + dueDate + id + title + updatedAt)
         db.select({
+          id: pursuits.id,
+          title: pursuits.title,
           status: pursuits.status,
-          cnt: count(),
-          value: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)`,
-        }).from(pursuits).groupBy(pursuits.status),
-        // Q3: all proposals (just status + createdAt)
+          estimatedValue: pursuits.estimatedValue,
+          dueDate: pursuits.dueDate,
+          updatedAt: pursuits.updatedAt,
+        }).from(pursuits),
+        // Q2: all proposals (just status + createdAt)
         db.select({ status: proposals.status, createdAt: proposals.createdAt }).from(proposals),
-        // Q4: recent activity
+        // Q3: recent activity
         Promise.all([
           db.select({ id: rfpSessions.id, pursuitId: rfpSessions.pursuitId, rfpFileName: rfpSessions.rfpFileName, sessionStatus: rfpSessions.sessionStatus, createdAt: rfpSessions.createdAt })
             .from(rfpSessions).orderBy(sql`${rfpSessions.createdAt} DESC`).limit(5),
-          db.select({ id: pursuits.id, title: pursuits.title, status: pursuits.status, updatedAt: pursuits.updatedAt })
-            .from(pursuits).orderBy(sql`${pursuits.updatedAt} DESC`).limit(5),
+          // recentPursuitUpdates derived from allPursuits below
+          Promise.resolve([] as { id: string; title: string; status: string | null; updatedAt: Date | null }[]),
         ]),
       ]);
+      // Derive recentPursuitUpdates from allPursuits (already fetched)
+      const recentPursuitUpdatesDerived = [...allPursuits]
+        .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())
+        .slice(0, 5);
+      // Compute pursuitsByStatus in JS
+      const statusMap: Record<string, { count: number; value: number }> = {};
+      for (const p of allPursuits) {
+        const s = p.status ?? "identify";
+        if (!statusMap[s]) statusMap[s] = { count: 0, value: 0 };
+        statusMap[s].count++;
+        statusMap[s].value += parseFloat(String(p.estimatedValue ?? 0));
+      }
 
       // Compute KPIs in JS (avoids complex SQL aggregation syntax issues)
       const INACTIVE = ["award", "lost", "no_go"];
@@ -71,13 +83,13 @@ export const analyticsRouter = router({
           time: s.createdAt,
           entityId: s.pursuitId ?? s.id,
         })),
-        ...recentPursuitUpdates.map(p => ({
+        ...recentPursuitUpdatesDerived.map(p => ({
           type: "pursuit" as const,
           text: `Pursuit updated: ${p.title}`,
           time: p.updatedAt,
           entityId: p.id,
         })),
-      ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8);
+      ].sort((a, b) => new Date(b.time ?? 0).getTime() - new Date(a.time ?? 0).getTime()).slice(0, 8);
 
       return {
         totalPursuits: allPursuits.length,
@@ -85,7 +97,7 @@ export const analyticsRouter = router({
         proposalsInProgress,
         pipelineValue, winRate,
         proposalsSubmittedYTD, upcomingDeadlines,
-        pursuitsByStatus: pursuitsByStatusWithValue.map((r: any) => ({ status: r.status ?? "identify", count: Number(r.cnt ?? 0), value: parseFloat(r.value ?? "0") })),
+        pursuitsByStatus: Object.entries(statusMap).map(([status, v]) => ({ status, count: v.count, value: v.value })),
         recentActivity,
       };
     } catch (err) {

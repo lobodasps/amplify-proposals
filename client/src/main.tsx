@@ -7,7 +7,6 @@ import superjson from "superjson";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { EntityProvider } from "./contexts/EntityContext";
-import { RfpContextProvider } from "./components/RfpContextSelector";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -87,9 +86,7 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <EntityProvider>
-          <RfpContextProvider>
             <App />
-          </RfpContextProvider>
         </EntityProvider>
       </AuthProvider>
     </QueryClientProvider>
