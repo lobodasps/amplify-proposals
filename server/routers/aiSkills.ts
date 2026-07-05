@@ -26,7 +26,8 @@ export const providerApiKeysRouter = router({
       z.object({
         id: z.string().uuid().optional(),
         name: z.string().min(1),
-        provider: z.enum(["openai", "anthropic", "google_gemini", "azure_openai", "custom"]),
+        /** Free-form provider identifier — e.g. "openai", "google_gemini", "mistral", "together", or any custom string */
+        provider: z.string().min(1),
         // Use "__KEEP_EXISTING__" to preserve the current API key when editing
         apiKey: z.string().min(1),
         baseUrl: z.string().nullable().optional(),
@@ -111,8 +112,8 @@ export const providerApiKeysRouter = router({
   testConnection: protectedProcedure
     .input(
       z.object({
-        /** Provider type */
-        provider: z.enum(["openai", "anthropic", "google_gemini", "azure_openai", "custom"]),
+        /** Free-form provider identifier — same values stored in provider_api_keys.provider */
+        provider: z.string().min(1),
         /** Raw API key to test — required unless existingId is provided */
         apiKey: z.string().optional(),
         /** ID of a saved key — used when the user hasn't entered a new key */
@@ -180,16 +181,17 @@ export const providerApiKeysRouter = router({
           return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text.slice(0, 60)}"` };
 
         } else {
-          // OpenAI, Azure, custom — OpenAI-compatible endpoint
+          // OpenAI, Azure, custom, or any unknown provider — treat as OpenAI-compatible
+          const isAzure = input.provider === "azure_openai";
           const baseUrl = resolvedBaseUrl
             ? resolvedBaseUrl.replace(/\/$/, "")
-            : input.provider === "azure_openai"
+            : isAzure
               ? null
               : "https://api.openai.com/v1";
 
-          if (!baseUrl) throw new Error("Azure OpenAI requires a Base URL.");
+          if (!baseUrl) throw new Error(`Provider "${input.provider}" requires a Base URL (it is not a known provider with a default endpoint).`);
 
-          const model = input.model || (input.provider === "openai" ? "gpt-4o-mini" : "gpt-4o-mini");
+          const model = input.model || "gpt-4o-mini";
           const endpoint = `${baseUrl}/chat/completions`;
 
           const resp = await fetch(endpoint, {

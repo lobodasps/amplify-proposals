@@ -44,14 +44,13 @@ export type SkillType =
   | "project_experience_writer"
   | "key_personnel_writer";
 
-export type Provider =
-  | "openai"
-  | "anthropic"
-  | "google_gemini"
-  | "azure_openai"
-  | "custom"
-  // Legacy — kept for backward compat with existing DB rows; treated as google_gemini
-  | "manus_builtin";
+/**
+ * Provider is a free-form string so users can enter any provider name
+ * (e.g. "mistral", "together", "deepseek", "groq", etc.).
+ * The well-known values below are handled with native routing;
+ * anything else is treated as an OpenAI-compatible endpoint and requires a baseUrl.
+ */
+export type Provider = string;
 
 export interface SkillMessage {
   role: "system" | "user" | "assistant";
@@ -891,30 +890,39 @@ Write a 100-150 word narrative for each person.`,
 // ─── Provider endpoint resolution (OpenAI-compat only — Gemini uses native SDK) ─
 
 function resolveEndpoint(provider: Provider, baseUrl?: string | null): string {
+  // If a baseUrl is explicitly configured, always use it (supports Azure, custom, and any OpenAI-compat provider)
   if (baseUrl && baseUrl.trim()) return baseUrl.trim().replace(/\/$/, "") + "/v1/chat/completions";
+  // Well-known providers with fixed endpoints
   switch (provider) {
     case "openai":
       return "https://api.openai.com/v1/chat/completions";
     case "anthropic":
       return "https://api.anthropic.com/v1/messages";
+    case "google_gemini":
+      // Handled by callGeminiNative — this path is only reached for OpenAI-compat fallback
+      return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     case "azure_openai":
-      throw new Error("Azure OpenAI requires a baseUrl to be configured in the skill settings.");
+      throw new Error("Azure OpenAI requires a Base URL to be configured in Settings → AI Skills → Provider API Keys.");
     case "manus_builtin":
-    default:
+      // Legacy: route through Gemini
       return ENV.forgeApiUrl
         ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
         : "https://forge.manus.im/v1/chat/completions";
+    default:
+      // Unknown provider — require a baseUrl
+      throw new Error(`Provider "${provider}" is not a known provider with a default endpoint. Please set a Base URL in Settings → AI Skills → Provider API Keys.`);
   }
 }
 
 function resolveDefaultModel(provider: Provider): string {
   switch (provider) {
-    case "openai":       return "gpt-4o-mini";
-    case "anthropic":    return "claude-sonnet-4-20250514";
-    case "google_gemini":return "gemini-2.5-flash-preview-05-20";
-    case "azure_openai": return "gpt-4o";
-    case "manus_builtin":
-    default:             return "gemini-2.5-flash-preview-05-20";
+    case "openai":        return "gpt-4o-mini";
+    case "anthropic":     return "claude-sonnet-4-20250514";
+    case "google_gemini": return "gemini-2.5-flash-preview-05-20";
+    case "azure_openai":  return "gpt-4o";
+    case "manus_builtin": return "gemini-2.5-flash-preview-05-20";
+    // For any unknown provider, return a generic default — user should set defaultModel in their key config
+    default:              return "gpt-4o-mini";
   }
 }
 
@@ -1002,14 +1010,20 @@ async function loadLegacyProviderKeysFromDb(): Promise<Record<string, string>> {
 }
 
 async function resolveApiKey(provider: Provider): Promise<string> {
-  // 1. Try new provider_api_keys table first
+  // 1. Try new provider_api_keys table first (exact match on provider string)
   const providerKeys = await loadProviderApiKeysFromDb();
   if (providerKeys) {
-    const match = providerKeys.find((k) => k.provider === provider || (provider === "manus_builtin" && k.provider === "google_gemini"));
-    if (match) return match.apiKey;
+    // Exact match first
+    const exactMatch = providerKeys.find((k) => k.provider === provider);
+    if (exactMatch) return exactMatch.apiKey;
+    // Legacy: manus_builtin maps to google_gemini
+    if (provider === "manus_builtin") {
+      const geminiMatch = providerKeys.find((k) => k.provider === "google_gemini");
+      if (geminiMatch) return geminiMatch.apiKey;
+    }
   }
 
-  // 2. Legacy app_settings keys (backward compat)
+  // 2. Legacy app_settings keys (backward compat for well-known providers)
   const legacyKeys = await loadLegacyProviderKeysFromDb();
 
   switch (provider) {
@@ -1032,11 +1046,9 @@ async function resolveApiKey(provider: Provider): Promise<string> {
       if (ENV.openaiApiKey) return ENV.openaiApiKey;
       throw new Error("No OpenAI API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
     }
-    case "azure_openai":
-      throw new Error("Azure OpenAI requires a baseUrl and API key configured in Settings → AI Skills → Provider API Keys.");
-    case "custom":
-      throw new Error("Custom provider requires an API key configured in Settings → AI Skills → Provider API Keys.");
     default:
+      // For any free-form provider (mistral, groq, together, deepseek, etc.)
+      // the key MUST be in provider_api_keys — no ENV fallback possible
       throw new Error(`No API key configured for provider "${provider}". Go to Settings → AI Skills → Provider API Keys to add your key.`);
   }
 }

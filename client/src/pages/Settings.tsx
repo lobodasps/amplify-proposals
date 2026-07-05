@@ -967,14 +967,20 @@ function ProviderKeysCard() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Provider</Label>
-              <Select value={form.provider} onValueChange={v => setForm(f => ({ ...f, provider: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(PROVIDER_LABELS).filter(([k]) => k !== "manus_builtin").map(([v, l]) => (
-                    <SelectItem key={v} value={v}>{l}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                value={form.provider}
+                onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
+                placeholder="e.g. openai, google_gemini, mistral, groq, together"
+                list="provider-id-list"
+              />
+              <datalist id="provider-id-list">
+                {Object.keys(PROVIDER_LABELS).filter(k => k !== "manus_builtin").map(v => (
+                  <option key={v} value={v}>{PROVIDER_LABELS[v]}</option>
+                ))}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                Type any provider identifier. Well-known providers (openai, anthropic, google_gemini, azure_openai) have built-in endpoints. All others require a Base URL.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">API Key {editKey && <span className="text-muted-foreground">(leave blank to keep existing)</span>}</Label>
@@ -985,10 +991,21 @@ function ProviderKeysCard() {
                 placeholder={PROVIDER_PLACEHOLDER[form.provider] ?? "your-api-key"}
               />
             </div>
-            {(form.provider === "azure_openai" || form.provider === "custom") && (
+            {/* Show Base URL for Azure, custom, or any non-well-known provider */}
+            {(form.provider === "azure_openai" || form.provider === "custom" || !Object.keys(PROVIDER_LABELS).includes(form.provider)) && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Base URL</Label>
-                <Input value={form.baseUrl} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))} placeholder="https://your-endpoint.openai.azure.com/..." />
+                <Label className="text-xs">
+                  Base URL
+                  {form.provider !== "azure_openai" && form.provider !== "custom" && (
+                    <span className="text-amber-600 ml-1">(required for "{form.provider}")</span>
+                  )}
+                </Label>
+                <Input
+                  value={form.baseUrl}
+                  onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))}
+                  placeholder="https://api.your-provider.com/v1"
+                />
+                <p className="text-xs text-muted-foreground">OpenAI-compatible endpoint. The path <code>/chat/completions</code> will be appended automatically.</p>
               </div>
             )}
             <div className="space-y-1.5">
