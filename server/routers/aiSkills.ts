@@ -102,6 +102,128 @@ export const providerApiKeysRouter = router({
       invalidateProviderKeysCache();
       return { success: true };
     }),
+
+  /**
+   * Test an API key by sending a minimal "ping" request to the provider.
+   * Accepts either a raw key (for new keys) or an existing key ID (for saved keys).
+   * Returns { success, model, latencyMs, message }.
+   */
+  testConnection: protectedProcedure
+    .input(
+      z.object({
+        /** Provider type */
+        provider: z.enum(["openai", "anthropic", "google_gemini", "azure_openai", "custom"]),
+        /** Raw API key to test — required unless existingId is provided */
+        apiKey: z.string().optional(),
+        /** ID of a saved key — used when the user hasn't entered a new key */
+        existingId: z.string().uuid().optional(),
+        /** Base URL for Azure / custom providers */
+        baseUrl: z.string().nullable().optional(),
+        /** Model to ping (optional; falls back to provider default) */
+        model: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const start = Date.now();
+
+      // Resolve the API key
+      let resolvedKey = input.apiKey;
+      let resolvedBaseUrl = input.baseUrl ?? null;
+
+      if (!resolvedKey && input.existingId) {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        const rows = await db.select().from(providerApiKeys).where(eq(providerApiKeys.id, input.existingId)).limit(1);
+        if (!rows[0]) throw new Error("Provider key not found.");
+        resolvedKey = rows[0].apiKey;
+        resolvedBaseUrl = resolvedBaseUrl ?? rows[0].baseUrl ?? null;
+      }
+
+      if (!resolvedKey) throw new Error("No API key provided.");
+
+      // Minimal test prompt
+      const testMessages = [
+        { role: "user" as const, content: "Reply with exactly one word: OK" },
+      ];
+
+      try {
+        if (input.provider === "google_gemini") {
+          const { GoogleGenerativeAI } = await import("@google/generative-ai");
+          const genAI = new GoogleGenerativeAI(resolvedKey);
+          const model = input.model || "gemini-2.0-flash";
+          const genModel = genAI.getGenerativeModel({ model });
+          const result = await genModel.generateContent("Reply with exactly one word: OK");
+          const text = result.response.text()?.trim();
+          return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text?.slice(0, 60)}"` };
+
+        } else if (input.provider === "anthropic") {
+          const model = input.model || "claude-3-haiku-20240307";
+          const resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": resolvedKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: 16,
+              messages: testMessages,
+            }),
+          });
+          if (!resp.ok) {
+            const body = await resp.text().catch(() => "");
+            throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+          }
+          const data = (await resp.json()) as any;
+          const text = (data.content?.[0]?.text ?? "").trim();
+          return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text.slice(0, 60)}"` };
+
+        } else {
+          // OpenAI, Azure, custom — OpenAI-compatible endpoint
+          const baseUrl = resolvedBaseUrl
+            ? resolvedBaseUrl.replace(/\/$/, "")
+            : input.provider === "azure_openai"
+              ? null
+              : "https://api.openai.com/v1";
+
+          if (!baseUrl) throw new Error("Azure OpenAI requires a Base URL.");
+
+          const model = input.model || (input.provider === "openai" ? "gpt-4o-mini" : "gpt-4o-mini");
+          const endpoint = `${baseUrl}/chat/completions`;
+
+          const resp = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${resolvedKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: testMessages,
+              max_tokens: 16,
+            }),
+          });
+
+          if (!resp.ok) {
+            const body = await resp.text().catch(() => "");
+            const snippet = body.slice(0, 200);
+            throw new Error(`HTTP ${resp.status}: ${snippet}`);
+          }
+
+          const data = (await resp.json()) as any;
+          const text = data.choices?.[0]?.message?.content?.trim();
+          return { success: true, model, latencyMs: Date.now() - start, message: `Response: "${text?.slice(0, 60)}"` };
+        }
+      } catch (err: any) {
+        return {
+          success: false,
+          model: input.model || "",
+          latencyMs: Date.now() - start,
+          message: err.message ?? "Unknown error",
+        };
+      }
+    }),
 });
 
 // ─── AI Skills router ─────────────────────────────────────────────────────────

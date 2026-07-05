@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, Loader2, Building2, Users, Tag, Briefcase, BookOpen, Settings2, Bell, User, Brain, ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw, Play, CheckCircle2, XCircle, Upload, Zap } from "lucide-react";
 import { ImportTab } from "@/components/ImportTab";
 import AppLayout from "@/components/AppLayout";
 import { useEntityContext } from "@/contexts/EntityContext";
@@ -834,19 +834,43 @@ function ProviderKeysCard() {
     onError: (e) => toast.error(e.message),
   });
 
+  const testConnection = trpc.aiSkills.providerKeys.testConnection.useMutation();
+
   const [showForm, setShowForm] = useState(false);
   const [editKey, setEditKey] = useState<any>(null);
   const [form, setForm] = useState({ name: "", provider: "google_gemini" as string, apiKey: "", baseUrl: "", defaultModel: "", isDefault: false });
+  const [testResult, setTestResult] = useState<{ success: boolean; model: string; latencyMs: number; message: string } | null>(null);
+
+  const handleTestConnection = () => {
+    setTestResult(null);
+    // Determine which API key to use: new key from form, or existing saved key
+    const isNewKey = form.apiKey.trim().length > 0 && !form.apiKey.startsWith("sk-...");
+    testConnection.mutate(
+      {
+        provider: form.provider as any,
+        apiKey: isNewKey ? form.apiKey : undefined,
+        existingId: !isNewKey && editKey ? editKey.id : undefined,
+        baseUrl: form.baseUrl || null,
+        model: form.defaultModel || undefined,
+      },
+      {
+        onSuccess: (r) => setTestResult(r),
+        onError: (e) => setTestResult({ success: false, model: "", latencyMs: 0, message: e.message }),
+      }
+    );
+  };
 
   const openAdd = () => {
     setForm({ name: "", provider: "google_gemini", apiKey: "", baseUrl: "", defaultModel: "", isDefault: (keys as any[]).length === 0 });
     setEditKey(null);
+    setTestResult(null);
     setShowForm(true);
   };
 
   const openEdit = (k: any) => {
     setForm({ name: k.name, provider: k.provider, apiKey: "", baseUrl: k.baseUrl ?? "", defaultModel: k.defaultModel ?? "", isDefault: k.isDefault });
     setEditKey(k);
+    setTestResult(null);
     setShowForm(true);
   };
 
@@ -984,7 +1008,37 @@ function ProviderKeysCard() {
               <Label className="text-sm">Set as default fallback provider</Label>
             </div>
           </div>
-          <DialogFooter>
+          {/* Test Connection result banner */}
+          {testResult && (
+            <div className={`flex items-start gap-2 px-3 py-2.5 rounded-md text-xs border ${
+              testResult.success
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : "bg-red-50 border-red-200 text-red-800"
+            }`}>
+              <span className="shrink-0 mt-0.5">{testResult.success ? "✅" : "❌"}</span>
+              <div className="min-w-0">
+                <p className="font-semibold">{testResult.success ? "Connection successful" : "Connection failed"}</p>
+                <p className="mt-0.5 break-words">{testResult.message}</p>
+                {testResult.success && (
+                  <p className="mt-0.5 text-emerald-600">
+                    Model: <code className="font-mono">{testResult.model}</code> · {testResult.latencyMs}ms
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={testConnection.isPending || (!form.apiKey.trim() && !editKey)}
+              className="sm:mr-auto gap-1.5"
+            >
+              {testConnection.isPending
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Testing…</>
+                : <><Zap className="h-3.5 w-3.5" />Test Connection</>}
+            </Button>
             <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={upsert.isPending}>
               {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
