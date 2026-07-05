@@ -54,10 +54,7 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = trpc.analytics.dashboard.useQuery(undefined, {
     enabled: isAuthenticated,
   });
-  const { data: pursuitsList, isLoading: pursuitsLoading } = trpc.pursuits.list.useQuery(
-    { limit: 5, offset: 0 } as any,
-    { enabled: isAuthenticated }
-  );
+  // recentPursuits derived from analytics.dashboard — no separate pursuits.list call needed
 
   if (authLoading) {
     return (
@@ -154,17 +151,21 @@ export default function Dashboard() {
     },
   ];
 
-  const recentPursuits = (pursuitsList ?? []).slice(0, 5).map((p: any) => ({
-    id: p.id,
-    title: p.title,
-    client: p.clientName ?? "—",
-    status: p.status,
-    statusLabel: STATUS_LABELS[p.status] ?? p.status,
-    statusColor: STATUS_COLORS[p.status] ?? "status-identify",
-    due: p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD",
-    value: p.estimatedValue ? (p.estimatedValue >= 1_000_000 ? `$${(p.estimatedValue / 1_000_000).toFixed(1)}M` : `$${(p.estimatedValue / 1_000).toFixed(0)}K`) : "—",
-    service: (() => { try { const sl = p.serviceLines; if (!sl) return "—"; if (Array.isArray(sl)) return sl[0] ?? "—"; if (typeof sl === "string") return JSON.parse(sl)?.[0] ?? "—"; return "—"; } catch { return "—"; } })(),
-  }));
+  // Derive recent pursuits from analytics.dashboard recentActivity (no extra DB call)
+  const recentPursuits = (stats?.recentActivity ?? [])
+    .filter((a: any) => a.type === "pursuit")
+    .slice(0, 5)
+    .map((a: any) => ({
+      id: a.entityId,
+      title: a.text?.replace("Pursuit updated: ", "") ?? "Untitled",
+      client: "—",
+      status: a.status ?? "identify",
+      statusLabel: STATUS_LABELS[a.status ?? "identify"] ?? "Identify",
+      statusColor: STATUS_COLORS[a.status ?? "identify"] ?? "status-identify",
+      due: "TBD",
+      value: "—",
+      service: "—",
+    }));
 
   // Only show the 5 active stages (not lost/no_go) in the pipeline snapshot
   const ACTIVE_STAGES = ["identify", "qualify", "pursue", "submit", "award"];
@@ -254,7 +255,7 @@ export default function Dashboard() {
                 </Link>
               </CardHeader>
               <CardContent className="p-0">
-                {pursuitsLoading ? (
+                {statsLoading ? (
                   <div className="p-4 space-y-3">
                     {Array.from({ length: 4 }).map((_, i) => (
                       <Skeleton key={i} className="h-14 w-full rounded-lg" />

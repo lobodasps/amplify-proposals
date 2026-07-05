@@ -10,7 +10,18 @@ import { EntityProvider } from "./contexts/EntityContext";
 import { RfpContextProvider } from "./components/RfpContextSelector";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Cache results for 60 seconds — prevents re-fetching on every navigation
+      staleTime: 60 * 1000,
+      // Don't refetch when the user switches browser tabs
+      refetchOnWindowFocus: false,
+      // Retry once on failure, not 3 times (reduces timeout pile-ups)
+      retry: 1,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;

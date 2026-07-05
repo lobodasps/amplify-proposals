@@ -40,10 +40,19 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerUploadRoute(app);
-  // Warm the DB connection eagerly so the first user request doesn't pay cold-connect latency
-  getDb().then(db => {
-    if (db) console.log("[Database] Connection warmed up");
-  }).catch(e => console.warn("[Database] Warmup failed:", e));
+  // Warm the DB connection eagerly so the first user request doesn't pay cold-connect latency.
+  // Use a fire-and-forget with explicit catch so any DB error (timeout, unreachable) never
+  // propagates as an unhandled rejection and crashes the Node process.
+  void (async () => {
+    try {
+      const db = await getDb();
+      if (db) {
+        console.log("[Database] Connection warmed up");
+      }
+    } catch (e) {
+      console.warn("[Database] Warmup skipped:", (e as Error)?.message ?? e);
+    }
+  })();
   // Seed AI skill defaults on startup (no-op if already seeded)
   seedDefaultSkills().catch(e => console.warn("[AI Skills] Seed failed:", e));
   // tRPC API
