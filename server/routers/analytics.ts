@@ -25,65 +25,45 @@ export const analyticsRouter = router({
       const yearStart = new Date(now.getFullYear(), 0, 1);
       const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-      // Run all independent queries in parallel — single round-trip latency
+      // 4 parallel query groups — Drizzle ORM handles Date params correctly
       const [
-        [totalPursuitsResult],
-        [activePursuitsResult],
-        [proposalsInProgressResult],
-        pursuitStatusCounts,
-        pipelineValueResult,
-        [proposalsSubmittedResult],
-        [upcomingDeadlinesResult],
+        allPursuits,
         pursuitsByStatusWithValue,
-        recentSessions,
-        recentPursuitUpdates,
+        allProposals,
+        [recentSessions, recentPursuitUpdates],
       ] = await Promise.all([
-        db.select({ count: count() }).from(pursuits),
-        db.select({ count: count() }).from(pursuits)
-          .where(notInArray(pursuits.status, ["award", "lost", "no_go"])),
-        db.select({ count: count() }).from(proposals)
-          .where(inArray(proposals.status, ["draft", "in_review"])),
-        db.select({ status: pursuits.status, count: count() })
-          .from(pursuits).groupBy(pursuits.status),
-        db.select({ total: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)` })
-          .from(pursuits)
-          .where(notInArray(pursuits.status, ["award", "lost", "no_go"])),
-        db.select({ count: count() }).from(proposals)
-          .where(and(
-            inArray(proposals.status, ["submitted", "awarded", "lost"]),
-            gte(proposals.createdAt, yearStart)
-          )),
-        db.select({ count: count() }).from(pursuits)
-          .where(and(
-            notInArray(pursuits.status, ["award", "lost", "no_go"]),
-            isNotNull(pursuits.dueDate),
-            gte(pursuits.dueDate, now),
-            lte(pursuits.dueDate, in14Days)
-          )),
+        // Q1: all pursuits (lightweight — just status + estimatedValue + dueDate)
+        db.select({ status: pursuits.status, estimatedValue: pursuits.estimatedValue, dueDate: pursuits.dueDate }).from(pursuits),
+        // Q2: per-status count + value (single GROUP BY)
         db.select({
-            status: pursuits.status,
-            count: count(),
-            value: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)`,
-          })
-          .from(pursuits)
-          .groupBy(pursuits.status),
-        db.select({ id: rfpSessions.id, pursuitId: rfpSessions.pursuitId, rfpFileName: rfpSessions.rfpFileName, sessionStatus: rfpSessions.sessionStatus, createdAt: rfpSessions.createdAt })
-          .from(rfpSessions)
-          .orderBy(sql`${rfpSessions.createdAt} DESC`)
-          .limit(5),
-        db.select({ id: pursuits.id, title: pursuits.title, status: pursuits.status, updatedAt: pursuits.updatedAt })
-          .from(pursuits)
-          .orderBy(sql`${pursuits.updatedAt} DESC`)
-          .limit(5),
+          status: pursuits.status,
+          cnt: count(),
+          value: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)`,
+        }).from(pursuits).groupBy(pursuits.status),
+        // Q3: all proposals (just status + createdAt)
+        db.select({ status: proposals.status, createdAt: proposals.createdAt }).from(proposals),
+        // Q4: recent activity
+        Promise.all([
+          db.select({ id: rfpSessions.id, pursuitId: rfpSessions.pursuitId, rfpFileName: rfpSessions.rfpFileName, sessionStatus: rfpSessions.sessionStatus, createdAt: rfpSessions.createdAt })
+            .from(rfpSessions).orderBy(sql`${rfpSessions.createdAt} DESC`).limit(5),
+          db.select({ id: pursuits.id, title: pursuits.title, status: pursuits.status, updatedAt: pursuits.updatedAt })
+            .from(pursuits).orderBy(sql`${pursuits.updatedAt} DESC`).limit(5),
+        ]),
       ]);
 
-      const awardedCount = pursuitStatusCounts.find(r => r.status === "award")?.count ?? 0;
-      const lostCount = pursuitStatusCounts.find(r => r.status === "lost")?.count ?? 0;
+      // Compute KPIs in JS (avoids complex SQL aggregation syntax issues)
+      const INACTIVE = ["award", "lost", "no_go"];
+      const activePursuits = allPursuits.filter(p => !INACTIVE.includes(p.status ?? ""));
+      const pipelineValue = activePursuits.reduce((sum, p) => sum + parseFloat(String(p.estimatedValue ?? 0)), 0);
+      const awardedCount = allPursuits.filter(p => p.status === "award").length;
+      const lostCount = allPursuits.filter(p => p.status === "lost").length;
       const totalDecided = awardedCount + lostCount;
       const winRate = totalDecided > 0 ? Math.round((awardedCount / totalDecided) * 100) : 0;
-      const pipelineValue = parseFloat(pipelineValueResult[0]?.total ?? "0");
-      const proposalsSubmittedYTD = proposalsSubmittedResult?.count ?? 0;
-      const upcomingDeadlines = upcomingDeadlinesResult?.count ?? 0;
+      const upcomingDeadlines = activePursuits.filter(p => p.dueDate && p.dueDate >= now && p.dueDate <= in14Days).length;
+      const proposalsInProgress = allProposals.filter(p => p.status === "draft" || p.status === "in_review").length;
+      const proposalsSubmittedYTD = allProposals.filter(p =>
+        ["submitted", "awarded", "lost"].includes(p.status ?? "") && p.createdAt && p.createdAt >= yearStart
+      ).length;
       const recentActivity = [
         ...recentSessions.map(s => ({
           type: "rfp_session" as const,
@@ -100,12 +80,12 @@ export const analyticsRouter = router({
       ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8);
 
       return {
-        totalPursuits: totalPursuitsResult?.count ?? 0,
-        activePursuits: activePursuitsResult?.count ?? 0,
-        proposalsInProgress: proposalsInProgressResult?.count ?? 0,
+        totalPursuits: allPursuits.length,
+        activePursuits: activePursuits.length,
+        proposalsInProgress,
         pipelineValue, winRate,
         proposalsSubmittedYTD, upcomingDeadlines,
-        pursuitsByStatus: pursuitsByStatusWithValue.map(r => ({ status: r.status ?? "identify", count: r.count, value: parseFloat(r.value ?? "0") })),
+        pursuitsByStatus: pursuitsByStatusWithValue.map((r: any) => ({ status: r.status ?? "identify", count: Number(r.cnt ?? 0), value: parseFloat(r.value ?? "0") })),
         recentActivity,
       };
     } catch (err) {

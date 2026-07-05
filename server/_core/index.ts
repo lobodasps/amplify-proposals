@@ -10,6 +10,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { seedDefaultSkills } from "../_core/llmSkill";
+import { getDb } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +40,10 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerUploadRoute(app);
+  // Warm the DB connection eagerly so the first user request doesn't pay cold-connect latency
+  getDb().then(db => {
+    if (db) console.log("[Database] Connection warmed up");
+  }).catch(e => console.warn("[Database] Warmup failed:", e));
   // Seed AI skill defaults on startup (no-op if already seeded)
   seedDefaultSkills().catch(e => console.warn("[AI Skills] Seed failed:", e));
   // tRPC API
