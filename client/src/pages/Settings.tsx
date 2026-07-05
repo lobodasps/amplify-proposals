@@ -471,23 +471,25 @@ export default function Settings() {
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">Manage entities, lookup tables, organizations, people, and application settings.</p>
       </div>
-      <Tabs defaultValue="entities">
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="entities">Entities</TabsTrigger>
-          <TabsTrigger value="organizations">Organizations</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
-          <TabsTrigger value="orderTypes">Order Types</TabsTrigger>
-          <TabsTrigger value="departments">Departments</TabsTrigger>
-          <TabsTrigger value="serviceTypes">Service Types</TabsTrigger>
-          <TabsTrigger value="form254">Form 254 Codes</TabsTrigger>
-          <TabsTrigger value="glossary">Glossary</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="reminders">Reminders</TabsTrigger>
-          <TabsTrigger value="appSettings">App Settings</TabsTrigger>
-          <TabsTrigger value="aiSkills" className="flex items-center gap-1"><Brain className="h-3 w-3" />AI Skills</TabsTrigger>
-          <TabsTrigger value="firmProfile" className="flex items-center gap-1"><Building2 className="h-3 w-3" />Firm Profile</TabsTrigger>
-          <TabsTrigger value="import" className="flex items-center gap-1"><Upload className="h-3 w-3" />Import</TabsTrigger>
+      <Tabs defaultValue="entities" orientation="vertical">
+        <div className="flex gap-6 items-start">
+        <TabsList className="flex flex-col h-auto w-48 shrink-0 gap-0.5 bg-muted/40 border rounded-lg p-1.5">
+          <TabsTrigger value="entities" className="w-full justify-start text-sm">Entities</TabsTrigger>
+          <TabsTrigger value="organizations" className="w-full justify-start text-sm">Organizations</TabsTrigger>
+          <TabsTrigger value="people" className="w-full justify-start text-sm">People</TabsTrigger>
+          <TabsTrigger value="orderTypes" className="w-full justify-start text-sm">Order Types</TabsTrigger>
+          <TabsTrigger value="departments" className="w-full justify-start text-sm">Departments</TabsTrigger>
+          <TabsTrigger value="serviceTypes" className="w-full justify-start text-sm">Service Types</TabsTrigger>
+          <TabsTrigger value="form254" className="w-full justify-start text-sm">Form 254 Codes</TabsTrigger>
+          <TabsTrigger value="glossary" className="w-full justify-start text-sm">Glossary</TabsTrigger>
+          <TabsTrigger value="users" className="w-full justify-start text-sm">Users</TabsTrigger>
+          <TabsTrigger value="reminders" className="w-full justify-start text-sm">Reminders</TabsTrigger>
+          <TabsTrigger value="appSettings" className="w-full justify-start text-sm">App Settings</TabsTrigger>
+          <TabsTrigger value="aiSkills" className="w-full justify-start text-sm flex items-center gap-1.5"><Brain className="h-3 w-3" />AI Skills</TabsTrigger>
+          <TabsTrigger value="firmProfile" className="w-full justify-start text-sm flex items-center gap-1.5"><Building2 className="h-3 w-3" />Firm Profile</TabsTrigger>
+          <TabsTrigger value="import" className="w-full justify-start text-sm flex items-center gap-1.5"><Upload className="h-3 w-3" />Import</TabsTrigger>
         </TabsList>
+        <div className="flex-1 min-w-0">
         <TabsContent value="entities" className="mt-4"><EntitiesTab /></TabsContent>
         <TabsContent value="organizations" className="mt-4"><OrganizationsTab /></TabsContent>
         <TabsContent value="people" className="mt-4"><PeopleTab /></TabsContent>
@@ -528,6 +530,8 @@ export default function Settings() {
         <TabsContent value="aiSkills" className="mt-4"><AiSkillsTab /></TabsContent>
         <TabsContent value="firmProfile" className="mt-4"><FirmProfileTab /></TabsContent>
         <TabsContent value="import" className="mt-4"><ImportTab /></TabsContent>
+        </div>
+        </div>
       </Tabs>
     </div>
     </AppLayout>
