@@ -47,16 +47,25 @@ and ask the user for only that specific value.
 
 ---
 
-## Group 3 — AI / LLM (Required for all AI features)
+## Group 3 — AI / LLM
+
+**As of v4.20, Amplify Proposals does NOT use any platform-injected LLM keys.** All AI provider credentials are stored in the `provider_api_keys` database table and managed through Settings → AI Skills → Provider API Keys. The variables below are still injected by the Manus platform but are no longer used by the application for LLM calls.
 
 | Variable | Purpose | Where to find it |
-|----------|---------|-----------------|
-| `GOOGLE_AI_API_KEY` | Gemini Flash/Pro vision + text (rfp_parser, dam_image_caption, classifyFile, all workspace skills) | Google AI Studio → [aistudio.google.com](https://aistudio.google.com) → Get API key |
-| `OPENAI_API_KEY` | OpenAI fallback / Whisper transcription | OpenAI Platform → [platform.openai.com](https://platform.openai.com) → API keys |
-| `BUILT_IN_FORGE_API_KEY` | Manus built-in AI APIs (server-side) | Manus platform — auto-injected |
-| `BUILT_IN_FORGE_API_URL` | Manus built-in AI API base URL | Manus platform — auto-injected |
-| `VITE_FRONTEND_FORGE_API_KEY` | Manus built-in AI APIs (client-side) | Manus platform — auto-injected |
-| `VITE_FRONTEND_FORGE_API_URL` | Manus built-in AI API URL for frontend | Manus platform — auto-injected |
+|----------|---------|------------------|
+| `BUILT_IN_FORGE_API_KEY` | Manus built-in AI APIs (server-side) — **not used for LLM calls** | Manus platform — auto-injected |
+| `BUILT_IN_FORGE_API_URL` | Manus built-in AI API base URL — **not used for LLM calls** | Manus platform — auto-injected |
+| `VITE_FRONTEND_FORGE_API_KEY` | Manus built-in AI APIs (client-side) — **not used for LLM calls** | Manus platform — auto-injected |
+| `VITE_FRONTEND_FORGE_API_URL` | Manus built-in AI API URL for frontend — **not used for LLM calls** | Manus platform — auto-injected |
+
+**To configure AI providers**, add keys directly in the application:
+1. Log in as admin
+2. Go to Settings → AI Skills → Configuration
+3. Click **Add Key** in the Provider API Keys section
+4. Add at minimum: one Google Gemini key and one Anthropic key
+5. Mark one as the **default fallback provider**
+
+See the [AI Provider Configuration section in README.md](./README.md#ai-provider-configuration) for full details.
 
 ---
 
@@ -86,7 +95,7 @@ If you need the app running quickly and can only restore a subset, prioritize in
 2. `SUPABASE_URL` + `SUPABASE_SECRET_KEY` — needed for auth and file storage
 3. `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` — needed for frontend queries
 4. `JWT_SECRET` — needed for login sessions
-5. `GOOGLE_AI_API_KEY` — needed for all AI extraction and classification features
+5. **AI provider keys** — configured in-app via Settings → AI Skills → Provider API Keys (not environment variables)
 
 The Manus-injected variables (`BUILT_IN_FORGE_*`, `VITE_FRONTEND_FORGE_*`, `OAUTH_*`, `OWNER_*`, `VITE_APP_ID`) are always auto-injected by the platform and do not need manual entry.
 
@@ -115,4 +124,4 @@ When starting a new chat to continue work on this project:
 
 ---
 
-*Last updated: May 31, 2026 — all variables confirmed present and working.*
+*Last updated: Jul 5, 2026 — Group 3 (AI/LLM) updated to reflect v4.20 provider_api_keys architecture.*

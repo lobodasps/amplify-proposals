@@ -18,10 +18,10 @@ This document describes the current technical architecture of the Amplify Propos
 | Database | Supabase Postgres | Session pooler (port 6543) |
 | Auth | Supabase Auth | Email/password, JWT |
 | Storage | Supabase Storage | Private `dam` bucket, 50 MB limit |
-| LLM | Configurable | Defaults to models defined in Settings > AI Skills; supports OpenAI, Anthropic, Google Gemini per task type |
+| LLM | Fully configurable | Per-skill via `provider_api_keys` table; `sdkType` controls routing (openai_compatible / google_gemini / anthropic); any provider name allowed |
 | ZIP Extraction | fflate | 0.8.3, client-side only |
 | Excel Parsing | SheetJS (xlsx) | 0.18.5, client-side only |
-| Testing | Vitest | 25 tests across 4 files |
+| Testing | Vitest | 25+ tests across 5 files |
 | Language | TypeScript | Strict mode, zero errors enforced |
 
 ---
@@ -30,7 +30,7 @@ This document describes the current technical architecture of the Amplify Propos
 
 The Supabase Postgres instance contains **two sets of tables** in the same `public` schema:
 
-### Amplify Tables (44 tables, managed by Drizzle ORM)
+### Amplify Tables (45+ tables, managed by Drizzle ORM)
 
 These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which runs `drizzle-kit generate && drizzle-kit migrate`). All primary keys are UUID strings generated with `gen_random_uuid()`. Key tables include:
 
@@ -48,7 +48,8 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `proposals` | Proposal records linked to pursuits |
 | `rfp_sessions` | Proposal Workspace AI skill workflow state; `extractedData.rfpFiles[]` stores multi-file manifest |
 | `opportunities` | Public opportunity ingestion records |
-| `ai_skill_configs` | Configurable AI skill prompts |
+| `ai_skills` | Configurable AI skill prompts, provider, model, outputType per skill |
+| `provider_api_keys` | Named LLM provider keys with sdkType, baseUrl, defaultModel, isDefault flag |
 | `document_shreds` | XML-shredded RFP sections |
 | `rfp_wikis` | Compiled RFP wiki documents |
 | `assets` | General file assets with tagging |
@@ -128,21 +129,21 @@ Postgres `numeric` columns return strings from Drizzle ORM. All arithmetic on th
 
 All LLM calls go through `invokeLLM()` from `server/_core/llm.ts`. The function accepts a `messages` array (system + user roles) and optional `response_format`. There is **no top-level `system` parameter** — system prompts must be passed as `{ role: "system", content: "..." }` in the messages array. For document analysis, use `file_url` content type with a signed URL from `storageGet()`.
 
-**The LLM layer is now fully configurable.** The `ai_skill_configs` table stores per-task provider, model, system prompt, and user prompt template. Global provider API keys (OpenAI, Anthropic, Google Gemini) are stored in `app_settings` and resolved at call time. The Settings > AI Skills tab exposes the full configuration UI. The planned `llmConfigs` table referenced in earlier sessions has been superseded by this implementation.
+**The LLM layer is fully configurable and provider-agnostic.** All provider credentials are stored in the `provider_api_keys` table and managed through Settings → AI Skills → Provider API Keys. There is no platform-injected LLM key and no Manus built-in fallback.
 
-| Task | Configurable? | Planned Providers |
-|------|--------------|-------------------|
-| RFP Shredding | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Resume Tailoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Go/No-Go Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Opportunity Scoring | Yes | OpenAI, Anthropic, Gemini, Manus |
-| Contract Analyzer | Yes | OpenAI, Anthropic, Gemini, Manus |
-| DAM autoExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
-| DAM triggerExtract | Yes | OpenAI, Anthropic, Gemini, Manus |
+**Key design principle — `sdkType` decouples routing from provider name:**
 
-The `invokeLLMWithSkill()` helper checks the `ai_skills` table for a task-specific config (provider, model, API key, prompts). If the DB row has null provider/model, it falls back to `DEFAULT_SKILLS` in `server/_core/llmSkill.ts`. **No existing AI procedures need to change their call signatures** — only the helper routes correctly.
+| sdkType | SDK used | Covers |
+|---------|----------|--------|
+| `openai_compatible` | OpenAI Chat Completions HTTP | OpenAI, Azure, Mistral, Groq, Together, DeepSeek, Fireworks, Ollama, any custom endpoint |
+| `google_gemini` | `@google/generative-ai` SDK | Any key named anything — routing is explicit, not string-matched |
+| `anthropic` | Anthropic Messages API (raw fetch) | Any key named anything |
 
-**CRITICAL RULE:** When seeding missing `ai_skills` records (in `seedDefaultSkills()` or the `aiSkills.list` query), do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, and `userPromptTemplate`.
+This means two different Gemini configurations (e.g., `gemini-flash` and `gemini-pro-exp`) can coexist as separate `provider_api_keys` rows, both with `sdkType = 'google_gemini'`.
+
+**Default model fallback:** When a skill's configured provider returns any API error, `invokeLLMWithSkill()` retries with the `provider_api_keys` row where `isDefault = true`. The result carries `_usedDefaultModel: true` and `_defaultModelName` so the Proposal Workspace can surface an amber warning banner.
+
+**CRITICAL RULE:** When seeding missing `ai_skills` records (in `seedDefaultSkills()` or the `aiSkills.list` query), do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, `userPromptTemplate`, and `outputType`.
 
 ---
 
@@ -708,3 +709,51 @@ After the GO decision, the Launchpad now transitions to an **asset_matching** st
 | `pastProposalsSummary` | `pursuit.selectedPastProposalIds` → `dam_documents.extractedText` (title, text summary) |
 
 Fallback: if no DAM selections exist, falls back to legacy `amp_projects` and `personnel` table queries (preserves backward compatibility with sessions created before v4.6).
+
+---
+
+## Architecture Changes — Jul 5, 2026
+
+### AI Skills Configuration Overhaul (v4.20–4.21)
+
+The LLM provider system was completely rebuilt to remove all hardcoded provider dependencies and platform-specific fallbacks.
+
+**New `provider_api_keys` table** (10 columns):
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | uuid | Primary key |
+| `name` | text | Human-readable label (e.g. `gemini-flash`, `claude-sonnet-prod`) |
+| `provider` | text | Free-text provider identifier (no enum constraint) |
+| `sdkType` | text | `openai_compatible` \| `google_gemini` \| `anthropic` |
+| `apiKey` | text | Encrypted API key |
+| `baseUrl` | text | Required for Azure OpenAI, Ollama, and custom endpoints |
+| `defaultModel` | text | Model used when this key is the fallback |
+| `isDefault` | boolean | Marks the system-wide fallback provider |
+| `createdAt` | timestamp | |
+| `updatedAt` | timestamp | |
+
+**`sdkType` decouples routing from provider name.** Previously, `invokeLLMWithSkill()` branched on `if (provider === 'google_gemini')` and `if (provider === 'anthropic')`, which meant a typo silently fell through to OpenAI-compatible and a provider could only have one configuration. Now all three routing branches check `sdkType` — the provider name is purely a label.
+
+**Manus built-in removed.** The `manus_builtin` provider and all `ENV.forgeApiKey` references have been removed from `invokeLLMWithSkill()`, `resolveApiKey()`, `resolveEndpoint()`, `sanitizeMessagesForProvider()`, and the Settings UI. The `manus_builtin` enum value no longer exists in the codebase.
+
+**Default model fallback.** When any API error occurs (401, 403, 429, 5xx, auth errors), the system retries with the `provider_api_keys` row where `isDefault = true`. The `SkillStateEntry` type in `shared/workflowTypes.ts` now carries `usedDefaultModel: boolean` and `defaultModelName: string | null`. `SkillOutputRenderer` shows an amber banner when `usedDefaultModel` is true.
+
+**Test Connection procedure** (`aiSkills.providerKeys.testConnection`): sends a real inference call (not a health check) using the configured `sdkType` and model. Validates model names at configuration time, not at proposal generation time.
+
+**Settings UI changes:**
+- Provider API Keys manager replaces the old 3-row static key form
+- Provider name is a free-text input with datalist suggestions
+- SDK / Protocol is a 3-button selector (OpenAI-compatible / Google Gemini / Anthropic)
+- Base URL field auto-appears for non-well-known providers
+- sdkType badge shown in key list row
+- Per-skill provider dropdown reads from `provider_api_keys` table
+
+### Checkpoints This Session
+
+| Version | Description |
+|---------|-------------|
+| `974470ea` | AI Skills Configuration Overhaul v4.20: provider_api_keys table, sdkType, remove manus_builtin, default fallback |
+| `7e63c2bb` | Test Connection button in Provider API Keys modal |
+| `168303f1` | Free-form provider field — any provider name allowed |
+| `69a71d9c` | sdkType column: routing fully decoupled from provider name string |

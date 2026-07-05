@@ -1,6 +1,6 @@
 # Amplify Proposals — Feature Catalog
 
-**Version:** 4.0 (Jun 1, 2026)
+**Version:** 4.21 (Jul 5, 2026)
 **Status:** Features marked **[LIVE]** are fully implemented and deployed. Features marked **[PLANNED]** are designed but not yet built.
 
 ---
@@ -251,14 +251,22 @@ This category covers the firm's institutional memory — every document, resume,
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Named AI skills with editable system + user prompts | LIVE | Stored in ai_skill_configs table |
-| Per-skill provider/model selector in Settings | LIVE | UI built |
-| Global API key management (OpenAI, Anthropic, Gemini) | LIVE | Settings → AI Skills tab |
-| Default to models configured in Settings > AI Skills | LIVE | Falls back to Manus built-in when no skill config found |
+| Named AI skills with editable system + user prompts | LIVE | Stored in `ai_skills` table |
+| Per-skill provider/model selector in Settings | LIVE | Dropdown reads from `provider_api_keys` table |
+| Unlimited provider API keys manager | LIVE | Add/edit/delete any number of named provider keys |
+| Free-text provider name (not locked to enum) | LIVE | Any identifier; well-known names shown as datalist suggestions |
+| Explicit SDK type selector (OpenAI-compatible / Google Gemini / Anthropic) | LIVE | Decoupled from provider name; prevents silent routing errors |
+| Base URL field for Azure OpenAI / Ollama / custom endpoints | LIVE | Auto-appears for non-well-known providers |
+| System-wide default fallback provider | LIVE | Mark any key as default; used when skill's provider fails |
+| Automatic fallback to default model on API error | LIVE | Any 401/403/429/5xx triggers retry with default key |
+| "Default model used" amber banner in Proposal Workspace | LIVE | Shown when fallback was triggered |
+| Test Connection button in Add/Edit modal | LIVE | Real inference call; validates model name at config time |
+| sdkType badge in provider key list | LIVE | Shows OpenAI-compat / Gemini SDK / Anthropic at a glance |
+| Per-task LLM routing (different model per skill) | LIVE | |
+| AI skill outputType column (prose / json / json\_with\_prose) | LIVE | Controls Proposal Workspace rendering |
+| dam\_image\_caption AEC specialist skill | LIVE | 9-field structured vision output |
 | Token usage logging per skill invocation | PLANNED | |
 | Token usage visibility dashboard | PLANNED | |
-| Per-task LLM routing (different model per skill) | LIVE | |
-| dam_image_caption AEC specialist skill | LIVE | 9-field structured vision output |
 
 ---
 
@@ -312,4 +320,4 @@ This category covers the firm's institutional memory — every document, resume,
 
 ---
 
-*Last updated: Jun 1, 2026*
+*Last updated: Jul 5, 2026*

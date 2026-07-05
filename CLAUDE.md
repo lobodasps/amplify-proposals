@@ -194,8 +194,10 @@ amplify-proposals/
 | `VITE_SUPABASE_URL` | Supabase project URL (client-side) |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon key (client-side) |
 | `JWT_SECRET` | Session signing (legacy, kept for compatibility) |
-| `BUILT_IN_FORGE_API_URL` | Manus LLM/storage API base URL |
-| `BUILT_IN_FORGE_API_KEY` | Manus API bearer token (server-side) |
+| `BUILT_IN_FORGE_API_URL` | Manus API base URL (auto-injected; not used for LLM calls as of v4.20) |
+| `BUILT_IN_FORGE_API_KEY` | Manus API bearer token (auto-injected; not used for LLM calls as of v4.20) |
+
+> **AI provider keys are NOT environment variables.** As of v4.20, all LLM credentials are stored in the `provider_api_keys` database table and managed through Settings → AI Skills → Provider API Keys. See README.md for setup instructions.
 
 ---
 
@@ -213,7 +215,7 @@ amplify-proposals/
 ```bash
 pnpm dev              # Start dev server (tsx watch)
 pnpm db:push          # Push schema changes (drizzle-kit generate + migrate)
-pnpm test             # Run vitest (25 tests)
+pnpm test             # Run vitest (25+ tests across 5 files)
 npx tsc --noEmit      # TypeScript check (must be zero errors)
 ```
 

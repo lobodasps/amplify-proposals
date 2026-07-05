@@ -1,13 +1,13 @@
 # Amplify-Proposals — Active TODO
 
-Last updated: 2026-06-03
-Current version: v4.16
+Last updated: 2026-07-05
+Current version: v4.21 (post AI Skills Configuration Overhaul)
 
 ---
 
-## 🔴 In Progress
+## 🔴 In Progress / Immediate
 
-- [ ] Firm Profile Settings (v4.14) — entity switcher requires entities to be created first in Settings → Entities tab; UUID field removed from Entities form (v4.16)
+- [ ] Reassign 7 `manus_builtin` skills to real provider keys in Settings → AI Skills (executive_summary_writer, firm_qualifications_writer, key_personnel_writer, project_experience_writer, requirements_matrix_builder, technical_approach_writer, win_theme_generator)
 
 ---
 
@@ -21,9 +21,6 @@ Current version: v4.16
 ---
 
 ## 🟠 Known Issues
-
-- [x] Contract Management: entity filter (JPCL/Strans selector) does not filter contract list — reads activeEntityId from EntityContext, filters by performingCompanyId (v4.17)
-- [x] Contract Management: contract analyzer results not viewable — AnalysisCard was reading analysis.analysisResult but DB column is rawAnalysis; fixed field name (v4.17)
 
 - [ ] Some proposal sections may still render as raw JSON if the DB ai_skills outputType record was seeded incorrectly — use the "Re-render as Prose" button as a workaround; run seedDefaultSkills to re-seed if needed
 - [ ] Firm name and other firm variables showing as {{placeholder}} in generated content when firm_settings has not been filled in for the active entity
@@ -45,13 +42,26 @@ Current version: v4.16
 - [ ] Mobile responsive pass
 - [ ] SSO/SAML
 - [ ] Stripe billing
+- [ ] Token usage logging per skill invocation + usage dashboard
 
-## AI Skills Configuration Overhaul (v4.20) — COMPLETE
-- [x] Add provider_api_keys table — unlimited named providers (name, baseUrl, apiKey, isDefault)
-- [x] Remove all Manus built-in (manus_builtin/forge) references from invokeLLMWithSkill and Settings
-- [x] Add system-wide default model setting (provider + model) in provider_api_keys.isDefault
-- [x] On any API error, fall back to default model; set _usedDefaultModel flag on result
-- [x] Surface "Used default model" amber indicator in SkillOutputRenderer when _usedDefaultModel is set
-- [x] Rebuild Provider API Keys UI: add/edit/delete any number of providers, mark one as default
-- [x] Per-skill provider dropdown now accepts any string (not hardcoded enum)
-- [x] Zero TypeScript errors
+---
+
+## ✅ Recently Completed
+
+### AI Skills Configuration Overhaul (v4.20–v4.21)
+- [x] Add `provider_api_keys` table — unlimited named providers (name, provider, sdkType, baseUrl, apiKey, defaultModel, isDefault)
+- [x] Add `sdkType` column (`openai_compatible` | `google_gemini` | `anthropic`) — routing decoupled from provider name string
+- [x] Remove all Manus built-in (manus_builtin/forge) references from `invokeLLMWithSkill` and Settings UI
+- [x] On any API error, fall back to default provider key; set `_usedDefaultModel` flag on result
+- [x] Surface amber "Default model used" banner in SkillOutputRenderer when `_usedDefaultModel` is set
+- [x] Rebuild Provider API Keys UI: add/edit/delete any number of providers, mark one as default, SDK type selector
+- [x] Per-skill provider dropdown now reads from `provider_api_keys` table (not hardcoded list)
+- [x] Provider name field is free-text with datalist suggestions (not locked enum)
+- [x] Base URL field auto-appears for non-well-known providers
+- [x] Test Connection button in Add/Edit modal — real inference call, validates model name
+- [x] sdkType badge shown in key list row
+- [x] Zero TypeScript errors throughout
+
+### Contract Management (v4.17)
+- [x] Entity filter (JPCL/Strans selector) filters contract list by performingCompanyId
+- [x] Contract analyzer results viewable — fixed rawAnalysis field name

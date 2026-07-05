@@ -182,11 +182,11 @@ The Settings module has fourteen tabs:
 
 The Supabase Postgres instance contains 44 Amplify-managed tables (defined in `drizzle/schema.ts`, all UUID primary keys) alongside 66 pre-existing v0/timekeeping tables. Cross-app references use soft FK columns (no hard Postgres constraints) to avoid migration coupling.
 
-Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billing_entries`, `personnel`, `amp_projects`, `pursuits`, `proposals`, `rfp_sessions`, `opportunities`, `ai_skill_configs`, `document_shreds`, `rfp_wikis`, `assets`, `asset_tags`, `order_types`, `organizations`, `people`, `glossary_terms`, `firm_settings`.
+Key Amplify tables: `dam_documents`, `contracts`, `contract_amendments`, `billing_entries`, `personnel`, `amp_projects`, `pursuits`, `proposals`, `rfp_sessions`, `opportunities`, `ai_skills`, `provider_api_keys`, `document_shreds`, `rfp_wikis`, `assets`, `asset_tags`, `order_types`, `organizations`, `people`, `glossary_terms`, `firm_settings`.
 
 ### 4.3 LLM Architecture
 
-All LLM calls route through `invokeLLMWithSkill()` in `server/_core/llmSkill.ts`. The system defaults to models configured in Settings > AI Skills (`ai_skills` table, which stores system prompt, user prompt template, provider, model, and API key per named skill). When the DB row has null provider/model, the helper falls back to `DEFAULT_SKILLS` definitions. No existing procedure call signatures change when a user switches providers.
+All LLM calls route through `invokeLLMWithSkill()` in `server/_core/llmSkill.ts`. Provider credentials are stored in the `provider_api_keys` table (managed via Settings → AI Skills → Provider API Keys) — not in environment variables. Each `ai_skills` row references a provider key by name; the `sdkType` column on `provider_api_keys` (`openai_compatible` | `google_gemini` | `anthropic`) controls which SDK is used for the call, decoupled from the human-readable provider name. When a skill's provider fails, the system retries with the `provider_api_keys` row where `isDefault = true` and sets a `_usedDefaultModel` flag on the result.
 
 **CRITICAL RULE:** When seeding missing `ai_skills` records, do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, and `userPromptTemplate`.
 
