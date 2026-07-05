@@ -14,6 +14,13 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ## 🟡 In Progress — Current Sprint
 
+### Dashboard Mock Data (fixed)
+- [x] `Dashboard.tsx` — remove all hardcoded fallback values from KPI cards (activePursuits||24, pipelineValue||14200000, winRate||38, etc.); show real DB counts or "—" when empty
+- [x] `Dashboard.tsx` — remove hardcoded 5-row "Recent Pursuits" fallback; show empty state when no pursuits in DB
+- [x] `Dashboard.tsx` — remove hardcoded 5-row "Pipeline Snapshot" fallback; derive from live pursuitsByStatus
+- [x] `Dashboard.tsx` — remove entirely hardcoded "Recent Activity" array; replace with live rfpSessions + pursuit updates from DB
+- [x] `analytics.ts` router — compute real pipelineValue (SUM estimatedValue), proposalsSubmittedYTD, upcomingDeadlines from DB instead of hardcoded numbers
+
 ### Known Issues (3 fixes)
 - [ ] Fix outputType seeding: update `seedDefaultSkills` to upsert `outputType` on existing rows (not just insert-if-missing)
 - [ ] Fix firm placeholder guard: warn user in Workspace when `firm_settings` is empty instead of silently passing `[Not provided]`

@@ -89,11 +89,19 @@ export default function Dashboard() {
     );
   }
 
+  // Format pipeline value: show $0 when empty, M/K suffix when populated
+  const fmtPipelineValue = (v: number) => {
+    if (!v) return "$0";
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+    return `$${v.toLocaleString()}`;
+  };
+
   const kpiCards = [
     {
       label: "Active Pursuits",
-      value: stats ? String(stats.activePursuits || 24) : "24",
-      change: "+3 this month",
+      value: stats ? String(stats.activePursuits) : "—",
+      change: stats ? `${stats.totalPursuits} total` : "",
       trend: "up",
       icon: Target,
       color: "text-blue-500",
@@ -101,8 +109,8 @@ export default function Dashboard() {
     },
     {
       label: "Proposals In Progress",
-      value: stats ? String(stats.proposalsInProgress || 8) : "8",
-      change: "2 due this week",
+      value: stats ? String(stats.proposalsInProgress) : "—",
+      change: "draft or in review",
       trend: "neutral",
       icon: FileText,
       color: "text-violet-500",
@@ -110,8 +118,8 @@ export default function Dashboard() {
     },
     {
       label: "Pipeline Value",
-      value: stats ? `$${((stats.pipelineValue || 14200000) / 1000000).toFixed(1)}M` : "$14.2M",
-      change: "+$2.1M from last quarter",
+      value: stats ? fmtPipelineValue(stats.pipelineValue) : "—",
+      change: "active pursuits",
       trend: "up",
       icon: DollarSign,
       color: "text-emerald-500",
@@ -119,16 +127,16 @@ export default function Dashboard() {
     },
     {
       label: "Win Rate (YTD)",
-      value: stats ? `${stats.winRate || 38}%` : "38%",
-      change: "+5% vs last year",
-      trend: "up",
+      value: stats ? (stats.winRate > 0 ? `${stats.winRate}%` : "—") : "—",
+      change: stats && stats.winRate > 0 ? "awarded vs decided" : "no decided pursuits yet",
+      trend: (stats?.winRate ?? 0) > 0 ? "up" : "neutral",
       icon: Award,
       color: "text-amber-500",
       bg: "bg-amber-50 dark:bg-amber-950/30",
     },
     {
       label: "Proposals Submitted",
-      value: stats ? String(stats.proposalsSubmittedYTD || 47) : "47",
+      value: stats ? String(stats.proposalsSubmittedYTD) : "—",
       change: "YTD",
       trend: "neutral",
       icon: TrendingUp,
@@ -137,57 +145,46 @@ export default function Dashboard() {
     },
     {
       label: "Upcoming Deadlines",
-      value: stats ? String(stats.upcomingDeadlines || 5) : "5",
+      value: stats ? String(stats.upcomingDeadlines) : "—",
       change: "Next 14 days",
-      trend: "alert",
+      trend: (stats?.upcomingDeadlines ?? 0) > 0 ? "alert" : "neutral",
       icon: Clock,
-      color: "text-rose-500",
-      bg: "bg-rose-50 dark:bg-rose-950/30",
+      color: (stats?.upcomingDeadlines ?? 0) > 0 ? "text-rose-500" : "text-muted-foreground",
+      bg: (stats?.upcomingDeadlines ?? 0) > 0 ? "bg-rose-50 dark:bg-rose-950/30" : "bg-muted/30",
     },
   ];
 
-  const recentPursuits = pursuitsList && pursuitsList.length > 0
-    ? pursuitsList.slice(0, 5).map((p: any) => ({
-        id: p.id,
-        title: p.title,
-        client: p.clientName ?? "—",
-        status: p.status,
-        statusLabel: STATUS_LABELS[p.status] ?? p.status,
-        statusColor: STATUS_COLORS[p.status] ?? "status-identify",
-        due: p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD",
-        value: p.estimatedValue ? `$${(p.estimatedValue / 1000000).toFixed(1)}M` : "—",
-        service: (() => { try { const sl = p.serviceLines; if (!sl) return "—"; if (Array.isArray(sl)) return sl[0] ?? "—"; if (typeof sl === "string") return JSON.parse(sl)?.[0] ?? "—"; return "—"; } catch { return "—"; } })(),
-      }))
-    : [
-        { id: 1, title: "NJDOT Route 9 Bridge Inspection Services", client: "NJDOT", status: "pursue", statusLabel: "Pursue", statusColor: "status-pursue", due: "Jun 15", value: "$2.4M", service: "Special Inspections" },
-        { id: 2, title: "NYC DDC Community Center CM Services", client: "NYC DDC", status: "submit", statusLabel: "Submitted", statusColor: "status-submit", due: "Jun 3", value: "$5.1M", service: "Construction Management" },
-        { id: 3, title: "NYCDOT Traffic Signal Modernization", client: "NYC DOT", status: "qualify", statusLabel: "Qualify", statusColor: "status-qualify", due: "Jul 8", value: "$890K", service: "Traffic Engineering" },
-        { id: 4, title: "NJ Transit Station Streetscape Design", client: "NJ Transit", status: "identify", statusLabel: "Identify", statusColor: "status-identify", due: "Aug 1", value: "$1.2M", service: "Landscape / Streetscape" },
-        { id: 5, title: "NJDEP Wetlands Assessment Program", client: "NJDEP", status: "pursue", statusLabel: "Pursue", statusColor: "status-pursue", due: "Jun 28", value: "$650K", service: "Environmental" },
-      ];
+  const recentPursuits = (pursuitsList ?? []).slice(0, 5).map((p: any) => ({
+    id: p.id,
+    title: p.title,
+    client: p.clientName ?? "—",
+    status: p.status,
+    statusLabel: STATUS_LABELS[p.status] ?? p.status,
+    statusColor: STATUS_COLORS[p.status] ?? "status-identify",
+    due: p.dueDate ? new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "TBD",
+    value: p.estimatedValue ? (p.estimatedValue >= 1_000_000 ? `$${(p.estimatedValue / 1_000_000).toFixed(1)}M` : `$${(p.estimatedValue / 1_000).toFixed(0)}K`) : "—",
+    service: (() => { try { const sl = p.serviceLines; if (!sl) return "—"; if (Array.isArray(sl)) return sl[0] ?? "—"; if (typeof sl === "string") return JSON.parse(sl)?.[0] ?? "—"; return "—"; } catch { return "—"; } })(),
+  }));
 
-  const pipelineStages = stats?.pursuitsByStatus?.length
-    ? stats.pursuitsByStatus.map(s => ({
-        stage: STATUS_LABELS[s.status as string] ?? s.status,
-        count: s.count,
-        color: STATUS_COLORS[s.status as string] ?? "status-identify",
-      }))
-    : [
-        { stage: "Identify", count: 8, color: "status-identify" },
-        { stage: "Qualify", count: 6, color: "status-qualify" },
-        { stage: "Pursue", count: 5, color: "status-pursue" },
-        { stage: "Submit", count: 3, color: "status-submit" },
-        { stage: "Award", count: 2, color: "status-award" },
-      ];
+  // Only show the 5 active stages (not lost/no_go) in the pipeline snapshot
+  const ACTIVE_STAGES = ["identify", "qualify", "pursue", "submit", "award"];
+  const pipelineStages = ACTIVE_STAGES.map(stage => {
+    const found = stats?.pursuitsByStatus?.find(s => s.status === stage);
+    return {
+      stage: STATUS_LABELS[stage] ?? stage,
+      count: found?.count ?? 0,
+      color: STATUS_COLORS[stage] ?? "status-identify",
+    };
+  });
 
-  const recentActivity = [
-    { icon: Sparkles, text: "AI shredded RFP for NYC DDC Community Center CM", time: "2h ago", type: "ai" },
-    { icon: FileText, text: "Resume tailored for John Smith — NYC DDC proposal", time: "3h ago", type: "proposal" },
-    { icon: Globe, text: "3 new opportunities ingested from NYC Procurement", time: "5h ago", type: "opportunity" },
-    { icon: CheckCircle2, text: "NJDOT Bridge Inspection proposal approved for submission", time: "Yesterday", type: "success" },
-    { icon: Users, text: "Sarah Chen assigned Section 4 — Technical Approach", time: "Yesterday", type: "task" },
-    { icon: AlertCircle, text: "NYC DOT Traffic Signal deadline in 7 days", time: "Yesterday", type: "alert" },
-  ];
+  // Recent activity from live DB (rfp sessions + pursuit updates)
+  const liveActivity = (stats?.recentActivity ?? []).map((item: any) => ({
+    icon: item.type === "rfp_session" ? Sparkles : FileText,
+    text: item.text,
+    time: item.time ? new Date(item.time).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+    type: item.type === "rfp_session" ? "ai" : "proposal",
+    href: item.entityId ? `/pursuits/${item.entityId}` : undefined,
+  }));
 
   return (
     <AppLayout>
@@ -326,11 +323,15 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-border">
-                  {recentActivity.map((item, i) => {
+                  {liveActivity.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                      No recent activity yet. Start by adding a pursuit or uploading an RFP.
+                    </div>
+                  ) : liveActivity.map((item, i) => {
                     const Icon = item.icon;
-                    const iconColor = item.type === "ai" ? "text-violet-500" : item.type === "success" ? "text-emerald-500" : item.type === "alert" ? "text-rose-500" : item.type === "opportunity" ? "text-blue-500" : "text-muted-foreground";
-                    return (
-                      <div key={i} className="flex items-start gap-3 px-4 py-3">
+                    const iconColor = item.type === "ai" ? "text-violet-500" : "text-muted-foreground";
+                    const content = (
+                      <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
                         <div className={`mt-0.5 shrink-0 ${iconColor}`}>
                           <Icon className="w-3.5 h-3.5" />
                         </div>
@@ -340,6 +341,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                     );
+                    return item.href ? <Link key={i} href={item.href}>{content}</Link> : content;
                   })}
                 </div>
               </CardContent>
