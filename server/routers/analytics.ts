@@ -21,67 +21,69 @@ export const analyticsRouter = router({
       };
     }
     try {
-      const [totalPursuitsResult] = await db.select({ count: count() }).from(pursuits);
-      const [activePursuitsResult] = await db.select({ count: count() }).from(pursuits)
-        .where(notInArray(pursuits.status, ["award", "lost", "no_go"]));
-      const [proposalsInProgressResult] = await db.select({ count: count() }).from(proposals)
-        .where(inArray(proposals.status, ["draft", "in_review"]));
-      // Win rate calculation (uses same data as pursuitsByStatusWithValue below)
-      const pursuitStatusCounts = await db.select({ status: pursuits.status, count: count() })
-        .from(pursuits).groupBy(pursuits.status);
+      const now = new Date();
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+      // Run all independent queries in parallel — single round-trip latency
+      const [
+        [totalPursuitsResult],
+        [activePursuitsResult],
+        [proposalsInProgressResult],
+        pursuitStatusCounts,
+        pipelineValueResult,
+        [proposalsSubmittedResult],
+        [upcomingDeadlinesResult],
+        pursuitsByStatusWithValue,
+        recentSessions,
+        recentPursuitUpdates,
+      ] = await Promise.all([
+        db.select({ count: count() }).from(pursuits),
+        db.select({ count: count() }).from(pursuits)
+          .where(notInArray(pursuits.status, ["award", "lost", "no_go"])),
+        db.select({ count: count() }).from(proposals)
+          .where(inArray(proposals.status, ["draft", "in_review"])),
+        db.select({ status: pursuits.status, count: count() })
+          .from(pursuits).groupBy(pursuits.status),
+        db.select({ total: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)` })
+          .from(pursuits)
+          .where(notInArray(pursuits.status, ["award", "lost", "no_go"])),
+        db.select({ count: count() }).from(proposals)
+          .where(and(
+            inArray(proposals.status, ["submitted", "awarded", "lost"]),
+            gte(proposals.createdAt, yearStart)
+          )),
+        db.select({ count: count() }).from(pursuits)
+          .where(and(
+            notInArray(pursuits.status, ["award", "lost", "no_go"]),
+            isNotNull(pursuits.dueDate),
+            gte(pursuits.dueDate, now),
+            lte(pursuits.dueDate, in14Days)
+          )),
+        db.select({
+            status: pursuits.status,
+            count: count(),
+            value: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)`,
+          })
+          .from(pursuits)
+          .groupBy(pursuits.status),
+        db.select({ id: rfpSessions.id, pursuitId: rfpSessions.pursuitId, rfpFileName: rfpSessions.rfpFileName, sessionStatus: rfpSessions.sessionStatus, createdAt: rfpSessions.createdAt })
+          .from(rfpSessions)
+          .orderBy(sql`${rfpSessions.createdAt} DESC`)
+          .limit(5),
+        db.select({ id: pursuits.id, title: pursuits.title, status: pursuits.status, updatedAt: pursuits.updatedAt })
+          .from(pursuits)
+          .orderBy(sql`${pursuits.updatedAt} DESC`)
+          .limit(5),
+      ]);
+
       const awardedCount = pursuitStatusCounts.find(r => r.status === "award")?.count ?? 0;
       const lostCount = pursuitStatusCounts.find(r => r.status === "lost")?.count ?? 0;
       const totalDecided = awardedCount + lostCount;
       const winRate = totalDecided > 0 ? Math.round((awardedCount / totalDecided) * 100) : 0;
-      // Pipeline value: sum of estimatedValue for active pursuits
-      const pipelineValueResult = await db
-        .select({ total: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)` })
-        .from(pursuits)
-        .where(notInArray(pursuits.status, ["award", "lost", "no_go"]));
       const pipelineValue = parseFloat(pipelineValueResult[0]?.total ?? "0");
-
-      // Proposals submitted YTD
-      const yearStart = new Date(new Date().getFullYear(), 0, 1);
-      const [proposalsSubmittedResult] = await db.select({ count: count() }).from(proposals)
-        .where(and(
-          inArray(proposals.status, ["submitted", "awarded", "lost"]),
-          gte(proposals.createdAt, yearStart)
-        ));
       const proposalsSubmittedYTD = proposalsSubmittedResult?.count ?? 0;
-
-      // Upcoming deadlines: pursuits with dueDate in next 14 days
-      const now = new Date();
-      const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      const [upcomingDeadlinesResult] = await db.select({ count: count() }).from(pursuits)
-        .where(and(
-          notInArray(pursuits.status, ["award", "lost", "no_go"]),
-          isNotNull(pursuits.dueDate),
-          gte(pursuits.dueDate, now),
-          lte(pursuits.dueDate, in14Days)
-        ));
       const upcomingDeadlines = upcomingDeadlinesResult?.count ?? 0;
-
-      // Pipeline value by status
-      const pursuitsByStatusWithValue = await db
-        .select({
-          status: pursuits.status,
-          count: count(),
-          value: sql<string>`COALESCE(SUM(CAST(${pursuits.estimatedValue} AS DECIMAL(15,2))), 0)`,
-        })
-        .from(pursuits)
-        .groupBy(pursuits.status);
-
-      // Recent activity: last 8 RFP sessions + recently updated pursuits
-      const recentSessions = await db
-        .select({ id: rfpSessions.id, pursuitId: rfpSessions.pursuitId, rfpFileName: rfpSessions.rfpFileName, sessionStatus: rfpSessions.sessionStatus, createdAt: rfpSessions.createdAt })
-        .from(rfpSessions)
-        .orderBy(sql`${rfpSessions.createdAt} DESC`)
-        .limit(5);
-      const recentPursuitUpdates = await db
-        .select({ id: pursuits.id, title: pursuits.title, status: pursuits.status, updatedAt: pursuits.updatedAt })
-        .from(pursuits)
-        .orderBy(sql`${pursuits.updatedAt} DESC`)
-        .limit(5);
       const recentActivity = [
         ...recentSessions.map(s => ({
           type: "rfp_session" as const,
