@@ -240,20 +240,26 @@ export interface FirmProfile {
 /**
  * Content type of a document_chunks row.
  * Determines how the chunk is used in retrieval and generation.
+ *
+ * These values match exactly what chunkBuilder.ts emits:
+ *   project_description — primary project narrative (project_sheet, past_proposal)
+ *   project_highlight   — short highlight bullet (project_sheet) — exempt from 80-char min
+ *   section_content     — named section body (all docTypes with sections[])
+ *   image_caption       — LLM-derived image/photo caption (confidence 0.9)
+ *   personnel_bio       — staff summary paragraph (resume)
+ *   project_experience  — individual project entry on a resume — exempt from 80-char min
+ *   win_theme           — win theme statement (past_proposal) — exempt from 80-char min
+ *   certification_detail — structured certification fields (certification docType)
  */
 export type ChunkType =
-  | "paragraph"
-  | "table_row"
-  | "list_item"
-  | "highlight"
-  | "personnel_entry"
-  | "project_summary"
-  | "certification"
-  | "evaluation_criterion"
-  | "scope_item"
-  | "key_date"
-  | "page_limit"
-  | "win_theme";
+  | "project_description"
+  | "project_highlight"
+  | "section_content"
+  | "image_caption"
+  | "personnel_bio"
+  | "project_experience"
+  | "win_theme"
+  | "certification_detail";
 
 /**
  * How a chunk was extracted from its source document.

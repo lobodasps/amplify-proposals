@@ -34,6 +34,21 @@ Current version: v4.21 (post AI Skills Configuration Overhaul)
 - [x] TypeScript: zero errors; 54/55 tests pass (1 pre-existing OpenAI 429 rate limit failure)
 - [x] Checkpoint saved — stopped for review before Phase 3
 
+### Pipeline Upgrade — Phase 3: Hybrid Retrieval Backend + Asset Matching UI — COMPLETE
+- [x] Fix `ChunkType` enum in `shared/types.ts` to match `chunkBuilder.ts` actual outputs
+- [x] Add GIN expression index on `to_tsvector('english', content)` to `document_chunks` in schema
+- [x] Run `pnpm db:push` — migration applied, 2 indexes on document_chunks
+- [x] Update `PIPELINE_UPGRADE_PLAN.md` with locked spec decisions (Fix 1/2/3 + Rec 4/5)
+- [x] Write `server/hybridRetrieval.ts` — CHUNK_TYPE_WEIGHTS, computeCompositeScore, classifyMatchQuality, fetchFtsScores, CORPUS_SIZE_THRESHOLD
+- [x] Replace `matchProjectSheets` with hybrid three-pass version (legacyTagScore + ftScore + metaScore)
+- [x] Replace `matchResumes` with hybrid three-pass version
+- [x] Replace `matchPastProposals` with hybrid three-pass version
+- [x] Update `searchForAssetMatching` to return compatible shape (compositeScore, topChunks, matchQuality)
+- [x] Rewrite `AssetMatchingPanel.tsx`: compositeScore badge, matchQuality banner (hybrid/tag-only/fallback), topChunks expandable preview, corpusSize suppression (<8 docs), isFallback removed
+- [x] Write 31 Vitest tests in `server/hybridRetrieval.test.ts` covering all 6 required groups
+- [x] TypeScript: zero errors; 85/86 tests pass (1 pre-existing OpenAI 429 rate limit failure)
+- [x] Checkpoint saved — stopped for review before Phase 4
+
 - [ ] Step 4 Phase B — Citation-backed proposal generation (inject specific project sheet excerpts, resume passages, and past proposal language as cited evidence into each section)
 - [ ] Section Scorecard — full scorer output display (criteria coverage %, gap list, improvement suggestions, win theme coverage)
 - [ ] RequirementsMatrixViewer renderer — table with requirementId, requirement text, proposalSection, status badge (for requirements_matrix_builder skill)

@@ -1,7 +1,7 @@
 /**
  * client/src/components/AssetMatchingPanel.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Proposal Launchpad Step 3 — Asset Matching
+ * Proposal Launchpad Step 3 — Asset Matching (Phase 3 hybrid retrieval)
  *
  * Layout rules (no overlapping):
  *  • The outer wrapper is a flex-col with overflow-y: auto and a max-height so
@@ -14,8 +14,11 @@
  *    with an explicit max-height so it clips internally without affecting flow.
  *  • No z-index above 10 on any section container.
  *
- * When no service line overlap is found the server returns isFallback: true and
- * all indexed docs of that type are shown with an amber banner.
+ * Phase 3 additions:
+ *  • matchQuality banner per section: hybrid (green), tag-only (yellow), fallback (amber)
+ *  • compositeScore badge per document (suppressed when corpusSize < 8)
+ *  • topChunks expandable "Why this matched" section per document
+ *  • isFallback replaced by matchQuality throughout
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -25,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
 import {
   Card,
   CardContent,
@@ -53,9 +55,23 @@ import {
   ArrowRight,
   FolderOpen,
   Info,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Tag,
+  HelpCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type MatchQuality = "hybrid" | "tag-only" | "fallback";
+
+interface ChunkPreview {
+  chunkType: string;
+  content: string;
+  pageRef: string | null;
+  relevanceScore: number;
+}
 
 interface AssetMatchingPanelProps {
   pursuitId: string;
@@ -80,6 +96,9 @@ type ProjectSheetDoc = {
   staffName: string | null;
   projectName: string | null;
   extractedMeta: unknown;
+  compositeScore?: number;
+  matchQuality?: MatchQuality;
+  topChunks?: ChunkPreview[];
 };
 
 type ResumeDoc = {
@@ -88,6 +107,9 @@ type ResumeDoc = {
   staffName: string | null;
   tags: string | null;
   extractedMeta: unknown;
+  compositeScore?: number;
+  matchQuality?: MatchQuality;
+  topChunks?: ChunkPreview[];
 };
 
 type PastProposalDoc = {
@@ -98,11 +120,36 @@ type PastProposalDoc = {
   tags: string | null;
   createdAt: number | Date | null;
   extractedMeta: unknown;
+  compositeScore?: number;
+  matchQuality?: MatchQuality;
+  topChunks?: ChunkPreview[];
 };
 
-// ─── Fallback banner ──────────────────────────────────────────────────────────
+// ─── Match Quality Banner ─────────────────────────────────────────────────────
 
-function FallbackBanner() {
+function MatchQualityBanner({ quality }: { quality: MatchQuality }) {
+  if (quality === "hybrid") {
+    return (
+      <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
+        <Zap className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-emerald-800">
+          <strong>Hybrid match</strong> — ranked by both service line tags and full-text content
+          relevance. Scores reflect how closely each asset matches this opportunity.
+        </p>
+      </div>
+    );
+  }
+  if (quality === "tag-only") {
+    return (
+      <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-200">
+        <Tag className="h-4 w-4 text-yellow-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-yellow-800">
+          <strong>Tag match only</strong> — matched by service line tags. Content search is
+          unavailable until documents are re-extracted with chunking enabled.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
       <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
@@ -110,6 +157,55 @@ function FallbackBanner() {
         No direct service line matches found — showing all available assets.
         Select the most relevant ones manually.
       </p>
+    </div>
+  );
+}
+
+// ─── Composite Score Badge ────────────────────────────────────────────────────
+
+function ScoreBadge({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  const color =
+    pct >= 70 ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+    pct >= 40 ? "bg-yellow-100 text-yellow-800 border-yellow-200" :
+                "bg-muted text-muted-foreground border-border";
+  return (
+    <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded border ${color}`}>
+      {pct}% match
+    </span>
+  );
+}
+
+// ─── Top Chunks Expandable Preview ───────────────────────────────────────────
+
+function TopChunksPreview({ chunks }: { chunks: ChunkPreview[] }) {
+  const [open, setOpen] = useState(false);
+  if (!chunks || chunks.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }}
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        Why this matched ({chunks.length} excerpt{chunks.length !== 1 ? "s" : ""})
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5 pl-1 border-l-2 border-muted ml-1">
+          {chunks.map((chunk, i) => (
+            <div key={i} className="text-[10px] text-muted-foreground">
+              <span className="font-medium text-foreground/70 capitalize">
+                {chunk.chunkType.replace(/_/g, " ")}
+              </span>
+              {chunk.pageRef && (
+                <span className="ml-1 text-muted-foreground/60">· p.{chunk.pageRef}</span>
+              )}
+              <p className="mt-0.5 leading-relaxed line-clamp-3">{chunk.content}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -143,6 +239,8 @@ function TagList({ tags }: { tags: string | null }) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const CORPUS_SIZE_THRESHOLD = 8;
+
 export default function AssetMatchingPanel({
   pursuitId,
   serviceLines,
@@ -160,13 +258,16 @@ export default function AssetMatchingPanel({
     trpc.dam.matchPastProposals.useQuery({ serviceLines });
 
   const projectSheets: ProjectSheetDoc[] = (projectSheetsData?.results ?? []) as ProjectSheetDoc[];
-  const projectsFallback = projectSheetsData?.isFallback ?? false;
+  const projectsQuality: MatchQuality = (projectSheetsData?.matchQuality ?? "fallback") as MatchQuality;
+  const projectsCorpusSize: number = projectSheetsData?.corpusSize ?? 0;
 
-  const resumes: ResumeDoc[] = resumesData?.results ?? [];
-  const resumesFallback = resumesData?.isFallback ?? false;
+  const resumes: ResumeDoc[] = (resumesData?.results ?? []) as ResumeDoc[];
+  const resumesQuality: MatchQuality = (resumesData?.matchQuality ?? "fallback") as MatchQuality;
+  const resumesCorpusSize: number = resumesData?.corpusSize ?? 0;
 
   const pastProposals: PastProposalDoc[] = (pastProposalsData?.results ?? []) as PastProposalDoc[];
-  const proposalsFallback = pastProposalsData?.isFallback ?? false;
+  const proposalsQuality: MatchQuality = (pastProposalsData?.matchQuality ?? "fallback") as MatchQuality;
+  const proposalsCorpusSize: number = pastProposalsData?.corpusSize ?? 0;
 
   // ── Search state ───────────────────────────────────────────────────────────
   const [projectSearch, setProjectSearch] = useState("");
@@ -299,8 +400,6 @@ export default function AssetMatchingPanel({
   const isLoading = loadingProjects || loadingResumes || loadingProposals;
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  // The outer div is the scrollable panel. It uses flex-col so the sticky
-  // footer sits at the bottom without overlapping content.
   return (
     <div
       style={{
@@ -333,7 +432,6 @@ export default function AssetMatchingPanel({
             <span className="text-sm text-muted-foreground">Matching assets…</span>
           </div>
         ) : (
-          /* Each section is position: static — pure document flow */
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
 
             {/* ═══ Section A — Project Sheets ═══ */}
@@ -359,11 +457,12 @@ export default function AssetMatchingPanel({
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                {projectsFallback && allProjects.length > 0 && <FallbackBanner />}
+                {allProjects.length > 0 && (
+                  <MatchQualityBanner quality={projectsQuality} />
+                )}
                 {allProjects.length === 0 ? (
                   <EmptyState message="No project sheets found — upload project sheets to Knowledge Hub" />
                 ) : (
-                  /* Plain overflow div — no Radix ScrollArea */
                   <div style={{ maxHeight: "280px", overflowY: "auto" }} className="space-y-2 pr-1">
                     {allProjects.map((doc) => (
                       <label
@@ -377,15 +476,23 @@ export default function AssetMatchingPanel({
                           className="mt-0.5 shrink-0"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-tight truncate">
-                            {doc.projectName || doc.title}
-                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium leading-tight truncate">
+                              {doc.projectName || doc.title}
+                            </p>
+                            {doc.compositeScore !== undefined && projectsCorpusSize >= CORPUS_SIZE_THRESHOLD && (
+                              <ScoreBadge score={doc.compositeScore} />
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                             {doc.clientName && <span>Client: {doc.clientName}</span>}
                             {doc.ownerName && <span>Owner: {doc.ownerName}</span>}
                             {doc.contractValue && <span>Value: {doc.contractValue}</span>}
                           </div>
                           <TagList tags={doc.tags} />
+                          {doc.topChunks && doc.topChunks.length > 0 && (
+                            <TopChunksPreview chunks={doc.topChunks} />
+                          )}
                         </div>
                       </label>
                     ))}
@@ -417,7 +524,9 @@ export default function AssetMatchingPanel({
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                {resumesFallback && allResumes.length > 0 && <FallbackBanner />}
+                {allResumes.length > 0 && (
+                  <MatchQualityBanner quality={resumesQuality} />
+                )}
                 {allResumes.length === 0 ? (
                   <EmptyState message="No resumes found — upload staff resumes to Knowledge Hub" />
                 ) : (
@@ -437,9 +546,14 @@ export default function AssetMatchingPanel({
                               className="mt-0.5 shrink-0"
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium leading-tight">
-                                {doc.staffName || doc.title}
-                              </p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-medium leading-tight">
+                                  {doc.staffName || doc.title}
+                                </p>
+                                {doc.compositeScore !== undefined && resumesCorpusSize >= CORPUS_SIZE_THRESHOLD && (
+                                  <ScoreBadge score={doc.compositeScore} />
+                                )}
+                              </div>
                               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                                 {meta?.title != null && <span>{String(meta.title)}</span>}
                                 {meta?.certifications != null && (
@@ -452,6 +566,9 @@ export default function AssetMatchingPanel({
                                 )}
                               </div>
                               <TagList tags={doc.tags} />
+                              {doc.topChunks && doc.topChunks.length > 0 && (
+                                <TopChunksPreview chunks={doc.topChunks} />
+                              )}
                             </div>
                           </label>
                           {isSelected && (
@@ -497,7 +614,9 @@ export default function AssetMatchingPanel({
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                {proposalsFallback && allProposals.length > 0 && <FallbackBanner />}
+                {allProposals.length > 0 && (
+                  <MatchQualityBanner quality={proposalsQuality} />
+                )}
                 {allProposals.length === 0 ? (
                   <EmptyState message="No past proposals found" />
                 ) : (
@@ -514,9 +633,14 @@ export default function AssetMatchingPanel({
                           className="mt-0.5 shrink-0"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-tight truncate">
-                            {doc.title}
-                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium leading-tight truncate">
+                              {doc.title}
+                            </p>
+                            {doc.compositeScore !== undefined && proposalsCorpusSize >= CORPUS_SIZE_THRESHOLD && (
+                              <ScoreBadge score={doc.compositeScore} />
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                             {doc.clientName && <span>Client: {doc.clientName}</span>}
                             {doc.contractValue && <span>Value: {doc.contractValue}</span>}
@@ -527,6 +651,9 @@ export default function AssetMatchingPanel({
                             )}
                           </div>
                           <TagList tags={doc.tags} />
+                          {doc.topChunks && doc.topChunks.length > 0 && (
+                            <TopChunksPreview chunks={doc.topChunks} />
+                          )}
                         </div>
                       </label>
                     ))}
@@ -539,7 +666,7 @@ export default function AssetMatchingPanel({
         )}
       </div>
 
-      {/* ── Sticky confirm footer — stays visible while scrolling ── */}
+      {/* ── Sticky confirm footer ── */}
       <div
         style={{
           position: "sticky",

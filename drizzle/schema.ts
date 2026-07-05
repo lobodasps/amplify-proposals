@@ -8,7 +8,9 @@ import {
   jsonb,
   timestamp,
   real,
+  index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -1223,10 +1225,9 @@ export const documentChunks = pgTable("document_chunks", {
   // Parent document
   damDocumentId: uuid("damDocumentId").notNull(),
   /**
-   * Content type of this chunk. Valid values:
-   *   paragraph, table_row, list_item, highlight, personnel_entry,
-   *   project_summary, certification, evaluation_criterion, scope_item,
-   *   key_date, page_limit, win_theme
+   * Content type of this chunk. Valid values (matches ChunkType in shared/types.ts):
+   *   project_description, project_highlight, section_content, image_caption,
+   *   personnel_bio, project_experience, win_theme, certification_detail
    */
   chunkType: text("chunkType").notNull(),
   // Normalized text content of this chunk
@@ -1251,7 +1252,14 @@ export const documentChunks = pgTable("document_chunks", {
   // Canonical service line tags from normalized_tags.canonical (e.g. ["traffic_engineering"])
   serviceLineTags: jsonb("serviceLineTags").$type<string[]>().default([]),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  // GIN index on to_tsvector expression for full-text search (Phase 3 hybrid retrieval)
+  // Supports ts_rank() and plainto_tsquery() in matchProjectSheets/matchResumes/matchPastProposals
+  contentFtsIdx: index("document_chunks_content_fts_idx")
+    .using("gin", sql`to_tsvector('english', ${table.content})`),
+  // B-tree index on damDocumentId for fast per-document chunk lookups
+  damDocumentIdIdx: index("document_chunks_dam_document_id_idx").on(table.damDocumentId),
+}));
 
 export type DocumentChunk = typeof documentChunks.$inferSelect;
 export type InsertDocumentChunk = typeof documentChunks.$inferInsert;

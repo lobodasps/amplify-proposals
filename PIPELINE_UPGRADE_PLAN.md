@@ -468,6 +468,27 @@ The rollout is divided into five phases. Each phase is independently deployable 
 
 ### Phase 3 — Hybrid Retrieval (Backend, ~3 days)
 
+> **Spec locked: July 5, 2026** — See PHASE3_READINESS_REVIEW.md for full analysis.
+>
+> **Fix 1 (approved):** Pass 1 uses `damDocuments.tags` (legacy comma-separated) until `normalizedTags`
+> population and backfill are complete. Referred to as `legacyTagScore` in code comments.
+>
+> **Fix 2 (approved):** `contentTsv` approach replaced by GIN expression index on
+> `to_tsvector('english', content)` directly on `document_chunks`. Migration 0018 applied.
+> FTS queries use inline `to_tsvector` / `ts_rank` — no separate column needed.
+>
+> **Fix 3 (approved):** `ChunkType` enum in `shared/types.ts` aligned to `chunkBuilder.ts` outputs:
+> `project_description`, `project_highlight`, `section_content`, `image_caption`,
+> `personnel_bio`, `project_experience`, `win_theme`, `certification_detail`.
+>
+> **Rec 4 (locked):** `matchQuality` thresholds:
+> - `hybrid` when `ftScore > 0.1`
+> - `tag-only` when `legacyTagScore > 0` and `ftScore ≤ 0.1`
+> - `fallback` when both are 0
+>
+> **Rec 5 (locked):** Response includes `corpusSize`; UI suppresses `compositeScore` badges
+> when `corpusSize < 8` (small corpus rankings are not meaningful).
+
 **What:** Update `matchProjectSheets`, `matchResumes`, `matchPastProposals`, and `searchForAssetMatching` in `server/routers/dam.ts` to use the three-pass hybrid strategy described in Section 7. Add composite score to results. Update `AssetMatchingPanel.tsx` to display relevance scores and remove the fallback warning (replace with `matchQuality` badge).
 
 **What does NOT change:** Generation and scoring are unchanged. The workflow continues to use the same asset selection mechanism.

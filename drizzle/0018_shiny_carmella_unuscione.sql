@@ -1,0 +1,2 @@
+CREATE INDEX "document_chunks_content_fts_idx" ON "document_chunks" USING gin (to_tsvector('english', "content"));--> statement-breakpoint
+CREATE INDEX "document_chunks_dam_document_id_idx" ON "document_chunks" USING btree ("damDocumentId");

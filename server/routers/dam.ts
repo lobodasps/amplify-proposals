@@ -19,6 +19,15 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { damDocuments, personnel, projects, documentChunks } from "../../drizzle/schema";
 import { buildChunksFromDocument } from "../chunkBuilder";
+import {
+  computeLegacyTagScore,
+  computeMetaScore,
+  computeCompositeScore,
+  classifyMatchQuality,
+  fetchFtsScores,
+  buildFtsQuery,
+  type MatchQuality,
+} from "../hybridRetrieval";
 import { storageGet } from "../storage";
 import { invokeLLM, type Message } from "../_core/llm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
@@ -1389,7 +1398,7 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { results: [], isFallback: false };
+      if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
       const selectFields = {
         id: damDocuments.id,
@@ -1401,39 +1410,57 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         staffName: damDocuments.staffName,
         projectName: damDocuments.projectName,
         extractedMeta: damDocuments.extractedMeta,
+        chunkStatus: damDocuments.chunkStatus,
+        createdAt: damDocuments.createdAt,
       };
 
-      // Try tag-overlap match first
-      if (input.serviceLines.length > 0) {
-        const tagConditions = input.serviceLines.map(
-          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-        );
-        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
-        const matched = await db
-          .select(selectFields)
-          .from(damDocuments)
-          .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
-          .orderBy(desc(damDocuments.createdAt))
-          .limit(10);
-        if (matched.length > 0) return { results: matched, isFallback: false };
-      }
-
-      // Fallback — return all indexed project sheets
-      const all = await db
+      // Fetch all indexed project sheets (no limit — we score and sort below)
+      const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
         .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(10);
-      return { results: all, isFallback: true };
+        .orderBy(desc(damDocuments.createdAt));
+
+      const corpusSize = allDocs.length;
+      if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
+
+      // Pass 1: legacy tag score
+      const docIds = allDocs.map((d) => d.id);
+      const ftsQuery = buildFtsQuery(input.serviceLines);
+      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
+
+      const scored = allDocs.map((doc) => {
+        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
+        const ftsResult = ftsMap.get(doc.id);
+        const ftScore = ftsResult?.ftScore ?? 0;
+        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
+        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
+        return {
+          ...doc,
+          compositeScore: breakdown.compositeScore,
+          scoreBreakdown: breakdown,
+          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
+          topChunks: ftsResult?.topChunks ?? [],
+        };
+      });
+
+      // Sort by compositeScore descending, take top 10
+      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 10);
+
+      // Overall matchQuality = best quality among top results
+      const overallQuality: MatchQuality =
+        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
+        sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
+
+      return { results: sorted, matchQuality: overallQuality, corpusSize };
     }),
 
-  /** Match resumes (base version) by service line tag overlap, with all-docs fallback */
+  /** Match resumes (base version) — hybrid three-pass retrieval (Phase 3) */
   matchResumes: protectedProcedure
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { results: [], isFallback: false };
+      if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
       const selectFields = {
         id: damDocuments.id,
@@ -1441,38 +1468,52 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         staffName: damDocuments.staffName,
         tags: damDocuments.tags,
         extractedMeta: damDocuments.extractedMeta,
+        chunkStatus: damDocuments.chunkStatus,
+        createdAt: damDocuments.createdAt,
       };
 
-      if (input.serviceLines.length > 0) {
-        const tagConditions = input.serviceLines.map(
-          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-        );
-        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
-        const matched = await db
-          .select(selectFields)
-          .from(damDocuments)
-          .where(and(eq(damDocuments.docType, "resume"), eq(damDocuments.resumeVersion, "base"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
-          .orderBy(desc(damDocuments.createdAt))
-          .limit(10);
-        if (matched.length > 0) return { results: matched, isFallback: false };
-      }
-
-      // Fallback — return all indexed base resumes
-      const all = await db
+      const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
         .where(and(eq(damDocuments.docType, "resume"), eq(damDocuments.resumeVersion, "base"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(10);
-      return { results: all, isFallback: true };
+        .orderBy(desc(damDocuments.createdAt));
+
+      const corpusSize = allDocs.length;
+      if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
+
+      const docIds = allDocs.map((d) => d.id);
+      const ftsQuery = buildFtsQuery(input.serviceLines);
+      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
+
+      const scored = allDocs.map((doc) => {
+        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
+        const ftsResult = ftsMap.get(doc.id);
+        const ftScore = ftsResult?.ftScore ?? 0;
+        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
+        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
+        return {
+          ...doc,
+          compositeScore: breakdown.compositeScore,
+          scoreBreakdown: breakdown,
+          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
+          topChunks: ftsResult?.topChunks ?? [],
+        };
+      });
+
+      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 10);
+      const overallQuality: MatchQuality =
+        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
+        sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
+
+      return { results: sorted, matchQuality: overallQuality, corpusSize };
     }),
 
-  /** Match past proposals by service line tag overlap, with all-docs fallback */
+  /** Match past proposals — hybrid three-pass retrieval (Phase 3) */
   matchPastProposals: protectedProcedure
     .input(z.object({ serviceLines: z.array(z.string()) }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { results: [], isFallback: false };
+      if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
       const selectFields = {
         id: damDocuments.id,
@@ -1482,33 +1523,46 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         tags: damDocuments.tags,
         createdAt: damDocuments.createdAt,
         extractedMeta: damDocuments.extractedMeta,
+        chunkStatus: damDocuments.chunkStatus,
       };
 
-      if (input.serviceLines.length > 0) {
-        const tagConditions = input.serviceLines.map(
-          (sl) => sql`LOWER(${damDocuments.tags}) LIKE LOWER(${"%" + sl + "%"})`
-        );
-        const tagOverlap = sql`(${sql.join(tagConditions, sql` OR `)})`;
-        const matched = await db
-          .select(selectFields)
-          .from(damDocuments)
-          .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed"), tagOverlap))
-          .orderBy(desc(damDocuments.createdAt))
-          .limit(5);
-        if (matched.length > 0) return { results: matched, isFallback: false };
-      }
-
-      // Fallback — return all indexed past proposals
-      const all = await db
+      const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
         .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(5);
-      return { results: all, isFallback: true };
+        .orderBy(desc(damDocuments.createdAt));
+
+      const corpusSize = allDocs.length;
+      if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
+
+      const docIds = allDocs.map((d) => d.id);
+      const ftsQuery = buildFtsQuery(input.serviceLines);
+      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
+
+      const scored = allDocs.map((doc) => {
+        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
+        const ftsResult = ftsMap.get(doc.id);
+        const ftScore = ftsResult?.ftScore ?? 0;
+        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
+        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
+        return {
+          ...doc,
+          compositeScore: breakdown.compositeScore,
+          scoreBreakdown: breakdown,
+          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
+          topChunks: ftsResult?.topChunks ?? [],
+        };
+      });
+
+      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 5);
+      const overallQuality: MatchQuality =
+        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
+        sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
+
+      return { results: sorted, matchQuality: overallQuality, corpusSize };
     }),
 
-  /** Search DAM documents by title or tag (free text, any docType) */
+  /** Search DAM documents by title, tag, or chunk content (Phase 3 hybrid) */
   searchForAssetMatching: protectedProcedure
     .input(z.object({
       query: z.string().min(1),
@@ -1519,16 +1573,15 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
       if (!db) return [];
 
       const term = "%" + input.query + "%";
-      const conditions: any[] = [
+      const conditions: ReturnType<typeof eq>[] = [
         eq(damDocuments.processingStatus, "indexed"),
-        sql`(${damDocuments.title} ILIKE ${term} OR ${damDocuments.tags} ILIKE ${term} OR ${damDocuments.staffName} ILIKE ${term})`,
       ];
       if (input.docTypes && input.docTypes.length > 0) {
-        const typeConditions = input.docTypes.map(dt => eq(damDocuments.docType, dt));
-        conditions.push(sql`(${sql.join(typeConditions, sql` OR `)})`);
+        const typeConditions = input.docTypes.map((dt) => eq(damDocuments.docType, dt));
+        conditions.push(sql`(${sql.join(typeConditions, sql` OR `)})` as unknown as ReturnType<typeof eq>);
       }
 
-            const rows = await db
+      const rows = await db
         .select({
           id: damDocuments.id,
           title: damDocuments.title,
@@ -1538,12 +1591,27 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           contractValue: damDocuments.contractValue,
           tags: damDocuments.tags,
           extractedMeta: damDocuments.extractedMeta,
+          chunkStatus: damDocuments.chunkStatus,
+          createdAt: damDocuments.createdAt,
         })
         .from(damDocuments)
-        .where(and(...conditions))
+        .where(and(
+          ...conditions,
+          sql`(${damDocuments.title} ILIKE ${term} OR ${damDocuments.tags} ILIKE ${term} OR ${damDocuments.staffName} ILIKE ${term})`,
+        ))
         .orderBy(desc(damDocuments.createdAt))
         .limit(15);
-      return rows;
+
+      // Augment with FTS scores from document_chunks
+      const docIds = rows.map((r) => r.id);
+      const ftsMap = await fetchFtsScores(docIds, input.query);
+
+      return rows.map((doc) => ({
+        ...doc,
+        compositeScore: 0, // search results don't have service-line context for full scoring
+        topChunks: ftsMap.get(doc.id)?.topChunks ?? [],
+        matchQuality: (ftsMap.has(doc.id) ? "hybrid" : "tag-only") as MatchQuality,
+      }));
     }),
 
   // ── Admin: backfill document_chunks for all indexed documents ─────────────
