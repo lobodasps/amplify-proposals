@@ -545,6 +545,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   google_gemini: "Google Gemini",
   azure_openai: "Azure OpenAI",
+  custom: "Custom (OpenAI-compatible)",
+  manus_builtin: "Google Gemini (legacy)",
 };
 
 const PROVIDER_MODELS: Record<string, string[]> = {
@@ -576,6 +578,7 @@ const SKILL_ICONS: Record<string, string> = {
 
 function SkillCard({ skill }: { skill: any }) {
   const utils = trpc.useUtils();
+  const { data: providerKeysList = [] } = trpc.aiSkills.providerKeys.list.useQuery();
   const [expanded, setExpanded] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; provider: string; model: string; response: string } | null>(null);
   const [form, setForm] = useState({
@@ -667,14 +670,29 @@ function SkillCard({ skill }: { skill: any }) {
               <Label className="text-xs mb-1.5 block">Provider</Label>
               <Select value={form.provider} onValueChange={v => update({ provider: v, model: PROVIDER_MODELS[v]?.[0] ?? "" })}>
                 <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
+                  <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(PROVIDER_LABELS).map(([v, l]) => (
-                    <SelectItem key={v} value={v}>{l}</SelectItem>
-                  ))}
+                  {(providerKeysList as any[]).length > 0 ? (
+                    (providerKeysList as any[]).map((k: any) => (
+                      <SelectItem key={k.id} value={k.provider}>
+                        {k.name}
+                        {k.isDefault && <span className="ml-1 text-xs text-muted-foreground">(default)</span>}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    // Fallback to hardcoded list when no keys configured yet
+                    Object.entries(PROVIDER_LABELS)
+                      .filter(([v]) => v !== "manus_builtin")
+                      .map(([v, l]) => (
+                        <SelectItem key={v} value={v}>{l}</SelectItem>
+                      ))
+                  )}
                 </SelectContent>
               </Select>
+              {(providerKeysList as any[]).length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No provider keys configured. Add keys in Provider API Keys above.</p>
+              )}
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Model</Label>
@@ -784,67 +802,198 @@ function SkillCard({ skill }: { skill: any }) {
   );
 }
 
+const PROVIDER_COLORS: Record<string, string> = {
+  openai: "bg-green-500",
+  anthropic: "bg-orange-500",
+  google_gemini: "bg-purple-500",
+  azure_openai: "bg-blue-500",
+  custom: "bg-gray-500",
+};
+
+const PROVIDER_PLACEHOLDER: Record<string, string> = {
+  openai: "sk-...",
+  anthropic: "sk-ant-...",
+  google_gemini: "AIza...",
+  azure_openai: "your-azure-key",
+  custom: "your-api-key",
+};
+
 function ProviderKeysCard() {
   const utils = trpc.useUtils();
-  const { data: settings = [] } = trpc.appSettings.list.useQuery();
-  const set = trpc.appSettings.set.useMutation({
-    onSuccess: () => { toast.success("API key saved"); utils.appSettings.list.invalidate(); },
+  const { data: keys = [] } = trpc.aiSkills.providerKeys.list.useQuery();
+  const upsert = trpc.aiSkills.providerKeys.upsert.useMutation({
+    onSuccess: () => { toast.success("Provider key saved"); utils.aiSkills.providerKeys.list.invalidate(); setShowForm(false); setEditKey(null); },
+    onError: (e) => toast.error(e.message),
+  });
+  const del = trpc.aiSkills.providerKeys.delete.useMutation({
+    onSuccess: () => { toast.success("Provider key removed"); utils.aiSkills.providerKeys.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const setDefault = trpc.aiSkills.providerKeys.setDefault.useMutation({
+    onSuccess: () => { toast.success("Default provider updated"); utils.aiSkills.providerKeys.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
-  const getValue = (key: string) => (settings as any[]).find((s: any) => s.key === key)?.value ?? "";
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [showForm, setShowForm] = useState(false);
+  const [editKey, setEditKey] = useState<any>(null);
+  const [form, setForm] = useState({ name: "", provider: "google_gemini" as string, apiKey: "", baseUrl: "", defaultModel: "", isDefault: false });
 
-  const PROVIDERS = [
-    { key: "ai_key_google_gemini", label: "Google Gemini", placeholder: "AIza...", color: "bg-purple-500", envFallback: "GOOGLE_AI_API_KEY" },
-    { key: "ai_key_anthropic", label: "Anthropic", placeholder: "sk-ant-...", color: "bg-orange-500", envFallback: "ANTHROPIC_API_KEY" },
-    { key: "ai_key_openai", label: "OpenAI", placeholder: "sk-...", color: "bg-green-500", envFallback: "OPENAI_API_KEY" },
-  ];
+  const openAdd = () => {
+    setForm({ name: "", provider: "google_gemini", apiKey: "", baseUrl: "", defaultModel: "", isDefault: (keys as any[]).length === 0 });
+    setEditKey(null);
+    setShowForm(true);
+  };
+
+  const openEdit = (k: any) => {
+    setForm({ name: k.name, provider: k.provider, apiKey: "", baseUrl: k.baseUrl ?? "", defaultModel: k.defaultModel ?? "", isDefault: k.isDefault });
+    setEditKey(k);
+    setShowForm(true);
+  };
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error("Name is required");
+    if (!form.apiKey.trim() && !editKey) return toast.error("API key is required");
+    // Only send the API key if a new one was explicitly entered (not blank, not the masked placeholder)
+    const isNewKey = form.apiKey.trim().length > 0 && !form.apiKey.startsWith("sk-...");
+    if (!isNewKey && !editKey) return toast.error("API key is required");
+    upsert.mutate({
+      id: editKey?.id,
+      name: form.name,
+      provider: form.provider as any,
+      // When editing: if no new key entered, send a placeholder that the server will ignore
+      // The server upsert only updates apiKey when a real value is provided
+      apiKey: isNewKey ? form.apiKey : (editKey ? "__KEEP_EXISTING__" : ""),
+      baseUrl: form.baseUrl || null,
+      defaultModel: form.defaultModel || null,
+      isDefault: form.isDefault,
+    });
+  };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Settings2 className="h-4 w-4" />
-          Provider API Keys
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">Enter each provider key once. All skills using that provider will share the key.</p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {PROVIDERS.map((p) => {
-          const stored = getValue(p.key);
-          const hasKey = !!stored;
-          return (
-            <div key={p.key} className="flex items-center gap-3">
-              <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${p.color}`} />
-              <Label className="w-32 shrink-0 text-sm font-medium">{p.label}</Label>
-              <div className="flex-1 flex gap-1">
-                <Input
-                  className="h-8 text-sm font-mono"
-                  type={showKeys[p.key] ? "text" : "password"}
-                  defaultValue={stored}
-                  placeholder={hasKey ? "••••••••••••  (stored)" : p.placeholder}
-                  onBlur={(e) => {
-                    const val = e.target.value.trim();
-                    if (val && val !== stored) {
-                      set.mutate({ key: p.key, value: val, description: `${p.label} API key` });
-                    }
-                  }}
-                />
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setShowKeys(s => ({ ...s, [p.key]: !s[p.key] }))}>
-                  {showKeys[p.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              {hasKey ? (
-                <Badge variant="secondary" className="text-xs shrink-0">Configured</Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs shrink-0 text-muted-foreground">Uses {p.envFallback} env</Badge>
-              )}
+    <>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Provider API Keys
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Add any number of provider keys. Mark one as <strong>Default</strong> — it will be used as fallback when a skill’s configured provider fails.
+              </p>
             </div>
-          );
-        })}
-      </CardContent>
-    </Card>
+            <Button size="sm" onClick={openAdd} className="gap-1 shrink-0">
+              <Plus className="h-3.5 w-3.5" />Add Key
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {(keys as any[]).length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p className="text-sm">No provider keys configured yet.</p>
+              <p className="text-xs mt-1">Add at least one key to enable AI skill processing.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(keys as any[]).map((k: any) => (
+                <div key={k.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/20">
+                  <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${PROVIDER_COLORS[k.provider] ?? "bg-gray-400"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{k.name}</span>
+                      {k.isDefault && <Badge className="text-xs bg-primary/10 text-primary border-primary/30 shrink-0">Default</Badge>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground">{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{k.apiKey}</span>
+                      {k.defaultModel && <span className="text-xs text-muted-foreground">• {k.defaultModel}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!k.isDefault && (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDefault.mutate({ id: k.id })}>
+                        Set Default
+                      </Button>
+                    )}
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(k)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => del.mutate({ id: k.id })}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add/Edit dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editKey ? "Edit Provider Key" : "Add Provider Key"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Display Name</Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Google AI (Gemini Flash)" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Provider</Label>
+              <Select value={form.provider} onValueChange={v => setForm(f => ({ ...f, provider: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PROVIDER_LABELS).filter(([k]) => k !== "manus_builtin").map(([v, l]) => (
+                    <SelectItem key={v} value={v}>{l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">API Key {editKey && <span className="text-muted-foreground">(leave blank to keep existing)</span>}</Label>
+              <Input
+                type="password"
+                value={form.apiKey}
+                onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
+                placeholder={PROVIDER_PLACEHOLDER[form.provider] ?? "your-api-key"}
+              />
+            </div>
+            {(form.provider === "azure_openai" || form.provider === "custom") && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Base URL</Label>
+                <Input value={form.baseUrl} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))} placeholder="https://your-endpoint.openai.azure.com/..." />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Default Model <span className="text-muted-foreground">(used when this is the fallback provider)</span></Label>
+              <Input
+                value={form.defaultModel}
+                onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
+                placeholder={PROVIDER_MODELS[form.provider]?.[0] ?? "e.g. gpt-4o"}
+                list="provider-models-list"
+              />
+              <datalist id="provider-models-list">
+                {(PROVIDER_MODELS[form.provider] ?? []).map(m => <option key={m} value={m} />)}
+              </datalist>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.isDefault} onCheckedChange={v => setForm(f => ({ ...f, isDefault: v }))} />
+              <Label className="text-sm">Set as default fallback provider</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={upsert.isPending}>
+              {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              {editKey ? "Update" : "Add Key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -794,8 +794,11 @@ export const aiSkills = pgTable("ai_skills", {
   skillType: text("skillType").notNull().unique(),
   displayName: text("displayName").notNull(),
   description: text("description"),
-  // Valid values: manus_builtin, openai, anthropic, google_gemini, azure_openai
-  provider: text("provider").notNull().default("manus_builtin"),
+  // Valid values: openai, anthropic, google_gemini, azure_openai, custom
+  // null means "use system default" (falls back to the default provider_api_keys row)
+  provider: text("provider"),
+  // FK to provider_api_keys.id — when set, this key overrides the global provider key
+  providerApiKeyId: uuid("providerApiKeyId"),
   model: text("model"),
   apiKey: text("apiKey"),
   baseUrl: text("baseUrl"),
@@ -1146,3 +1149,24 @@ export const firmSettings = pgTable("firm_settings", {
 
 export type FirmSettings = typeof firmSettings.$inferSelect;
 export type InsertFirmSettings = typeof firmSettings.$inferInsert;
+
+// ─── Provider API Keys ────────────────────────────────────────────────────────
+// Stores user-configured API keys for each LLM provider.
+// Replaces the old hardcoded 3-provider approach with an unlimited list.
+
+export const providerApiKeys = pgTable("provider_api_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),           // Display name, e.g. "Google AI (Gemini)"
+  // Valid values: openai, anthropic, google_gemini, azure_openai, custom
+  provider: text("provider").notNull(),
+  apiKey: text("apiKey").notNull(),        // Stored as-is (server-side only)
+  baseUrl: text("baseUrl"),               // Required for azure_openai and custom
+  isDefault: boolean("isDefault").default(false).notNull(),
+  // Default model to use when this provider is selected as fallback
+  defaultModel: text("defaultModel"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ProviderApiKey = typeof providerApiKeys.$inferSelect;
+export type InsertProviderApiKey = typeof providerApiKeys.$inferInsert;

@@ -43,6 +43,10 @@ export interface SkillStateEntry {
   missingVariables?: string[];
   /** Gemini retry notice written during backoff (e.g. 'Gemini 503 — retrying in 15s (attempt 2 of 3)') */
   retryMessage?: string;
+  /** True when the configured skill provider failed and the system default provider was used instead */
+  usedDefaultModel?: boolean;
+  /** Human-readable label of the default model that was used (e.g. 'openai/gpt-4o') */
+  defaultModelName?: string;
 }
 
 /** Full workflow state — stored in rfpSessions.workflowState */

@@ -57,6 +57,10 @@ interface RendererProps {
   onSaved: (newOutput: string) => void;
   /** Called when the user clicks Re-render to force prose rendering of a saved JSON section */
   onRerender?: () => void;
+  /** True when the configured skill provider failed and the system default provider was used instead */
+  usedDefaultModel?: boolean;
+  /** Human-readable label of the default model that was used (e.g. 'openai/gpt-4o') */
+  defaultModelName?: string;
 }
 
 // ─── Win Theme Cards ──────────────────────────────────────────────────────────
@@ -1099,6 +1103,8 @@ export function SkillOutputRenderer({
   isComplete,
   onSaved,
   onRerender,
+  usedDefaultModel,
+  defaultModelName,
 }: RendererProps) {
   // Determine effective output type
   const effectiveType = outputType ?? "prose";
@@ -1112,10 +1118,23 @@ export function SkillOutputRenderer({
     );
   }
 
+  // Default model fallback banner
+  const defaultModelBanner = usedDefaultModel ? (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs mb-3">
+      <span className="shrink-0">⚠️</span>
+      <span>
+        <strong>Default model used:</strong> The configured skill provider failed. This output was generated using the system default provider
+        {defaultModelName ? <> (<code className="font-mono bg-amber-100 px-1 rounded">{defaultModelName}</code>)</> : ""}.
+        To update the skill’s provider, go to <strong>Settings → AI Skills</strong>.
+      </span>
+    </div>
+  ) : null;
+
   // If user clicked Re-render, or caller forced prose, render as prose regardless of outputType
   if (forceProse) {
     return (
       <div className="space-y-2">
+        {defaultModelBanner}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
           <span>Re-rendered as prose. Use Edit to make corrections.</span>
@@ -1147,25 +1166,31 @@ export function SkillOutputRenderer({
   switch (effectiveType) {
     case "prose":
       return (
-        <ProseEditor
-          skillName={skillName}
-          output={output}
-          sessionId={sessionId}
-          isComplete={isComplete}
-          onSaved={onSaved}
-        />
+        <div>
+          {defaultModelBanner}
+          <ProseEditor
+            skillName={skillName}
+            output={output}
+            sessionId={sessionId}
+            isComplete={isComplete}
+            onSaved={onSaved}
+          />
+        </div>
       );
 
     case "json":
       return (
-        <JsonRenderer
-          skillName={skillName}
-          output={output}
-          sessionId={sessionId}
-          isComplete={isComplete}
-          onSaved={onSaved}
-          onRerender={handleRerender}
-        />
+        <div>
+          {defaultModelBanner}
+          <JsonRenderer
+            skillName={skillName}
+            output={output}
+            sessionId={sessionId}
+            isComplete={isComplete}
+            onSaved={onSaved}
+            onRerender={handleRerender}
+          />
+        </div>
       );
 
     case "json_with_prose": {
@@ -1182,35 +1207,41 @@ export function SkillOutputRenderer({
       }
 
       return (
-        <div className="flex gap-4">
-          <div className="flex-1 min-w-0">
-            <ProseEditor
-              skillName={skillName}
-              output={proseContent}
-              sessionId={sessionId}
-              isComplete={isComplete}
-              onSaved={onSaved}
-            />
-          </div>
-          {jsonData && (
-            <div className="w-72 shrink-0 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Metadata
-              </p>
-              <GenericJsonViewer data={jsonData} />
+        <div>
+          {defaultModelBanner}
+          <div className="flex gap-4">
+            <div className="flex-1 min-w-0">
+              <ProseEditor
+                skillName={skillName}
+                output={proseContent}
+                sessionId={sessionId}
+                isComplete={isComplete}
+                onSaved={onSaved}
+              />
             </div>
-          )}
+            {jsonData && (
+              <div className="w-72 shrink-0 space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Metadata
+                </p>
+                <GenericJsonViewer data={jsonData} />
+              </div>
+            )}
+          </div>
         </div>
       );
     }
 
     default:
       return (
-        <FallbackRenderer
-          output={output}
-          reason={`Unknown outputType "${effectiveType}". Showing raw output.`}
-          onRerender={handleRerender}
-        />
+        <div>
+          {defaultModelBanner}
+          <FallbackRenderer
+            output={output}
+            reason={`Unknown outputType "${effectiveType}". Showing raw output.`}
+            onRerender={handleRerender}
+          />
+        </div>
       );
   }
 }

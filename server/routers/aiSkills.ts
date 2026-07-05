@@ -1,11 +1,114 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { aiSkills, llmUsageLogs } from "../../drizzle/schema";
+import { aiSkills, llmUsageLogs, providerApiKeys } from "../../drizzle/schema";
 import { eq, sql, and, gte } from "drizzle-orm";
-import { DEFAULT_SKILLS, invokeLLMWithSkill, type SkillType } from "../_core/llmSkill";
+import { DEFAULT_SKILLS, invokeLLMWithSkill, invalidateProviderKeysCache, type SkillType } from "../_core/llmSkill";
+
+// ─── Provider API Keys sub-router ───────────────────────────────────────────
+
+export const providerApiKeysRouter = router({
+  /** List all configured provider API keys (API key value is masked) */
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select().from(providerApiKeys).orderBy(providerApiKeys.createdAt);
+    // Mask the actual key value — only show last 4 chars
+    return rows.map((r) => ({
+      ...r,
+      apiKey: r.apiKey ? `sk-...${r.apiKey.slice(-4)}` : "",
+    }));
+  }),
+
+  /** Create or update a provider API key */
+  upsert: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1),
+        provider: z.enum(["openai", "anthropic", "google_gemini", "azure_openai", "custom"]),
+        // Use "__KEEP_EXISTING__" to preserve the current API key when editing
+        apiKey: z.string().min(1),
+        baseUrl: z.string().nullable().optional(),
+        defaultModel: z.string().nullable().optional(),
+        isDefault: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      // If setting as default, clear all other defaults first
+      if (input.isDefault) {
+        await db.update(providerApiKeys).set({ isDefault: false });
+      }
+
+      if (input.id) {
+        // Update existing — only update apiKey if a new one was explicitly provided
+        const updatePayload: Record<string, unknown> = {
+          name: input.name,
+          provider: input.provider,
+          baseUrl: input.baseUrl ?? null,
+          defaultModel: input.defaultModel ?? null,
+          isDefault: input.isDefault ?? false,
+          updatedAt: new Date(),
+        };
+        if (input.apiKey && input.apiKey !== "__KEEP_EXISTING__") {
+          updatePayload.apiKey = input.apiKey;
+        }
+        await db
+          .update(providerApiKeys)
+          .set(updatePayload as any)
+          .where(eq(providerApiKeys.id, input.id));
+      } else {
+        // Insert new
+        if (!input.apiKey || input.apiKey === "__KEEP_EXISTING__") {
+          throw new Error("API key is required when creating a new provider key.");
+        }
+        await db.insert(providerApiKeys).values({
+          name: input.name,
+          provider: input.provider,
+          apiKey: input.apiKey,
+          baseUrl: input.baseUrl ?? null,
+          defaultModel: input.defaultModel ?? null,
+          isDefault: input.isDefault ?? false,
+        });
+      }
+
+      invalidateProviderKeysCache();
+      return { success: true };
+    }),
+
+  /** Delete a provider API key */
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db.delete(providerApiKeys).where(eq(providerApiKeys.id, input.id));
+      invalidateProviderKeysCache();
+      return { success: true };
+    }),
+
+  /** Set a provider API key as the system default */
+  setDefault: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      // Clear all defaults, then set the specified one
+      await db.update(providerApiKeys).set({ isDefault: false });
+      await db.update(providerApiKeys).set({ isDefault: true }).where(eq(providerApiKeys.id, input.id));
+      invalidateProviderKeysCache();
+      return { success: true };
+    }),
+});
+
+// ─── AI Skills router ─────────────────────────────────────────────────────────
 
 export const aiSkillsRouter = router({
+  /** Provider API Keys sub-procedures (nested) */
+  providerKeys: providerApiKeysRouter,
   /** List all skill configs (creates defaults if table is empty) */
   list: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -85,8 +188,9 @@ export const aiSkillsRouter = router({
     .input(
       z.object({
         skillType: z.string(),
-        provider: z.enum(["manus_builtin", "openai", "anthropic", "google_gemini", "azure_openai"]),
-        model: z.string().optional(),
+        // null means "use system default provider"
+        provider: z.string().nullable().optional(),
+        model: z.string().nullable().optional(),
         /** Pass null to clear the key, omit to leave unchanged */
         apiKey: z.string().nullable().optional(),
         baseUrl: z.string().nullable().optional(),

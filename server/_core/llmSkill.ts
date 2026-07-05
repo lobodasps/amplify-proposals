@@ -45,11 +45,13 @@ export type SkillType =
   | "key_personnel_writer";
 
 export type Provider =
-  | "manus_builtin"
   | "openai"
   | "anthropic"
   | "google_gemini"
-  | "azure_openai";
+  | "azure_openai"
+  | "custom"
+  // Legacy — kept for backward compat with existing DB rows; treated as google_gemini
+  | "manus_builtin";
 
 export interface SkillMessage {
   role: "system" | "user" | "assistant";
@@ -109,6 +111,10 @@ export interface SkillInvokeResult {
   _model: string;
   /** Token usage from the API response */
   _usage?: { tokensIn: number; tokensOut: number; estimatedCost: number };
+  /** True when the system fell back to the default model because the skill's configured provider failed */
+  _usedDefaultModel?: boolean;
+  /** Name of the default model that was used as fallback */
+  _defaultModelName?: string;
 }
 
 // ─── Cost table (per 1M tokens) ─────────────────────────────────────────────
@@ -913,19 +919,66 @@ function resolveDefaultModel(provider: Provider): string {
 }
 
 /**
- * Resolves the API key for a provider. Priority order:
- * 1. Global provider key from app_settings table (ai_key_google_gemini, ai_key_anthropic, ai_key_openai)
- * 2. ENV-level key (GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY)
- * 3. Manus built-in forge key as final fallback for google_gemini
+ * Resolves the API key for a provider.
+ * Priority order:
+ * 1. provider_api_keys table (new system — unlimited provider keys)
+ * 2. Legacy app_settings keys (ai_key_google_gemini, ai_key_anthropic, ai_key_openai)
+ * 3. ENV-level keys (GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY)
+ * Never falls back to Manus built-in — this product must work outside of Manus.
  */
-let _cachedProviderKeys: Record<string, string> | null = null;
-let _cacheTimestamp = 0;
-const CACHE_TTL_MS = 30_000; // 30s cache for DB lookups
+let _cachedProviderApiKeys: Array<{ id: string; provider: string; apiKey: string; baseUrl: string | null; defaultModel: string | null; isDefault: boolean }> | null = null;
+let _providerKeysCacheTimestamp = 0;
+const PROVIDER_KEYS_CACHE_TTL_MS = 30_000; // 30s cache
 
-async function loadProviderKeysFromDb(): Promise<Record<string, string>> {
+export async function loadProviderApiKeysFromDb(): Promise<typeof _cachedProviderApiKeys> {
   const now = Date.now();
-  if (_cachedProviderKeys && now - _cacheTimestamp < CACHE_TTL_MS) {
-    return _cachedProviderKeys;
+  if (_cachedProviderApiKeys && now - _providerKeysCacheTimestamp < PROVIDER_KEYS_CACHE_TTL_MS) {
+    return _cachedProviderApiKeys;
+  }
+  try {
+    const { providerApiKeys } = await import("../../drizzle/schema");
+    const db = await getDb();
+    if (db) {
+      const rows = await db.select().from(providerApiKeys);
+      _cachedProviderApiKeys = rows.map((r) => ({
+        id: r.id,
+        provider: r.provider,
+        apiKey: r.apiKey,
+        baseUrl: r.baseUrl ?? null,
+        defaultModel: r.defaultModel ?? null,
+        isDefault: r.isDefault,
+      }));
+      _providerKeysCacheTimestamp = now;
+      return _cachedProviderApiKeys;
+    }
+  } catch {
+    // DB unavailable
+  }
+  return _cachedProviderApiKeys ?? [];
+}
+
+/** Invalidate the provider keys cache (call after upsert/delete) */
+export function invalidateProviderKeysCache(): void {
+  _cachedProviderApiKeys = null;
+  _providerKeysCacheTimestamp = 0;
+}
+
+/** Get the default provider key row (isDefault=true), or null if none configured */
+export async function getDefaultProviderKey(): Promise<{ provider: string; apiKey: string; baseUrl: string | null; defaultModel: string | null } | null> {
+  const keys = await loadProviderApiKeysFromDb();
+  if (!keys) return null;
+  return keys.find((k) => k.isDefault) ?? null;
+}
+
+// Legacy app_settings key lookup (backward compat)
+let _cachedLegacyKeys: Record<string, string> | null = null;
+let _legacyCacheTimestamp = 0;
+const LEGACY_CACHE_TTL_MS = 30_000;
+
+async function loadLegacyProviderKeysFromDb(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (_cachedLegacyKeys && now - _legacyCacheTimestamp < LEGACY_CACHE_TTL_MS) {
+    return _cachedLegacyKeys;
   }
   try {
     const { appSettings } = await import("../../drizzle/schema");
@@ -938,51 +991,53 @@ async function loadProviderKeysFromDb(): Promise<Record<string, string>> {
           map[row.key] = row.value;
         }
       }
-      _cachedProviderKeys = map;
-      _cacheTimestamp = now;
+      _cachedLegacyKeys = map;
+      _legacyCacheTimestamp = now;
       return map;
     }
   } catch {
     // DB unavailable
   }
-  return _cachedProviderKeys ?? {};
+  return _cachedLegacyKeys ?? {};
 }
 
 async function resolveApiKey(provider: Provider): Promise<string> {
-  // Load global provider keys from app_settings
-  const globalKeys = await loadProviderKeysFromDb();
+  // 1. Try new provider_api_keys table first
+  const providerKeys = await loadProviderApiKeysFromDb();
+  if (providerKeys) {
+    const match = providerKeys.find((k) => k.provider === provider || (provider === "manus_builtin" && k.provider === "google_gemini"));
+    if (match) return match.apiKey;
+  }
+
+  // 2. Legacy app_settings keys (backward compat)
+  const legacyKeys = await loadLegacyProviderKeysFromDb();
 
   switch (provider) {
     case "manus_builtin":
-      if (!ENV.forgeApiKey) throw new Error("Manus built-in API key is not configured.");
-      return ENV.forgeApiKey;
     case "google_gemini": {
-      // 1. Global key from Settings UI
-      const dbKey = globalKeys["ai_key_google_gemini"];
+      const dbKey = legacyKeys["ai_key_google_gemini"];
       if (dbKey) return dbKey;
-      // 2. ENV key
       if (ENV.googleAiApiKey) return ENV.googleAiApiKey;
-      // 3. Manus built-in fallback
-      if (ENV.forgeApiKey) return ENV.forgeApiKey;
       throw new Error("No Google AI API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
     }
     case "anthropic": {
-      const dbKey = globalKeys["ai_key_anthropic"];
+      const dbKey = legacyKeys["ai_key_anthropic"];
       if (dbKey) return dbKey;
       if (ENV.anthropicApiKey) return ENV.anthropicApiKey;
       throw new Error("No Anthropic API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
     }
     case "openai": {
-      const dbKey = globalKeys["ai_key_openai"];
+      const dbKey = legacyKeys["ai_key_openai"];
       if (dbKey) return dbKey;
       if (ENV.openaiApiKey) return ENV.openaiApiKey;
       throw new Error("No OpenAI API key configured. Go to Settings → AI Skills → Provider API Keys to add your key.");
     }
     case "azure_openai":
-      throw new Error("Azure OpenAI requires configuration in Settings → AI Skills.");
+      throw new Error("Azure OpenAI requires a baseUrl and API key configured in Settings → AI Skills → Provider API Keys.");
+    case "custom":
+      throw new Error("Custom provider requires an API key configured in Settings → AI Skills → Provider API Keys.");
     default:
-      if (ENV.forgeApiKey) return ENV.forgeApiKey;
-      throw new Error(`No API key configured for provider "${provider}".`);
+      throw new Error(`No API key configured for provider "${provider}". Go to Settings → AI Skills → Provider API Keys to add your key.`);
   }
 }
 
@@ -1431,6 +1486,7 @@ export async function invokeLLMWithSkill(
     systemPrompt: string;
     userPromptTemplate: string;
     enabled: boolean;
+    _providerApiKeyId?: string | null;
   } | null = null;
 
   try {
@@ -1441,7 +1497,17 @@ export async function invokeLLMWithSkill(
         .from(aiSkills)
         .where(eq(aiSkills.skillType, skillType))
         .limit(1);
-      if (rows[0]) skillRow = rows[0];
+      if (rows[0]) skillRow = {
+        provider: rows[0].provider ?? "",
+        model: rows[0].model,
+        apiKey: rows[0].apiKey,
+        baseUrl: rows[0].baseUrl,
+        systemPrompt: rows[0].systemPrompt,
+        userPromptTemplate: rows[0].userPromptTemplate,
+        enabled: rows[0].enabled,
+        // Pass through the providerApiKeyId for key resolution
+        _providerApiKeyId: rows[0].providerApiKeyId,
+      };
     }
   } catch {
     // DB unavailable — fall through to defaults
@@ -1453,7 +1519,7 @@ export async function invokeLLMWithSkill(
   // Seeds and migrations must never hardcode provider/model — only skillType, displayName, description, systemPrompt, userPromptTemplate.
   const provider = (skillRow?.provider
     ? skillRow.provider
-    : defaults?.defaultProvider ?? "manus_builtin") as Provider;
+    : defaults?.defaultProvider ?? "google_gemini") as Provider;
   const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
   const apiKey = await resolveApiKey(provider);
   const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
@@ -1483,8 +1549,9 @@ export async function invokeLLMWithSkill(
   let result: SkillInvokeResult;
 
   try {
-    if (provider === "google_gemini") {
+    if (provider === "google_gemini" || provider === "manus_builtin") {
       // Native Google Generative AI SDK — full file_url/fileUri support
+      // manus_builtin is treated as google_gemini for backward compat
       const resp = await callGeminiNative(apiKey, model, messages, responseFormat, maxTokens, params.onRetry);
       result = resp.result;
       tokensIn = resp.tokensIn;
@@ -1495,7 +1562,7 @@ export async function invokeLLMWithSkill(
       tokensIn = resp.tokensIn;
       tokensOut = resp.tokensOut;
     } else {
-      // OpenAI, Azure, Manus built-in → OpenAI-compatible endpoint
+      // OpenAI, Azure, custom → OpenAI-compatible endpoint
       const endpoint = resolveEndpoint(provider, skillRow?.baseUrl);
       const resp = await callOpenAICompat(endpoint, apiKey, model, messages, responseFormat, maxTokens);
       result = resp.result;
@@ -1517,61 +1584,84 @@ export async function invokeLLMWithSkill(
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
 
-    // ── Manus built-in fallback ──────────────────────────────────────────────
-    // If the configured provider key is missing/invalid (no key configured, or
-    // the API returned 401/403/auth error), automatically retry with the Manus
-    // built-in Gemini key so the user gets a result instead of a hard failure.
-    const isAuthError =
-      err.message?.includes("No Anthropic API key") ||
-      err.message?.includes("No OpenAI API key") ||
-      err.message?.includes("No Google AI API key") ||
+    // ── Default model fallback ───────────────────────────────────────────────────────────────────────────────────
+    // On any API error, attempt to fall back to the system default provider
+    // (the provider_api_keys row with isDefault=true). This replaces the old
+    // Manus built-in fallback. If no default is configured, the error is thrown.
+    const isApiError =
+      err.message?.includes("No ") ||
+      err.message?.includes("API key") ||
       err.message?.includes("401") ||
       err.message?.includes("403") ||
+      err.message?.includes("429") ||
+      err.message?.includes("500") ||
+      err.message?.includes("502") ||
+      err.message?.includes("503") ||
       err.message?.includes("authentication") ||
       err.message?.includes("Unauthorized") ||
-      err.message?.includes("Invalid API key");
+      err.message?.includes("Invalid API key") ||
+      err.message?.includes("overloaded") ||
+      err.message?.includes("unavailable");
 
-    if (isAuthError && provider !== "manus_builtin" && ENV.forgeApiKey) {
+    const defaultProviderKey = isApiError ? await getDefaultProviderKey() : null;
+
+    if (defaultProviderKey && defaultProviderKey.provider !== provider) {
+      const fallbackProvider = defaultProviderKey.provider as Provider;
+      const fallbackModel = defaultProviderKey.defaultModel || resolveDefaultModel(fallbackProvider);
       console.warn(
-        `[llmSkill] ${provider} key missing/invalid for ${skillType} — falling back to Manus built-in Gemini`
+        `[llmSkill] ${provider} failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to default provider: ${fallbackProvider}/${fallbackModel}`
       );
       try {
-        const fallbackKey = ENV.forgeApiKey;
-        const fallbackEndpoint = ENV.forgeApiUrl
-          ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-          : "https://forge.manus.im/v1/chat/completions";
-        const fallbackModel = "gemini-2.5-flash-preview-05-20";
-        // Re-sanitize messages for manus_builtin (OpenAI-compat, supports file_url)
-        const fallbackMessages = sanitizeMessagesForProvider(messages, "manus_builtin");
-        const resp = await callOpenAICompat(
-          fallbackEndpoint,
-          fallbackKey,
-          fallbackModel,
-          fallbackMessages,
-          responseFormat,
-          maxTokens
-        );
-        const fallbackResult = resp.result;
-        fallbackResult._provider = "manus_builtin";
+        const fallbackApiKey = defaultProviderKey.apiKey;
+        let fallbackResult: SkillInvokeResult;
+        let fallbackTokensIn = 0;
+        let fallbackTokensOut = 0;
+
+        const fallbackMessages = sanitizeMessagesForProvider(messages, fallbackProvider);
+
+        if (fallbackProvider === "google_gemini" || fallbackProvider === "manus_builtin") {
+          const resp = await callGeminiNative(fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens, params.onRetry);
+          fallbackResult = resp.result;
+          fallbackTokensIn = resp.tokensIn;
+          fallbackTokensOut = resp.tokensOut;
+        } else if (fallbackProvider === "anthropic") {
+          const resp = await callAnthropic(fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens);
+          fallbackResult = resp.result;
+          fallbackTokensIn = resp.tokensIn;
+          fallbackTokensOut = resp.tokensOut;
+        } else {
+          const fallbackEndpoint = resolveEndpoint(fallbackProvider, defaultProviderKey.baseUrl);
+          const resp = await callOpenAICompat(fallbackEndpoint, fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens);
+          fallbackResult = resp.result;
+          fallbackResult._provider = fallbackProvider;
+          fallbackResult._model = fallbackModel;
+          fallbackTokensIn = resp.tokensIn;
+          fallbackTokensOut = resp.tokensOut;
+        }
+
+        fallbackResult._provider = fallbackProvider;
         fallbackResult._model = fallbackModel;
-        const cost = estimateCost(fallbackModel, resp.tokensIn, resp.tokensOut);
-        fallbackResult._usage = { tokensIn: resp.tokensIn, tokensOut: resp.tokensOut, estimatedCost: cost };
+        fallbackResult._usedDefaultModel = true;
+        fallbackResult._defaultModelName = `${fallbackProvider}/${fallbackModel}`;
+        const fallbackCost = estimateCost(fallbackModel, fallbackTokensIn, fallbackTokensOut);
+        fallbackResult._usage = { tokensIn: fallbackTokensIn, tokensOut: fallbackTokensOut, estimatedCost: fallbackCost };
+
         logUsage({
           skillType,
-          provider: "manus_builtin",
+          provider: fallbackProvider,
           model: fallbackModel,
-          tokensIn: resp.tokensIn,
-          tokensOut: resp.tokensOut,
+          tokensIn: fallbackTokensIn,
+          tokensOut: fallbackTokensOut,
           durationMs: Date.now() - startTime,
           success: true,
         });
         return fallbackResult;
       } catch (fallbackErr: any) {
-        // Fallback also failed — log and throw original error
+        // Default model fallback also failed — log and throw original error
         logUsage({
           skillType,
-          provider: "manus_builtin",
-          model: "gemini-2.5-flash-preview-05-20",
+          provider: fallbackProvider,
+          model: fallbackModel,
           tokensIn: 0,
           tokensOut: 0,
           durationMs: Date.now() - startTime,
@@ -1580,7 +1670,7 @@ export async function invokeLLMWithSkill(
         });
       }
     }
-    // ── End fallback ─────────────────────────────────────────────────────────
+    // ── End default model fallback ───────────────────────────────────────────────────────────────────────────────
 
     logUsage({ skillType, provider, model, tokensIn: 0, tokensOut: 0, durationMs, success: false, errorMessage: err.message });
     throw err;

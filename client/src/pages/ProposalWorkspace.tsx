@@ -1398,6 +1398,8 @@ export default function ProposalWorkspace() {
                         outputType={resolveOutputType(selectedSkill.name, aiSkillRecords)}
                         sessionId={activeSessionId!}
                         isComplete={selectedState?.status === "complete"}
+                        usedDefaultModel={selectedState?.usedDefaultModel}
+                        defaultModelName={selectedState?.defaultModelName}
                         onSaved={(newOutput) =>
                           setLocalOutputs((prev) => ({
                             ...prev,

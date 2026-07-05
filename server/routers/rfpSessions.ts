@@ -1047,6 +1047,8 @@ export const rfpSessionsRouter = router({
         let llmOutput = "";
         let usedModel = "unknown";
         let usedProvider = "unknown";
+        let usedDefaultModel = false;
+        let defaultModelName: string | undefined;
 
         try {
         // Sub-step: Preparing context
@@ -1281,6 +1283,8 @@ export const rfpSessionsRouter = router({
         llmOutput = result.choices[0]?.message?.content ?? "";
         usedModel = result._model;
         usedProvider = result._provider;
+        usedDefaultModel = result._usedDefaultModel ?? false;
+        defaultModelName = result._defaultModelName ?? undefined;
       } catch (llmError) {
         // ── LLM failed inside setImmediate: write error state to DB (no throw —
         //    throwing here would cause an unhandled promise rejection).
@@ -1322,7 +1326,14 @@ export const rfpSessionsRouter = router({
         [input.skillName as string]: llmOutput,
       } as SkillOutputs;
 
-      const completedEntry: SkillStateEntry = { status: "complete", startedAt, completedAt, model: usedModel, provider: usedProvider };
+      const completedEntry: SkillStateEntry = {
+        status: "complete",
+        startedAt,
+        completedAt,
+        model: usedModel,
+        provider: usedProvider,
+        ...(usedDefaultModel ? { usedDefaultModel: true, defaultModelName } : {}),
+      };
       const completedState: WorkflowState = {
         ...((freshSession.workflowState ?? {}) as WorkflowState),
         [input.skillName as string]: completedEntry,

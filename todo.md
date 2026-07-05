@@ -45,3 +45,13 @@ Current version: v4.16
 - [ ] Mobile responsive pass
 - [ ] SSO/SAML
 - [ ] Stripe billing
+
+## AI Skills Configuration Overhaul (v4.20) — COMPLETE
+- [x] Add provider_api_keys table — unlimited named providers (name, baseUrl, apiKey, isDefault)
+- [x] Remove all Manus built-in (manus_builtin/forge) references from invokeLLMWithSkill and Settings
+- [x] Add system-wide default model setting (provider + model) in provider_api_keys.isDefault
+- [x] On any API error, fall back to default model; set _usedDefaultModel flag on result
+- [x] Surface "Used default model" amber indicator in SkillOutputRenderer when _usedDefaultModel is set
+- [x] Rebuild Provider API Keys UI: add/edit/delete any number of providers, mark one as default
+- [x] Per-skill provider dropdown now accepts any string (not hardcoded enum)
+- [x] Zero TypeScript errors
