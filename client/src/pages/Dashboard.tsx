@@ -51,9 +51,13 @@ function KpiSkeleton() {
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading, user } = useAuth();
-  const { data: stats, isLoading: statsLoading } = trpc.analytics.dashboard.useQuery(undefined, {
+  const { data: stats, isLoading: statsLoading, isFetching: statsFetching } = trpc.analytics.dashboard.useQuery(undefined, {
     enabled: isAuthenticated,
+    // Keep previous data visible while refetching — no flash of empty state
+    placeholderData: (prev) => prev,
   });
+  // Only show skeleton on the very first load (no cached data at all)
+  const showSkeleton = statsLoading && !stats;
   // recentPursuits derived from analytics.dashboard — no separate pursuits.list call needed
 
   if (authLoading) {
@@ -215,7 +219,7 @@ export default function Dashboard() {
         </div>
 
         {/* KPI Cards */}
-        {statsLoading ? (
+        {showSkeleton ? (
           <KpiSkeleton />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -255,7 +259,7 @@ export default function Dashboard() {
                 </Link>
               </CardHeader>
               <CardContent className="p-0">
-                {statsLoading ? (
+                {showSkeleton ? (
                   <div className="p-4 space-y-3">
                     {Array.from({ length: 4 }).map((_, i) => (
                       <Skeleton key={i} className="h-14 w-full rounded-lg" />
