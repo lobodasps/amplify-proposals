@@ -218,10 +218,10 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Team members, resumes & certifications",
       },
       {
-        label: "Projects",
+        label: "Project Experience",
         href: "/projects",
         icon: Building2,
-        description: "Past project experience with attachments",
+        description: "Canonical past-performance records and evidence",
       },
       {
         label: "Knowledge Hub",

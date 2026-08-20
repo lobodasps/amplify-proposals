@@ -103,6 +103,8 @@ interface UploadFormState {
   description: string;
   companyTag: CompanyTag | "";
   staffName: string;
+  staffId: string;
+  projectId: string;
   projectName: string;
   projectNumber: string;
   clientName: string;
@@ -125,6 +127,8 @@ const DEFAULT_FORM: UploadFormState = {
   description: "",
   companyTag: "",
   staffName: "",
+  staffId: "",
+  projectId: "",
   projectName: "",
   projectNumber: "",
   clientName: "",
@@ -143,6 +147,7 @@ const DEFAULT_FORM: UploadFormState = {
 // ─── Multi-project split types ───────────────────────────────────────────────
 
 interface SplitProject {
+  projectId: string;
   projectName: string;
   owner: string;       // comma-separated public agency/asset owners
   client: string;      // direct contracting party
@@ -235,6 +240,14 @@ export default function KnowledgeHub() {
     offset: 0,
   }, {
     staleTime: 30_000,   // 30 s — prevents duplicate in-flight requests on remount
+    refetchOnWindowFocus: false,
+  });
+  const { data: projectExperiences = [] } = trpc.projects.list.useQuery(undefined, {
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const { data: staffDirectory = [] } = trpc.staffDirectory.list.useQuery(undefined, {
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -454,6 +467,7 @@ export default function KnowledgeHub() {
         setSplitCompanyTag((meta.companyTag as CompanyTag) ?? "");
         setSplitProjects(
           meta.projects.map((p) => ({
+            projectId: "",
             projectName: p.projectName ?? "",
             owner: p.owner ?? "",
             client: p.client ?? "",
@@ -481,11 +495,13 @@ export default function KnowledgeHub() {
         title: meta.title || baseName,
         description: meta.description ?? "",
         staffName: meta.staffName ?? "",
+        staffId: "",
         clientName: meta.clientName ?? "",
         ownerName: meta.ownerName ?? "",
         firmRole: meta.firmRole ?? "",
         resumeVersion: meta.resumeVersion ?? "",
         pursuitContext: meta.pursuitContext ?? "",
+        projectId: "",
         projectName: meta.projectName ?? "",
         projectNumber: meta.projectNumber ?? "",
         contractValue: meta.contractValue ?? "",
@@ -566,6 +582,8 @@ export default function KnowledgeHub() {
           description: form.description.trim() || undefined,
           companyTag: (form.companyTag as CompanyTag) || undefined,
           staffName: form.staffName.trim() || undefined,
+          staffId: form.staffId || undefined,
+          projectId: form.projectId || undefined,
           projectName: form.projectName.trim() || undefined,
           projectNumber: form.projectNumber.trim() || undefined,
           clientName: form.clientName.trim() || undefined,
@@ -609,8 +627,56 @@ export default function KnowledgeHub() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function selectProjectExperience(value: string) {
+    if (value === "create_new") {
+      updateForm("projectId", "");
+      return;
+    }
+    const project = projectExperiences.find((item: any) => item.id === value);
+    if (!project) return;
+    setForm((prev) => ({
+      ...prev,
+      projectId: project.id,
+      projectName: project.name ?? prev.projectName,
+      projectNumber: project.projectNumber ?? prev.projectNumber,
+      clientName: project.clientName ?? prev.clientName,
+      contractValue: project.contractValue ? String(project.contractValue) : prev.contractValue,
+    }));
+  }
+
+  function selectStaffDirectoryProfile(value: string) {
+    if (value === "unlinked") {
+      updateForm("staffId", "");
+      return;
+    }
+    const staffMember = staffDirectory.find((item: any) => item.id === value);
+    if (!staffMember) return;
+    setForm((prev) => ({
+      ...prev,
+      staffId: staffMember.id,
+      staffName: staffMember.name ?? prev.staffName,
+    }));
+  }
+
   function updateSplitProject(idx: number, key: keyof SplitProject, value: string) {
     setSplitProjects((prev) => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p));
+  }
+
+  function selectSplitProjectExperience(idx: number, value: string) {
+    if (value === "create_new") {
+      updateSplitProject(idx, "projectId", "");
+      return;
+    }
+    const project = projectExperiences.find((item: any) => item.id === value);
+    if (!project) return;
+    setSplitProjects((prev) => prev.map((item, index) => index === idx ? {
+      ...item,
+      projectId: project.id,
+      projectName: project.name ?? item.projectName,
+      client: project.clientName ?? item.client,
+      contractValue: project.contractValue ? String(project.contractValue) : item.contractValue,
+      location: project.location ?? item.location,
+    } : item));
   }
 
   function resetUploadState(processNext = true) {
@@ -661,6 +727,8 @@ export default function KnowledgeHub() {
           docType: "project_sheet",
           title: p.projectName.trim(),
           description: [p.scope, p.description].filter(Boolean).join(" ") || undefined,
+          projectId: p.projectId || undefined,
+          projectName: p.projectName.trim(),
           companyTag: (splitCompanyTag as CompanyTag) || (p.companyTag as CompanyTag) || undefined,
           staffName: splitStaffName.trim() || undefined,
           clientName: p.client.trim() || undefined,
@@ -931,18 +999,58 @@ export default function KnowledgeHub() {
 
               {/* Conditional fields */}
               {(form.docType === "resume" || form.docType === "certification") && (
-                <div className="space-y-1.5">
-                  <Label>Staff Name</Label>
-                  <Input
-                    value={form.staffName}
-                    onChange={(e) => updateForm("staffName", e.target.value)}
-                    placeholder="e.g. John Smith"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Timekeeping Staff Record</Label>
+                    <Select value={form.staffId || "unlinked"} onValueChange={selectStaffDirectoryProfile}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a staff record…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unlinked">No matching staff record — keep for review</SelectItem>
+                        {staffDirectory.map((staffMember: any) => (
+                          <SelectItem key={staffMember.id} value={staffMember.id}>
+                            {staffMember.name}{staffMember.title ? ` · ${staffMember.title}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Document Holder Name</Label>
+                    <Input
+                      value={form.staffName}
+                      onChange={(e) => updateForm("staffName", e.target.value)}
+                      placeholder="Name shown on this document"
+                    />
+                  </div>
+                  <p className="col-span-2 text-xs text-muted-foreground">
+                    Staff identity is managed in Timekeeping. Use the review option only when the holder is not yet available there.
+                  </p>
                 </div>
               )}
 
               {(form.docType === "past_proposal" || form.docType === "project_sheet") && (
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5 col-span-2">
+                    <Label>Project Experience Record</Label>
+                    <Select value={form.projectId || "create_new"} onValueChange={selectProjectExperience}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Create or link a Project Experience record…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="create_new">Create from the project details below</SelectItem>
+                        {projectExperiences.map((project: any) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.name}{project.clientName ? ` · ${project.clientName}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Link this evidence to an existing Project Experience record, or keep the default to create one from the details below.
+                    </p>
+                  </div>
                   <div className="space-y-1.5">
                     <Label>Client / Agency</Label>
                     <Input
@@ -1277,6 +1385,22 @@ export default function KnowledgeHub() {
                   {expandedSplitIdx === idx && (
                     <div className="px-4 pb-4 pt-1 space-y-3 border-t border-border">
                       <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5 col-span-2">
+                          <Label>Project Experience Record</Label>
+                          <Select value={proj.projectId || "create_new"} onValueChange={(value) => selectSplitProjectExperience(idx, value)}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Create or link a Project Experience record…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="create_new">Create from the project details below</SelectItem>
+                              {projectExperiences.map((project: any) => (
+                                <SelectItem key={project.id} value={project.id}>
+                                  {project.name}{project.clientName ? ` · ${project.clientName}` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className="space-y-1.5 col-span-2">
                           <Label>Project Name <span className="text-rose-500">*</span></Label>
                           <Input
@@ -1866,11 +1990,13 @@ export default function KnowledgeHub() {
                           title: previewDoc.title ?? "",
                           description: previewDoc.description ?? "",
                           staffName: previewDoc.staffName ?? "",
+                          staffId: (previewDoc as any).staffId ?? "",
                           clientName: previewDoc.clientName ?? "",
                           ownerName: (previewDoc as any).ownerName ?? "",
                           firmRole: (previewDoc as any).firmRole ?? "",
                           resumeVersion: (previewDoc as any).resumeVersion ?? "",
                           pursuitContext: (previewDoc as any).pursuitContext ?? "",
+                          projectId: (previewDoc as any).projectId ?? "",
                           projectName: previewDoc.projectName ?? "",
                           projectNumber: previewDoc.projectNumber ?? "",
                           contractValue: previewDoc.contractValue ?? "",
@@ -1941,7 +2067,32 @@ export default function KnowledgeHub() {
                       <Input value={editForm.awardYear} onChange={(e) => setEditForm((f) => ({ ...f, awardYear: e.target.value }))} placeholder="e.g. 2023" />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Staff Name</Label>
+                      <Label>Timekeeping Staff Record</Label>
+                      <Select
+                        value={editForm.staffId || "unlinked"}
+                        onValueChange={(value) => {
+                          if (value === "unlinked") {
+                            setEditForm((form) => ({ ...form, staffId: "" }));
+                            return;
+                          }
+                          const staffMember = staffDirectory.find((item: any) => item.id === value);
+                          if (!staffMember) return;
+                          setEditForm((form) => ({ ...form, staffId: staffMember.id, staffName: staffMember.name ?? form.staffName }));
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select staff record" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unlinked">No matching staff record — keep for review</SelectItem>
+                          {staffDirectory.map((staffMember: any) => (
+                            <SelectItem key={staffMember.id} value={staffMember.id}>
+                              {staffMember.name}{staffMember.title ? ` · ${staffMember.title}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Document Holder Name</Label>
                       <Input value={editForm.staffName} onChange={(e) => setEditForm((f) => ({ ...f, staffName: e.target.value }))} placeholder="For resumes / certifications" />
                     </div>
                     <div className="col-span-2 space-y-1.5">
@@ -1964,6 +2115,7 @@ export default function KnowledgeHub() {
                         docType: editForm.docType,
                         companyTag: (editForm.companyTag as CompanyTag) || undefined,
                         staffName: editForm.staffName.trim() || undefined,
+                        staffId: editForm.staffId || undefined,
                         clientName: editForm.clientName.trim() || undefined,
                         projectName: editForm.projectName.trim() || undefined,
                         projectNumber: editForm.projectNumber.trim() || undefined,

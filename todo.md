@@ -34,6 +34,16 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ### Projects Information Architecture
 - [x] Assess apparent redundancy between Firm Records → Projects and Knowledge Hub project sheets; document the recommended canonical-record (`amp_projects`) to evidence-document (`dam_documents`) relationship in `PROJECTS_INFORMATION_ARCHITECTURE_RECOMMENDATION.md`
+- [x] Rename the canonical Projects experience surface to Project Experience; preserve `amp_projects` as the record of truth
+- [x] Add create-or-link Project Experience controls to Knowledge Hub project-sheet intake; persist `dam_documents.projectId` for newly associated documents without rewriting legacy free-text associations
+- [x] Add Project Experience create-or-link controls to multi-project split intake and persist the selected `projectId` per created project-sheet document
+- [x] Add linked Knowledge Hub evidence documents to the Project Experience detail panel
+
+### Staff Information Architecture
+- [x] Audit duplication between Firm Records → Staff, Personnel records, and Knowledge Hub resumes/certifications; define a single canonical staff record and a safe consolidation path before changing UI or persisted relationships
+- [x] Define v0 Timekeeping versus Amplify-Proposals staff-data ownership: retain shared profile/certification authority in v0, keep payroll/rates/timekeeping out of Amplify, and eliminate duplicated staff sources without unsafe automated migrations
+- [x] Staff Phase 1: redirect `/personnel` to `/staff`; read v0 `profiles` and `user_certifications` as the primary Staff directory while preserving legacy `personnel` data and unlinked Knowledge Hub documents
+- [x] Update Knowledge Hub resume/certification intake to select canonical `profiles.id`, and show legacy DAM documents with free-text `staffName` in a safe review path without automatic person matching
 
 ### Remove Mock Data — Wire to Live DB
 - [x] `Proposals.tsx` — remove `DEMO_PROPOSALS` fallback; show empty state when DB returns 0 rows

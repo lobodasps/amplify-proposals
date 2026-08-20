@@ -14,7 +14,6 @@ import Proposals from "./pages/Proposals";
 import ProposalWorkspace from "./pages/ProposalWorkspace";
 import KnowledgeHub from "./pages/KnowledgeHub";
 import Assets from "./pages/Assets";
-import Personnel from "./pages/Personnel";
 import Staff from "./pages/Staff";
 import Projects from "./pages/Projects";
 import Pipeline from "./pages/Pipeline";
@@ -77,7 +76,7 @@ function Router() {
       <Route path="/proposals/:id">{() => <ProtectedRoute component={ProposalWorkspace} />}</Route>
       <Route path="/knowledge-hub">{() => <ProtectedRoute component={KnowledgeHub} />}</Route>
       <Route path="/assets">{() => <ProtectedRoute component={Assets} />}</Route>
-      <Route path="/personnel">{() => <ProtectedRoute component={Personnel} />}</Route>
+      <Route path="/personnel">{() => <Redirect to="/staff" />}</Route>
       <Route path="/staff">{() => <ProtectedRoute component={Staff} />}</Route>
       <Route path="/projects">{() => <ProtectedRoute component={Projects} />}</Route>
       <Route path="/pipeline">{() => <ProtectedRoute component={Pipeline} />}</Route>

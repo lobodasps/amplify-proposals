@@ -17,7 +17,7 @@ import { z } from "zod";
 import { eq, desc, and, sql, like } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { damDocuments, personnel, projects, documentChunks } from "../../drizzle/schema";
+import { damDocuments, projects, documentChunks } from "../../drizzle/schema";
 import { buildChunksFromDocument } from "../chunkBuilder";
 import {
   computeLegacyTagScore,
@@ -94,6 +94,7 @@ const createInput = z.object({
   staffId: z.string().uuid().optional(),
 
   // Project / pursuit link
+  projectId: z.string().uuid().optional(),
   projectName: z.string().optional(),
   projectNumber: z.string().optional(),
   pursuitId: z.string().uuid().optional(),
@@ -125,6 +126,7 @@ const updateMetaInput = z.object({
   companyTag: companyTagEnum.optional(),
   staffName: z.string().optional(),
   staffId: z.string().uuid().optional(),
+  projectId: z.string().uuid().optional(),
   projectName: z.string().optional(),
   projectNumber: z.string().optional(),
   pursuitId: z.string().uuid().optional(),
@@ -489,24 +491,9 @@ export const damRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-    // Auto-link: resolve staffId for resumes/certifications
+    // Staff links are explicit. Never infer or create a person from a free-text name.
+    // Existing unmatched records remain reviewable by their staffName metadata.
     let resolvedStaffId: string | null = input.staffId ?? null;
-    if (!resolvedStaffId && input.staffName && (input.docType === "resume" || input.docType === "certification")) {
-      const nameLower = input.staffName.trim();
-      const existing = await db.select({ id: personnel.id })
-        .from(personnel)
-        .where(like(personnel.name, `%${nameLower}%`))
-        .limit(1);
-      if (existing.length > 0) {
-        resolvedStaffId = existing[0].id;
-      } else {
-        const [newPerson] = await db.insert(personnel).values({
-          name: nameLower,
-          isActive: true,
-        }).returning({ id: personnel.id });
-        resolvedStaffId = newPerson.id;
-      }
-    }
 
     // Auto-link: resolve projectId for project sheets / past proposals
     let resolvedProjectId: string | null = (input as any).projectId ?? null;

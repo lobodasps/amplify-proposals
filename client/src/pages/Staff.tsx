@@ -40,7 +40,7 @@ const SERVICE_LINE_COLORS: Record<string, string> = {
   "Environmental": "bg-amber-100 text-amber-700 border-amber-200",
 };
 
-// No demo data — all staff come from the live DB via trpc.personnel.list
+// Staff identity and certifications are sourced from v0 Timekeeping profiles.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,19 +131,18 @@ function AttachmentPanel({ staffMember, onClose }: { staffMember: any; onClose: 
   const [uploading, setUploading] = useState(false);
   const utils = trpc.useUtils();
 
-  const { data: attachments = [], isLoading } = trpc.personnel.listAttachments.useQuery(
-    { staffId: staffMember.id },
-    { enabled: staffMember.id > 0 }
+  const evidenceInput = { staffId: staffMember.id, legacyPersonnelId: staffMember.legacyPersonnelId ?? undefined };
+  const { data: evidence, isLoading } = trpc.staffDirectory.listEvidence.useQuery(
+    evidenceInput,
+    { enabled: Boolean(staffMember.id) }
   );
-
-  const { data: hubDocs = [], isLoading: hubLoading } = trpc.dam.listByStaff.useQuery(
-    { staffId: staffMember.id },
-    { enabled: staffMember.id > 0 }
-  );
+  const attachments = evidence?.assets ?? [];
+  const hubDocs = evidence?.documents ?? [];
+  const hubLoading = isLoading;
 
   const addAttachment = trpc.personnel.addAttachment.useMutation({
     onSuccess: () => {
-      utils.personnel.listAttachments.invalidate({ staffId: staffMember.id });
+      utils.staffDirectory.listEvidence.invalidate(evidenceInput);
       toast.success("File attached successfully.");
     },
     onError: () => toast.error("Failed to attach file."),
@@ -151,7 +150,7 @@ function AttachmentPanel({ staffMember, onClose }: { staffMember: any; onClose: 
 
   const deleteAttachment = trpc.personnel.deleteAttachment.useMutation({
     onSuccess: () => {
-      utils.personnel.listAttachments.invalidate({ staffId: staffMember.id });
+      utils.staffDirectory.listEvidence.invalidate(evidenceInput);
       toast.success("Attachment removed.");
     },
     onError: () => toast.error("Failed to remove attachment."),
@@ -253,9 +252,28 @@ function AttachmentPanel({ staffMember, onClose }: { staffMember: any; onClose: 
           ) : null;
         })()}
 
+        {staffMember.certifications?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Certifications</p>
+            <div className="space-y-2">
+              {staffMember.certifications.map((certification: any) => (
+                <div key={certification.id} className="rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900 p-3">
+                  <p className="text-sm font-medium">{certification.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {[
+                      certification.issuingAuthority,
+                      certification.expirationDate ? `Expires ${new Date(`${certification.expirationDate}T00:00:00`).toLocaleDateString()}` : null,
+                    ].filter(Boolean).join(" · ") || "Managed in Timekeeping"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Keywords / Tags ── */}
         {(() => {
-          const rawTags = staffMember.tags;
+          const rawTags = staffMember.proposalTags;
           let tgs: string[] = [];
           if (Array.isArray(rawTags)) tgs = rawTags;
           else if (typeof rawTags === 'string') { try { tgs = JSON.parse(rawTags); } catch { tgs = []; } }
@@ -498,7 +516,9 @@ function StaffCard({ member, onOpenAttachments }: { member: any; onOpenAttachmen
 export default function Staff() {
   const [search, setSearch] = useState("");
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
-  const { data: dbStaff = [], isLoading, refetch } = trpc.personnel.list.useQuery(undefined as any);
+  const { data: dbStaff = [], isLoading } = trpc.staffDirectory.list.useQuery();
+  const { data: unlinkedDocuments = [] } = trpc.staffDirectory.listUnlinkedDocuments.useQuery();
+  const { data: legacyPersonnelNeedingReview = [] } = trpc.staffDirectory.listLegacyPersonnelNeedingReview.useQuery();
   const staff = dbStaff;
 
   const filtered = staff.filter((p: any) =>
@@ -519,7 +539,7 @@ export default function Staff() {
               Team members, resumes, headshots, and certifications
             </p>
           </div>
-          <AddStaffDialog onAdded={refetch} />
+          <Badge variant="outline" className="text-xs">Synced from Timekeeping</Badge>
         </div>
 
         {/* Search */}
@@ -543,6 +563,53 @@ export default function Staff() {
           <span>Click any card to view profile details, disciplines, keywords, and linked documents</span>
         </div>
 
+        {unlinkedDocuments.length > 0 && (
+          <Card className="border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <FileText className="w-5 h-5 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{unlinkedDocuments.length} resume or certification document{unlinkedDocuments.length !== 1 ? "s" : ""} need staff review</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    These legacy Knowledge Hub documents have no Timekeeping staff ID. Open the document in Knowledge Hub and select the correct staff record; no name-based matching is performed automatically.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {unlinkedDocuments.slice(0, 3).map((document: any) => (
+                      <Badge key={document.id} variant="outline" className="text-[10px] bg-background/70">
+                        {document.title}{document.staffName ? ` · ${document.staffName}` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                  <a href="/knowledge-hub" className="inline-flex mt-3 text-xs font-medium text-primary hover:underline">Review in Knowledge Hub</a>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {legacyPersonnelNeedingReview.length > 0 && (
+          <Card className="border-slate-200 bg-slate-50/70 dark:bg-slate-950/20 dark:border-slate-800">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Users className="w-5 h-5 text-slate-700 dark:text-slate-300 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{legacyPersonnelNeedingReview.length} legacy proposal staff record{legacyPersonnelNeedingReview.length !== 1 ? "s" : ""} remain separate</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    These older Amplify records are not linked to a Timekeeping profile. They remain preserved for review and are not automatically matched by name.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {legacyPersonnelNeedingReview.slice(0, 3).map((person: any) => (
+                      <Badge key={person.id} variant="outline" className="text-[10px] bg-background/70">
+                        {person.name}{person.title ? ` · ${person.title}` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -552,7 +619,7 @@ export default function Staff() {
           <div className="text-center py-16 text-muted-foreground">
             <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">No staff members found</p>
-            <p className="text-sm mt-1">Try adjusting your search or add a new team member.</p>
+            <p className="text-sm mt-1">Try adjusting your search. Staff identity and certifications are managed in Timekeeping.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

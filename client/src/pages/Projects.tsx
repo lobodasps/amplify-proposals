@@ -419,12 +419,12 @@ export default function Projects() {
   );
 
   return (
-    <AppLayout title="Projects">
+    <AppLayout title="Project Experience">
       <div className="p-6 space-y-5">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="font-display font-700 text-xl text-foreground">Projects</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">Past project experience, photos, drawings, and reports</p>
+            <h2 className="font-display font-700 text-xl text-foreground">Project Experience</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">Canonical past-performance records with linked evidence, photos, drawings, and reports</p>
           </div>
           <AddProjectDialog onAdded={refetch} />
         </div>
