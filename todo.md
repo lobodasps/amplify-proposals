@@ -32,6 +32,9 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 ### Database Schema Verification
 - [x] Compare the live Supabase PostgreSQL catalog against `drizzle/schema.ts`, including tables, columns, types, defaults, nullability, primary/foreign keys, and indexes; document any drift before applying migrations — verified 2026-08-20: all 48 Drizzle tables exist with 0 table/column/type/nullability/default/PK/unique/index drift; 66 additional public tables belong to the pre-existing v0/timekeeping app
 
+### Projects Information Architecture
+- [x] Assess apparent redundancy between Firm Records → Projects and Knowledge Hub project sheets; document the recommended canonical-record (`amp_projects`) to evidence-document (`dam_documents`) relationship in `PROJECTS_INFORMATION_ARCHITECTURE_RECOMMENDATION.md`
+
 ### Remove Mock Data — Wire to Live DB
 - [x] `Proposals.tsx` — remove `DEMO_PROPOSALS` fallback; show empty state when DB returns 0 rows
 - [x] `Opportunities.tsx` — remove `DEMO_OPPORTUNITIES` fallback; show empty state
