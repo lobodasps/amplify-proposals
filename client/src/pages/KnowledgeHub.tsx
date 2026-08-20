@@ -13,7 +13,7 @@ import AppLayout from "@/components/AppLayout";
 import { BulkImageImport } from "./BulkImageImport";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
-import { getKnowledgeHubDocumentId } from "@/lib/knowledgeHubLinks";
+import { getKnowledgeHubDocumentId, getProjectSheetIntakeProjectId } from "@/lib/knowledgeHubLinks";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -189,6 +189,7 @@ export default function KnowledgeHub() {
   const [stagedUpload, setStagedUpload] = useState<{ url: string; key: string; fileName: string; size: number } | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [form, setForm] = useState<UploadFormState>(DEFAULT_FORM);
+  const [projectSheetHandoffId, setProjectSheetHandoffId] = useState<string | null>(null);
   const [autoExtractOnSave, setAutoExtractOnSave] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Multi-file queue — files are processed one at a time through the metadata form
@@ -229,6 +230,11 @@ export default function KnowledgeHub() {
     if (documentId) {
       setPreviewDocId(documentId);
     }
+    const projectId = getProjectSheetIntakeProjectId(window.location.search);
+    if (projectId) {
+      setProjectSheetHandoffId(projectId);
+      setFilterDocType("project_sheet");
+    }
   }, []);
 
   // ── tRPC ────────────────────────────────────────────────────────────────────
@@ -258,6 +264,33 @@ export default function KnowledgeHub() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const handoffProject = projectSheetHandoffId
+    ? projectExperiences.find((project: any) => project.id === projectSheetHandoffId)
+    : null;
+  const projectSheetHandoffRef = useRef<any>(null);
+
+  useEffect(() => {
+    projectSheetHandoffRef.current = handoffProject;
+  }, [handoffProject]);
+
+  useEffect(() => {
+    if (!projectSheetHandoffId || projectExperiences.length === 0) return;
+    if (!handoffProject) {
+      toast.error("The selected Project Experience record is no longer available.");
+      setProjectSheetHandoffId(null);
+      return;
+    }
+    setForm((previous) => ({
+      ...previous,
+      docType: "project_sheet",
+      title: handoffProject.name ?? previous.title,
+      projectId: handoffProject.id,
+      projectName: handoffProject.name ?? previous.projectName,
+      projectNumber: handoffProject.projectNumber ?? previous.projectNumber,
+      clientName: handoffProject.clientName ?? previous.clientName,
+      contractValue: handoffProject.contractValue ? String(handoffProject.contractValue) : previous.contractValue,
+    }));
+  }, [projectSheetHandoffId, projectExperiences, handoffProject]);
 
   const { data: previewDoc } = trpc.dam.getById.useQuery(
     { id: previewDocId! },
@@ -414,6 +447,7 @@ export default function KnowledgeHub() {
 
   // New flow: upload to storage immediately, then call autoExtract to pre-fill form
   async function prepareUpload(file: File) {
+    const selectedProject = projectSheetHandoffRef.current;
     if (file.size > 50 * 1024 * 1024) {
       toast.error("File exceeds 50 MB limit");
       return;
@@ -426,7 +460,16 @@ export default function KnowledgeHub() {
     setDuplicateAction("dismissed");
     // Pre-fill title from filename as fallback while LLM runs
     const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
-    setForm({ ...DEFAULT_FORM, title: baseName });
+    setForm(selectedProject ? {
+      ...DEFAULT_FORM,
+      docType: "project_sheet",
+      title: selectedProject.name ?? baseName,
+      projectId: selectedProject.id,
+      projectName: selectedProject.name ?? "",
+      projectNumber: selectedProject.projectNumber ?? "",
+      clientName: selectedProject.clientName ?? "",
+      contractValue: selectedProject.contractValue ? String(selectedProject.contractValue) : "",
+    } : { ...DEFAULT_FORM, title: baseName });
 
     try {
       // Step 0: File-level duplicate check
@@ -476,7 +519,7 @@ export default function KnowledgeHub() {
       // Step 3a: Multi-project split mode
       // Only applies to project_sheet and past_proposal — resumes always save as a single record
       const splitEligible = meta.docType === "project_sheet" || meta.docType === "past_proposal";
-      if (meta.multiProject && meta.projects.length >= 2 && splitEligible) {
+      if (!selectedProject && meta.multiProject && meta.projects.length >= 2 && splitEligible) {
         setIsSplitMode(true);
         // Pre-fill shared resume fields from autoExtract
         setSplitStaffName(meta.staffName ?? "");
@@ -506,9 +549,9 @@ export default function KnowledgeHub() {
       // Step 3b: Single-record pre-fill
       const extractedDocType = (meta.docType as DocType) ?? "other";
       setForm({
-        docType: extractedDocType,
+        docType: selectedProject ? "project_sheet" : extractedDocType,
         companyTag: (meta.companyTag as CompanyTag) ?? "",
-        title: meta.title || baseName,
+        title: selectedProject?.name ?? (meta.title || baseName),
         description: meta.description ?? "",
         staffName: meta.staffName ?? "",
         staffId: "",
@@ -517,10 +560,10 @@ export default function KnowledgeHub() {
         firmRole: meta.firmRole ?? "",
         resumeVersion: meta.resumeVersion ?? "",
         pursuitContext: meta.pursuitContext ?? "",
-        projectId: "",
-        projectName: meta.projectName ?? "",
-        projectNumber: meta.projectNumber ?? "",
-        contractValue: meta.contractValue ?? "",
+        projectId: selectedProject?.id ?? "",
+        projectName: selectedProject?.name ?? meta.projectName ?? "",
+        projectNumber: selectedProject?.projectNumber ?? meta.projectNumber ?? "",
+        contractValue: selectedProject?.contractValue ? String(selectedProject.contractValue) : meta.contractValue ?? "",
         awardYear: meta.awardYear ? String(meta.awardYear) : "",
         tags: meta.tags ?? "",
         photographer: "",
@@ -695,7 +738,7 @@ export default function KnowledgeHub() {
     } : item));
   }
 
-  function resetUploadState(processNext = true) {
+function resetUploadState(processNext = true) {
     setShowUploadForm(false);
     setUploadFile(null);
     setStagedUpload(null);
@@ -708,6 +751,10 @@ export default function KnowledgeHub() {
     setFileDuplicate(null);
     setContentDuplicate(null);
     setDuplicateAction("dismissed");
+    setProjectSheetHandoffId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("projectSheet");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
     // Process next file in queue if any
     if (processNext) {
       setUploadQueue((prev) => {
@@ -852,6 +899,13 @@ export default function KnowledgeHub() {
 
         {/* ── Drop zone ──────────────────────────────────────────────────────── */}
         {!showUploadForm && (
+          <>
+          {handoffProject && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+              <span>Creating a project sheet for <strong>{handoffProject.name}</strong></span>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => resetUploadState(false)}>Cancel</Button>
+            </div>
+          )}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -876,6 +930,7 @@ export default function KnowledgeHub() {
               </p>
             </div>
           </div>
+          </>
         )}
 
         {/* ── Upload form ────────────────────────────────────────────────────── */}

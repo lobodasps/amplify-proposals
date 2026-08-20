@@ -21,6 +21,7 @@ import {
   ChevronRight, Filter, Users, Eye, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildProjectSheetIntakeUrl } from "@/lib/knowledgeHubLinks";
 
 const SERVICE_COLORS: Record<string, string> = {
   "Special Inspections": "bg-violet-100 text-violet-700 border-violet-200",
@@ -288,6 +289,11 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
           </Button>
           <p className="text-xs text-muted-foreground mt-1.5 text-center">PDF, Word, PNG, JPG, DWG, ZIP up to 16 MB</p>
         </div>
+        <a href={buildProjectSheetIntakeUrl(project.id)}>
+          <Button variant="outline" size="sm" className="w-full border-blue-200 text-blue-700 hover:bg-blue-50">
+            <FileText className="w-4 h-4 mr-2" /> Create Project Sheet in Knowledge Hub
+          </Button>
+        </a>
         {/* Knowledge Hub documents */}
         {(hubLoading || hubDocs.length > 0) && (
           <div className="space-y-2">
