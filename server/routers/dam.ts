@@ -509,6 +509,22 @@ export const damRouter = router({
       return withFreshUrl(doc);
     }),
 
+  /** Return a newly signed storage URL immediately before opening a document. */
+  getFreshFileUrl: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [doc] = await db
+        .select({ id: damDocuments.id, fileKey: damDocuments.fileKey, fileUrl: damDocuments.fileUrl })
+        .from(damDocuments)
+        .where(eq(damDocuments.id, input.id))
+        .limit(1);
+      if (!doc) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+      const fresh = await withFreshUrl(doc);
+      return { url: fresh.fileUrl };
+    }),
+
   // ── Create (after /api/upload completes) ──────────────────────────────────
   create: protectedProcedure.input(createInput).mutation(async ({ input, ctx }) => {
     const db = await getDb();

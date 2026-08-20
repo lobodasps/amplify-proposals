@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import {
   Plus, Search, Building2, MapPin, DollarSign, Calendar,
   Paperclip, Upload, Trash2, FileText, Image, File, Download,
-  ChevronRight, Filter, Users, Eye,
+  ChevronRight, Filter, Users, Eye, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -163,6 +163,30 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
     onSuccess: () => { utils.projects.listAttachments.invalidate({ projectId: project.id }); toast.success("Attachment removed."); },
     onError: () => toast.error("Failed to remove attachment."),
   });
+  const freshHubFileUrl = trpc.dam.getFreshFileUrl.useMutation();
+  const freshAttachmentUrl = trpc.projects.getAttachmentUrl.useMutation();
+  const [launchingFileId, setLaunchingFileId] = useState<string | null>(null);
+
+  const launchFreshFile = async (kind: "hub" | "attachment", id: string) => {
+    const fileWindow = window.open("about:blank", "_blank");
+    if (!fileWindow) {
+      toast.error("Your browser blocked the file window. Please allow pop-ups and try again.");
+      return;
+    }
+    fileWindow.opener = null;
+    setLaunchingFileId(id);
+    try {
+      const result = kind === "hub"
+        ? await freshHubFileUrl.mutateAsync({ id })
+        : await freshAttachmentUrl.mutateAsync({ assetId: id });
+      fileWindow.location.replace(result.url);
+    } catch {
+      fileWindow.close();
+      toast.error("Unable to refresh the attachment link. Please try again.");
+    } finally {
+      setLaunchingFileId(null);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -288,16 +312,26 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
                         {doc.processingStatus === "indexed" ? " · Indexed" : ""}
                       </p>
                     </div>
-                    {doc.fileUrl && (
-                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" title="Open attached file">
-                        <Button variant="ghost" size="icon" className="h-7 w-7"><Eye className="w-3.5 h-3.5" /></Button>
-                      </a>
-                    )}
-                    {doc.fileUrl && (
-                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-7 w-7"><Download className="w-3.5 h-3.5" /></Button>
-                      </a>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Open attached file"
+                      onClick={() => launchFreshFile("hub", doc.id)}
+                      disabled={launchingFileId === doc.id}
+                    >
+                      {launchingFileId === doc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Download attached file"
+                      onClick={() => launchFreshFile("hub", doc.id)}
+                      disabled={launchingFileId === doc.id}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -328,9 +362,16 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
                     <p className="text-xs text-muted-foreground">{formatBytes(att.fileSize)}{att.createdAt && ` · ${new Date(att.createdAt).toLocaleDateString()}`}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <a href={att.fileUrl} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-7 w-7"><Download className="w-3.5 h-3.5" /></Button>
-                    </a>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Open or download attachment"
+                      onClick={() => launchFreshFile("attachment", att.id)}
+                      disabled={launchingFileId === att.id}
+                    >
+                      {launchingFileId === att.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteAttachment.mutate({ assetId: att.id })} disabled={deleteAttachment.isPending}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>

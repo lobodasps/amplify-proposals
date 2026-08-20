@@ -7,6 +7,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { supabase } from "../supabase";
 import { generatePrimaryNumber, isStrans, KNOWN_COMPANIES } from "../../shared/contractNumbers";
 import { getContractFinancials, persistContractFinancials } from "../contractFinancials";
+import { storageGet } from "../storage";
 
 export const personnelRouter = router({
   list: protectedProcedure.query(async () => {
@@ -150,6 +151,24 @@ export const projectsRouter = router({
       return db.select().from(assets)
         .where(eq(assets.projectId, input.projectId))
         .orderBy(desc(assets.createdAt));
+    }),
+
+  getAttachmentUrl: protectedProcedure
+    .input(z.object({ assetId: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [asset] = await db.select({ fileKey: assets.fileKey, fileUrl: assets.fileUrl })
+        .from(assets)
+        .where(eq(assets.id, input.assetId))
+        .limit(1);
+      if (!asset) throw new Error("Attachment not found");
+      try {
+        const { url } = await storageGet(asset.fileKey);
+        return { url };
+      } catch {
+        return { url: asset.fileUrl };
+      }
     }),
 
   addAttachment: protectedProcedure
