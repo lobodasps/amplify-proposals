@@ -2050,6 +2050,38 @@ export default function KnowledgeHub() {
                       <Label>Client / Agency</Label>
                       <Input value={editForm.clientName} onChange={(e) => setEditForm((f) => ({ ...f, clientName: e.target.value }))} placeholder="e.g. NYCDOT" />
                     </div>
+                    <div className="space-y-1.5 col-span-2">
+                      <Label>Project Experience Record</Label>
+                      <Select
+                        value={editForm.projectId || "unlinked"}
+                        onValueChange={(value) => {
+                          if (value === "unlinked") {
+                            setEditForm((form) => ({ ...form, projectId: "" }));
+                            return;
+                          }
+                          const project = projectExperiences.find((item: any) => item.id === value);
+                          if (!project) return;
+                          setEditForm((form) => ({
+                            ...form,
+                            projectId: project.id,
+                            projectName: project.name ?? form.projectName,
+                            projectNumber: project.projectNumber ?? form.projectNumber,
+                            clientName: project.clientName ?? form.clientName,
+                            contractValue: project.contractValue ? String(project.contractValue) : form.contractValue,
+                          }));
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select Project Experience record" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unlinked">No Project Experience record — keep for review</SelectItem>
+                          {projectExperiences.map((project: any) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}{project.clientName ? ` · ${project.clientName}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-1.5">
                       <Label>Project Name</Label>
                       <Input value={editForm.projectName} onChange={(e) => setEditForm((f) => ({ ...f, projectName: e.target.value }))} />

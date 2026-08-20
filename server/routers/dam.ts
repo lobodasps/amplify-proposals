@@ -14,7 +14,7 @@
  */
 
 import { z } from "zod";
-import { eq, desc, and, sql, like } from "drizzle-orm";
+import { eq, desc, and, sql, like, isNull } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { damDocuments, projects, documentChunks } from "../../drizzle/schema";
@@ -572,6 +572,26 @@ export const damRouter = router({
         .where(eq(damDocuments.projectId, input.projectId))
         .orderBy(desc(damDocuments.createdAt));
     }),
+
+  /** Legacy project sheets remain visible for manual Project Experience linking. */
+  listUnlinkedProjectSheets: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: damDocuments.id,
+      title: damDocuments.title,
+      projectName: damDocuments.projectName,
+      clientName: damDocuments.clientName,
+      createdAt: damDocuments.createdAt,
+    })
+      .from(damDocuments)
+      .where(and(
+        eq(damDocuments.docType, "project_sheet"),
+        isNull(damDocuments.projectId),
+      ))
+      .orderBy(desc(damDocuments.createdAt))
+      .limit(50);
+  }),
 
   // ── Update metadata ────────────────────────────────────────────────────────
   updateMeta: protectedProcedure.input(updateMetaInput).mutation(async ({ input }) => {

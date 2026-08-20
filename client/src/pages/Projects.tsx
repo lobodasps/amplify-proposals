@@ -409,6 +409,7 @@ export default function Projects() {
   const [activeService, setActiveService] = useState("all");
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
   const { data: dbProjects, isLoading, refetch } = trpc.projects.list.useQuery();
+  const { data: unlinkedProjectSheets = [] } = trpc.dam.listUnlinkedProjectSheets.useQuery();
 
   const filtered = (dbProjects ?? []).filter((p: any) =>
     (activeService === "all" || p.serviceLine === activeService) &&
@@ -428,6 +429,28 @@ export default function Projects() {
           </div>
           <AddProjectDialog onAdded={refetch} />
         </div>
+
+        {unlinkedProjectSheets.length > 0 && (
+          <Card className="border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900">
+            <CardContent className="p-4 flex items-start gap-3">
+              <FileText className="w-5 h-5 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{unlinkedProjectSheets.length} legacy project sheet{unlinkedProjectSheets.length !== 1 ? "s" : ""} need Project Experience review</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  These Knowledge Hub sheets have no Project Experience record yet. Open a document in Knowledge Hub and create or select its canonical Project Experience record; no automatic name matching is performed.
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {unlinkedProjectSheets.slice(0, 3).map((sheet: any) => (
+                    <Badge key={sheet.id} variant="outline" className="text-[10px] bg-background/70">
+                      {sheet.projectName || sheet.title}{sheet.clientName ? ` · ${sheet.clientName}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+                <a href="/knowledge-hub" className="inline-flex mt-3 text-xs font-medium text-primary hover:underline">Review in Knowledge Hub</a>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-64">
