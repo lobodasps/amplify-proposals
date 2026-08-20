@@ -765,3 +765,32 @@ The LLM provider system was completely rebuilt to remove all hardcoded provider 
 | `b054f5af` | Phase 7: requirements_matrix_builder/conflict_detector renderer routing; ProposalScorecard full display (sorted table, gap/improvement panels, winThemesCoverage matrix); citationFormat parameter on formatEvidenceContext |
 | `b7d35e97` | Auth fix: Supabase storageKey isolation to prevent cross-app session collision |
 | `e27416d2` | Phase 8 Track C: GROUNDING RULES added to all 4 generation skill system prompts; evidenceContext in templateVariables |
+
+---
+
+## Architecture Changes — Aug 20, 2026
+
+### Project Experience Is the Canonical Past-Performance Record
+
+`amp_projects` is the canonical record for firm project experience and past performance. The Firm Records navigation labels this surface **Project Experience**. Knowledge Hub retains its document-library role: project sheets and past proposals are evidence records in `dam_documents`.
+
+Knowledge Hub now offers an explicit **create or link Project Experience record** selector in both its normal and multi-project split intake flows. Selecting an existing record persists `dam_documents.projectId`; leaving the default creates a project from the entered project details through the existing DAM resolution flow. Existing documents are not rewritten through a name-based migration. The Project Experience detail sheet renders documents linked by `dam_documents.projectId` alongside existing asset attachments.
+
+### Staff Identity and Certifications Are v0-Owned
+
+The v0 Timekeeping system is authoritative for person identity and certification facts:
+
+| Domain | Authoritative source | Amplify-Proposals behavior |
+|---|---|---|
+| Identity, active status, email, phone, and labor category | `profiles` | Read through `staffDirectory.list` and display in Staff |
+| Certification type, issuer, issue/expiration dates, and certificate path | `certification_types` + `user_certifications` | Read and display in Staff; never duplicated as a second credential ledger |
+| Payroll, pay/billing rates, costs, burden, overtime, and holidays | v0 timekeeping/rate tables | Not queried or copied into Amplify-Proposals |
+| Proposal biography, tags, service lines, and evidence | Amplify `personnel`, `assets`, and `dam_documents` | Used only as proposal-specific compatibility data and evidence |
+
+`/personnel` is now a legacy route that redirects to `/staff`. `staffDirectory.listEvidence` reads both canonical `profiles.id` associations and an explicit legacy `personnel` association when available. New resume and certification documents require an explicit Timekeeping staff selection or a deliberate unmatched-review choice; `dam.create` no longer auto-creates or name-matches personnel rows. Staff displays review queues for unlinked legacy DAM documents and legacy personnel records, preserving data without unsafe automatic matching.
+
+### Checkpoint
+
+| Version | Description |
+|---------|-------------|
+| `65fedf27` | Project Experience consolidation and Staff Phase 1: explicit DAM project links, v0-backed Staff directory/certifications, legacy Personnel redirect, and safe review queues |
