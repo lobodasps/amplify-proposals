@@ -38,6 +38,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Add create-or-link Project Experience controls to Knowledge Hub project-sheet intake; persist `dam_documents.projectId` for newly associated documents without rewriting legacy free-text associations
 - [x] Add Project Experience create-or-link controls to multi-project split intake and persist the selected `projectId` per created project-sheet document
 - [x] Add linked Knowledge Hub evidence documents to the Project Experience detail panel
+- [x] Add a direct Open action for linked Knowledge Hub evidence in Project Experience, opening the selected document preview without a separate Hub search
 - [x] Fix legacy Knowledge Hub project sheets that are not represented in Project Experience, starting with Tompkinsville Station; preserve evidence and avoid unsafe bulk name matching — Tompkinsville Station now has canonical `amp_projects` record `8f72e0d5-05d8-4fe3-9234-683cedb5aa16` linked to its project sheet; Project Experience now surfaces remaining unlinked sheets for manual review
 - [x] Fix Project Experience evidence display so linked Knowledge Hub sheets, including Tompkinsville Station, render in Files & Documents — fixed UUID query enablement (`Boolean(project.id)`)
 - [x] Add a controlled reconciliation workflow for all legacy Knowledge Hub project sheets: identify, create or link canonical Project Experience records, preserve evidence, and require review for ambiguous mappings

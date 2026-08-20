@@ -11,8 +11,9 @@
 
 import AppLayout from "@/components/AppLayout";
 import { BulkImageImport } from "./BulkImageImport";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { getKnowledgeHubDocumentId } from "@/lib/knowledgeHubLinks";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,6 +224,13 @@ export default function KnowledgeHub() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<UploadFormState>(DEFAULT_FORM);
 
+  useEffect(() => {
+    const documentId = getKnowledgeHubDocumentId(window.location.search);
+    if (documentId) {
+      setPreviewDocId(documentId);
+    }
+  }, []);
+
   // ── tRPC ────────────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
 
@@ -255,6 +263,14 @@ export default function KnowledgeHub() {
     { id: previewDocId! },
     { enabled: previewDocId !== null }
   );
+
+  function closePreview() {
+    setPreviewDocId(null);
+    setIsEditing(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("document");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   const createMutation = trpc.dam.create.useMutation({
     onSuccess: () => {
@@ -1954,7 +1970,7 @@ export default function KnowledgeHub() {
       </div>
 
       {/* ── Preview / Edit Dialog ─────────────────────────────────────────── */}
-      <Dialog open={previewDocId !== null} onOpenChange={(open) => { if (!open) { setPreviewDocId(null); setIsEditing(false); } }}>
+      <Dialog open={previewDocId !== null} onOpenChange={(open) => { if (!open) closePreview(); }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           {previewDoc ? (
             <>
