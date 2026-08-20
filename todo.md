@@ -26,6 +26,12 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [ ] Fix firm placeholder guard: warn user in Workspace when `firm_settings` is empty instead of silently passing `[Not provided]`
 - [ ] Fix asset matching scroll: verify and fix scroll behavior with 10+ cards in AssetMatchingPanel
 
+### GitHub Project Link
+- [ ] Diagnose and restore the project-level GitHub repository binding; the Management UI status check currently fails after account authorization
+
+### Database Schema Verification
+- [x] Compare the live Supabase PostgreSQL catalog against `drizzle/schema.ts`, including tables, columns, types, defaults, nullability, primary/foreign keys, and indexes; document any drift before applying migrations — verified 2026-08-20: all 48 Drizzle tables exist with 0 table/column/type/nullability/default/PK/unique/index drift; 66 additional public tables belong to the pre-existing v0/timekeeping app
+
 ### Remove Mock Data — Wire to Live DB
 - [x] `Proposals.tsx` — remove `DEMO_PROPOSALS` fallback; show empty state when DB returns 0 rows
 - [x] `Opportunities.tsx` — remove `DEMO_OPPORTUNITIES` fallback; show empty state
