@@ -21,7 +21,6 @@ import {
   ChevronRight, Filter, Users, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildKnowledgeHubDocumentUrl } from "@/lib/knowledgeHubLinks";
 
 const SERVICE_COLORS: Record<string, string> = {
   "Special Inspections": "bg-violet-100 text-violet-700 border-violet-200",
@@ -289,9 +288,11 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
                         {doc.processingStatus === "indexed" ? " · Indexed" : ""}
                       </p>
                     </div>
-                    <a href={buildKnowledgeHubDocumentUrl(doc.id)} title="Open in Knowledge Hub">
-                      <Button variant="ghost" size="icon" className="h-7 w-7"><Eye className="w-3.5 h-3.5" /></Button>
-                    </a>
+                    {doc.fileUrl && (
+                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" title="Open attached file">
+                        <Button variant="ghost" size="icon" className="h-7 w-7"><Eye className="w-3.5 h-3.5" /></Button>
+                      </a>
+                    )}
                     {doc.fileUrl && (
                       <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
                         <Button variant="ghost" size="icon" className="h-7 w-7"><Download className="w-3.5 h-3.5" /></Button>
