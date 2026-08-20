@@ -120,7 +120,7 @@ All Amplify tables use UUID primary keys (`uuid` type with `gen_random_uuid()` d
 Several Amplify tables reference v0 tables via UUID columns, but **without hard foreign key constraints** in Postgres. This avoids migration coupling between the two systems:
 
 - `dam_documents.staffId` → references `profiles.id`
-- `dam_documents.projectId` → references v0 `projects.id`
+- `dam_documents.projectId` → references Amplify `amp_projects.id` (the canonical Project Experience record)
 - `contracts.performingCompanyId` → references `companies.id`
 
 ### Numeric Column Handling
