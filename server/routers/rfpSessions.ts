@@ -29,6 +29,7 @@ import {
   SKILL_META,
 } from "../../shared/workflowTypes";
 import { shredSingleFile, escapeXml } from "./xmlShredder";
+import { extractFile } from "../rfpExtractor";
 import { buildEvidenceBundle } from "../evidenceBundleBuilder";
 import type { EvidenceBundleMap } from "../../shared/workflowTypes";
 import {
@@ -43,6 +44,7 @@ import {
   computeOverallCompliance,
 } from "../../shared/proposalSections";
 import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
+import { shouldExtractRfpTextBeforeLlm } from "../../shared/launchDocumentProcessing";
 
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
@@ -900,25 +902,49 @@ export const rfpSessionsRouter = router({
       };
 
       try {
+        const isWordDocument = input.mimeType.includes("word") || /\.docx?$/i.test(input.fileName);
+        let classifierContent: Array<{ type: "text"; text: string }> | Array<{
+          type: "text";
+          text: string;
+        } | {
+          type: "file_url";
+          file_url: { url: string; mime_type: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+        }>;
+
+        if (shouldExtractRfpTextBeforeLlm({ isPdf: false, isWord: isWordDocument, supportsFileUrl: true })) {
+          const fileResponse = await fetch(input.fileUrl);
+          if (!fileResponse.ok) throw new Error(`Unable to fetch DOCX for classification (${fileResponse.status})`);
+          const extracted = await extractFile({
+            buffer: Buffer.from(await fileResponse.arrayBuffer()),
+            fileName: input.fileName,
+            mimeType: input.mimeType,
+          });
+          classifierContent = [{
+            type: "text",
+            text: `Classify this document: "${input.fileName}". Review the extracted text below and return the requested JSON.\n\n--- EXTRACTED DOCUMENT TEXT ---\n${extracted.textContent.slice(0, 60000)}`,
+          }];
+        } else {
+          classifierContent = [
+            {
+              type: "text" as const,
+              text: `Classify this document: "${input.fileName}". Read the first 1-2 pages only. For every date, preserve the date exactly and return dueDate as YYYY-MM-DD when possible.`,
+            },
+            {
+              type: "file_url" as const,
+              file_url: {
+                url: input.fileUrl,
+                mime_type: input.mimeType as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              },
+            },
+          ];
+        }
         const response = await invokeLLMWithSkill({
           skillType: "rfp_shredder", // use rfp_shredder skill (Gemini Flash)
           messages: [
             { role: "system", content: systemPrompt },
             {
               role: "user",
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Classify this document: "${input.fileName}". Read the first 1-2 pages only.`,
-                },
-                {
-                  type: "file_url" as const,
-                  file_url: {
-                    url: input.fileUrl,
-                    mime_type: input.mimeType as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                  },
-                },
-              ],
+              content: classifierContent,
             },
           ],
           responseFormat: {

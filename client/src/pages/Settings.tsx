@@ -551,7 +551,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const PROVIDER_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini"],
-  anthropic: ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+  anthropic: ["claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"],
   google_gemini: ["gemini-2.5-flash-preview-05-20", "gemini-2.5-pro-preview-05-06", "gemini-2.0-flash"],
   azure_openai: ["gpt-4o", "gpt-4-turbo"],
 };

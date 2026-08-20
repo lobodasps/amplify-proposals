@@ -127,6 +127,7 @@ const COST_PER_MILLION: Record<string, { input: number; output: number }> = {
   "gemini-2.0-flash": { input: 0.10, output: 0.40 },
   // Anthropic
   "claude-sonnet-4-20250514": { input: 3.00, output: 15.00 },
+  "claude-sonnet-5": { input: 3.00, output: 15.00 },
   "claude-3-5-sonnet-20241022": { input: 3.00, output: 15.00 },
   "claude-3-haiku-20240307": { input: 0.25, output: 1.25 },
   // OpenAI
@@ -960,13 +961,18 @@ function resolveEndpoint(provider: Provider, baseUrl?: string | null): string {
 function resolveDefaultModel(provider: Provider): string {
   switch (provider) {
     case "openai":        return "gpt-4o-mini";
-    case "anthropic":     return "claude-sonnet-4-20250514";
+    case "anthropic":     return "claude-sonnet-5";
     case "google_gemini": return "gemini-2.5-flash-preview-05-20";
     case "azure_openai":  return "gpt-4o";
     case "manus_builtin": return "gemini-2.5-flash-preview-05-20";
     // For any unknown provider, return a generic default — user should set defaultModel in their key config
     default:              return "gpt-4o-mini";
   }
+}
+
+/** Claude Sonnet 4 was retired; preserve legacy settings while routing requests to Sonnet 5. */
+export function normalizeAnthropicModel(model: string): string {
+  return model === "claude-sonnet-4-20250514" ? "claude-sonnet-5" : model;
 }
 
 /**
@@ -1600,10 +1606,11 @@ export async function invokeLLMWithSkill(
   const provider = (skillRow?.provider
     ? skillRow.provider
     : defaults?.defaultProvider ?? "google_gemini") as Provider;
-  const model = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
-  const apiKey = await resolveApiKey(provider);
+  const configuredModel = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
   // sdkType drives routing — decoupled from the provider name string
   const sdkType = await resolveSdkType(provider);
+  const model = sdkType === "anthropic" ? normalizeAnthropicModel(configuredModel) : configuredModel;
+  const apiKey = await resolveApiKey(provider);
   const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
   const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults?.userPromptTemplate ?? "";
 
@@ -1674,6 +1681,7 @@ export async function invokeLLMWithSkill(
       err.message?.includes("API key") ||
       err.message?.includes("401") ||
       err.message?.includes("403") ||
+      err.message?.includes("404") ||
       err.message?.includes("429") ||
       err.message?.includes("500") ||
       err.message?.includes("502") ||
@@ -1681,6 +1689,7 @@ export async function invokeLLMWithSkill(
       err.message?.includes("authentication") ||
       err.message?.includes("Unauthorized") ||
       err.message?.includes("Invalid API key") ||
+      err.message?.includes("not_found_error") ||
       err.message?.includes("overloaded") ||
       err.message?.includes("unavailable");
 
@@ -1689,7 +1698,10 @@ export async function invokeLLMWithSkill(
     if (defaultProviderKey && defaultProviderKey.provider !== provider) {
       const fallbackProvider = defaultProviderKey.provider as Provider;
       const fallbackSdkType = defaultProviderKey.sdkType;
-      const fallbackModel = defaultProviderKey.defaultModel || resolveDefaultModel(fallbackProvider);
+      const configuredFallbackModel = defaultProviderKey.defaultModel || resolveDefaultModel(fallbackProvider);
+      const fallbackModel = fallbackSdkType === "anthropic"
+        ? normalizeAnthropicModel(configuredFallbackModel)
+        : configuredFallbackModel;
       console.warn(
         `[llmSkill] ${provider} (sdkType=${sdkType}) failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to default provider: ${fallbackProvider} (sdkType=${fallbackSdkType})/${fallbackModel}`
       );

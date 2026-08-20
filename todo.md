@@ -30,6 +30,14 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [ ] Diagnose and restore the project-level GitHub repository binding; the Management UI status check currently fails after account authorization
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
+### Launch Generation Reliability
+- [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
+- [x] Fix `/launch` bid-document extraction so critical dates and opportunity metadata are captured reliably, with an explicit incomplete-extraction warning when source content cannot support a field — DOCX files are now converted to text with Mammoth before classification and XML shredding; user-confirmed Main RFP labels cannot be downgraded to metadata-only when classification is inconclusive
+- [x] Add an explicit incomplete-extraction warning in `/launch` review when critical parsed fields (title, agency, submission deadline, or estimated value) remain blank after bid-document processing
+- [x] Add automated DOCX launch extraction regression coverage for the text-extraction branch and missing-critical-field warning conditions — `launchExtraction.test.ts` verifies blank and placeholder critical-field warnings; `rfpSessions.classifyFile.test.ts` exercises the real protected endpoint with a DOCX fixture
+- [x] Add server-side regression tests proving Launchpad DOCX classification extracts text before invoking Gemini rather than sending an unsupported Word MIME attachment — `rfpSessions.classifyFile.test.ts` verifies extracted DOCX text is sent without a Word `file_url`
+- [x] Add server-side regression tests proving a user-designated Main RFP DOCX remains full-extract when automated classification is inconclusive — `launchDocumentProcessing.test.ts` covers the shared label-preservation decision used by the Launchpad
+
 ### Database Schema Verification
 - [x] Compare the live Supabase PostgreSQL catalog against `drizzle/schema.ts`, including tables, columns, types, defaults, nullability, primary/foreign keys, and indexes; document any drift before applying migrations — verified 2026-08-20: all 48 Drizzle tables exist with 0 table/column/type/nullability/default/PK/unique/index drift; 66 additional public tables belong to the pre-existing v0/timekeeping app
 

@@ -28,6 +28,7 @@ import {
   SUPPORTED_EXTENSIONS,
   FILE_TYPE_LABELS,
 } from "../rfpExtractor";
+import { shouldExtractRfpTextBeforeLlm, shouldUseNativeRfpFileInput } from "../../shared/launchDocumentProcessing";
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -332,8 +333,8 @@ export async function shredSingleFile(params: {
 
   let result: Awaited<ReturnType<typeof invokeLLMWithSkill>>;
 
-  if ((isPdf || isWord) && supportsFileUrl) {
-    // Pass file URL directly — Gemini reads natively
+  if (shouldUseNativeRfpFileInput({ isPdf, isWord, supportsFileUrl })) {
+    // Pass PDFs directly — Gemini reads these natively.
     result = await invokeLLMWithSkill({
       skillType: "xml_shredder",
       variables: {
@@ -353,8 +354,9 @@ export async function shredSingleFile(params: {
         },
       ],
     });
-  } else if ((isPdf || isWord) && !supportsFileUrl) {
-    // Non-Gemini provider: extract text first, then pass as rawText
+  } else if (shouldExtractRfpTextBeforeLlm({ isPdf, isWord, supportsFileUrl })) {
+    // DOCX is extracted locally even for Gemini because its file endpoint rejects Word MIME types.
+    // PDFs also take this path when the configured provider lacks native file input.
     let rawText = "";
     try {
       // Fetch the file buffer, then use extractFile to parse PDF/DOCX

@@ -4,7 +4,7 @@
  * and the invokeLLMWithSkill routing logic.
  */
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SKILLS, type SkillType, type Provider } from "./_core/llmSkill";
+import { DEFAULT_SKILLS, normalizeAnthropicModel, type SkillType, type Provider } from "./_core/llmSkill";
 
 describe("LLM Skill Configuration", () => {
   describe("DEFAULT_SKILLS definitions", () => {
@@ -95,6 +95,13 @@ describe("LLM Skill Configuration", () => {
       expect(supportsFileUrl("openai")).toBe(false);
       expect(supportsFileUrl("anthropic")).toBe(false);
       expect(supportsFileUrl("azure_openai")).toBe(false);
+    });
+  });
+
+  describe("Anthropic model compatibility", () => {
+    it("routes the retired Sonnet 4 snapshot to the supported Sonnet 5 model", () => {
+      expect(normalizeAnthropicModel("claude-sonnet-4-20250514")).toBe("claude-sonnet-5");
+      expect(normalizeAnthropicModel("claude-sonnet-5")).toBe("claude-sonnet-5");
     });
   });
 

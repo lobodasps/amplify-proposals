@@ -597,7 +597,7 @@ export const aiSkillsRouter = router({
     }
     // Update Anthropic
     for (const skill of ANTHROPIC_SKILLS) {
-      await db.update(aiSkills).set({ provider: "anthropic", model: "claude-sonnet-4-20250514" }).where(eq(aiSkills.skillType, skill));
+      await db.update(aiSkills).set({ provider: "anthropic", model: "claude-sonnet-5" }).where(eq(aiSkills.skillType, skill));
     }
 
     return { success: true, updated: GEMINI_FLASH_SKILLS.length + GEMINI_PRO_SKILLS.length + ANTHROPIC_SKILLS.length };

@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import * as fflate from "fflate";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { getMissingCriticalRfpFields } from "@/lib/launchExtraction";
+import { resolveLaunchClassificationLabel } from "../../../shared/launchDocumentProcessing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -412,6 +414,12 @@ export default function ProposalLaunchpad() {
   const [rfpEstValue, setRfpEstValue] = useState("");
   const [rfpServiceLines, setRfpServiceLines] = useState<string[]>([]);
   const [rfpSummary, setRfpSummary] = useState("");
+  const missingExtractionFields = entryMode === "manual" ? [] : getMissingCriticalRfpFields({
+    title: rfpTitle,
+    agency: rfpAgency,
+    submissionDeadline: rfpDueDate,
+    estimatedValue: rfpEstValue,
+  });
 
   // ── Go/No-Go result ───────────────────────────────────────────────────────
   const [goNoGoResult, setGoNoGoResult] = useState<GoNoGoResult | null>(null);
@@ -616,9 +624,11 @@ export default function ProposalLaunchpad() {
               reference: "Reference Doc",
               supplemental: "Supplemental",
             };
-            const mappedLabel = labelMap[result.documentType] ?? "Supplemental";
-            // Capture quickSignals when the file is confirmed as main_rfp
-            if (result.documentType === "main_rfp" && result.quickSignals) {
+            // A user-confirmed Main RFP must stay full-extract even when a skim fails
+            // or returns a non-authoritative candidate label.
+            const mappedLabel = resolveLaunchClassificationLabel(isMainRfp, labelMap[result.documentType], entry.label) as FileLabel;
+            // Capture quickSignals for the user-confirmed Main RFP regardless of the classifier label.
+            if (isMainRfp && result.quickSignals) {
               setQuickSignals(result.quickSignals as QuickSignals);
             }
             setQueue((prev) =>
@@ -1783,6 +1793,15 @@ export default function ProposalLaunchpad() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
+                {missingExtractionFields.length > 0 && (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                      <p className="font-medium">Some bid details need manual review</p>
+                      <p className="mt-0.5 text-xs">The source package did not yield: {missingExtractionFields.join(", ")}. Complete these fields before running Go/No-Go.</p>
+                    </div>
+                  </div>
+                )}
                 {/* Title */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
