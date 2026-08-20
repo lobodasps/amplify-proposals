@@ -39,6 +39,9 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Add Project Experience create-or-link controls to multi-project split intake and persist the selected `projectId` per created project-sheet document
 - [x] Add linked Knowledge Hub evidence documents to the Project Experience detail panel
 - [x] Fix legacy Knowledge Hub project sheets that are not represented in Project Experience, starting with Tompkinsville Station; preserve evidence and avoid unsafe bulk name matching — Tompkinsville Station now has canonical `amp_projects` record `8f72e0d5-05d8-4fe3-9234-683cedb5aa16` linked to its project sheet; Project Experience now surfaces remaining unlinked sheets for manual review
+- [x] Fix Project Experience evidence display so linked Knowledge Hub sheets, including Tompkinsville Station, render in Files & Documents — fixed UUID query enablement (`Boolean(project.id)`)
+- [x] Add a controlled reconciliation workflow for all legacy Knowledge Hub project sheets: identify, create or link canonical Project Experience records, preserve evidence, and require review for ambiguous mappings
+- [x] Add a transactional one-time reconciliation action for the 21 unlinked legacy project sheets; create one canonical Project Experience per unique exact sheet title and skip ambiguous existing-project matches — reconciled 2026-08-20: 21 records created, 21 documents linked, 0 ambiguous mappings, 0 remaining unlinked sheets
 
 ### Staff Information Architecture
 - [x] Audit duplication between Firm Records → Staff, Personnel records, and Knowledge Hub resumes/certifications; define a single canonical staff record and a safe consolidation path before changing UI or persisted relationships

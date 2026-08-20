@@ -146,12 +146,12 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
 
   const { data: hubDocs = [], isLoading: hubLoading } = trpc.dam.listByProject.useQuery(
     { projectId: project.id },
-    { enabled: project.id > 0 }
+    { enabled: Boolean(project.id) }
   );
 
   const { data: attachments = [], isLoading } = trpc.projects.listAttachments.useQuery(
     { projectId: project.id },
-    { enabled: project.id > 0 }
+    { enabled: Boolean(project.id) }
   );
 
   const addAttachment = trpc.projects.addAttachment.useMutation({
@@ -408,8 +408,20 @@ export default function Projects() {
   const [search, setSearch] = useState("");
   const [activeService, setActiveService] = useState("all");
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const utils = trpc.useUtils();
   const { data: dbProjects, isLoading, refetch } = trpc.projects.list.useQuery();
   const { data: unlinkedProjectSheets = [] } = trpc.dam.listUnlinkedProjectSheets.useQuery();
+  const reconcileLegacySheets = trpc.dam.reconcileLegacyProjectSheets.useMutation({
+    onSuccess: (summary) => {
+      utils.projects.list.invalidate();
+      utils.dam.listUnlinkedProjectSheets.invalidate();
+      toast.success(`${summary.linkedDocuments} project sheet${summary.linkedDocuments !== 1 ? "s" : ""} linked to ${summary.created + summary.linkedExisting} Project Experience record${summary.created + summary.linkedExisting !== 1 ? "s" : ""}.`);
+      if (summary.skippedAmbiguous.length > 0) {
+        toast.warning(`${summary.skippedAmbiguous.length} ambiguous project name${summary.skippedAmbiguous.length !== 1 ? "s were" : " was"} left for review.`);
+      }
+    },
+    onError: () => toast.error("Unable to reconcile legacy project sheets."),
+  });
 
   const filtered = (dbProjects ?? []).filter((p: any) =>
     (activeService === "all" || p.serviceLine === activeService) &&
@@ -446,7 +458,17 @@ export default function Projects() {
                     </Badge>
                   ))}
                 </div>
-                <a href="/knowledge-hub" className="inline-flex mt-3 text-xs font-medium text-primary hover:underline">Review in Knowledge Hub</a>
+                <div className="flex items-center gap-3 mt-3">
+                  <Button
+                    size="sm"
+                    className="h-8"
+                    onClick={() => reconcileLegacySheets.mutate()}
+                    disabled={reconcileLegacySheets.isPending}
+                  >
+                    {reconcileLegacySheets.isPending ? "Reconciling…" : `Create & Link ${unlinkedProjectSheets.length} Project Experience Record${unlinkedProjectSheets.length !== 1 ? "s" : ""}`}
+                  </Button>
+                  <a href="/knowledge-hub" className="text-xs font-medium text-primary hover:underline">Review individually in Knowledge Hub</a>
+                </div>
               </div>
             </CardContent>
           </Card>

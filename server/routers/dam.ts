@@ -14,7 +14,7 @@
  */
 
 import { z } from "zod";
-import { eq, desc, and, sql, like, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, like, isNull, inArray } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { damDocuments, projects, documentChunks } from "../../drizzle/schema";
@@ -48,6 +48,29 @@ const IMAGE_MIME_TYPES = new Set([
 function isImageMime(mimeType?: string | null): boolean {
   if (!mimeType) return false;
   return IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
+}
+
+export type LegacyProjectSheet = {
+  id: string;
+  title: string;
+  projectName: string | null;
+};
+
+export function normalizeProjectExperienceKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+export function groupLegacyProjectSheets(sheets: LegacyProjectSheet[]) {
+  const groups = new Map<string, { name: string; documentIds: string[] }>();
+  for (const sheet of sheets) {
+    const name = (sheet.projectName ?? sheet.title).trim();
+    if (!name) continue;
+    const key = normalizeProjectExperienceKey(name);
+    const group = groups.get(key) ?? { name, documentIds: [] };
+    group.documentIds.push(sheet.id);
+    groups.set(key, group);
+  }
+  return groups;
 }
 
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
@@ -591,6 +614,59 @@ export const damRouter = router({
       ))
       .orderBy(desc(damDocuments.createdAt))
       .limit(50);
+  }),
+
+  /**
+   * Reconciles legacy sheets only when the intended mapping is unambiguous.
+   * One Project Experience record is created per normalized sheet title; names
+   * with multiple existing Project Experience matches are skipped for review.
+   */
+  reconcileLegacyProjectSheets: protectedProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    const [legacySheets, existingProjects] = await Promise.all([
+      db.select({ id: damDocuments.id, title: damDocuments.title, projectName: damDocuments.projectName })
+        .from(damDocuments)
+        .where(and(eq(damDocuments.docType, "project_sheet"), isNull(damDocuments.projectId))),
+      db.select({ id: projects.id, name: projects.name }).from(projects),
+    ]);
+
+    const groups = groupLegacyProjectSheets(legacySheets);
+    const existingByKey = new Map<string, Array<{ id: string; name: string }>>();
+    for (const project of existingProjects) {
+      const key = normalizeProjectExperienceKey(project.name);
+      const matches = existingByKey.get(key) ?? [];
+      matches.push(project);
+      existingByKey.set(key, matches);
+    }
+
+    const summary = { created: 0, linkedExisting: 0, linkedDocuments: 0, skippedAmbiguous: [] as string[] };
+    await db.transaction(async (tx) => {
+      for (const [key, group] of Array.from(groups.entries())) {
+        const matches = existingByKey.get(key) ?? [];
+        if (matches.length > 1) {
+          summary.skippedAmbiguous.push(group.name);
+          continue;
+        }
+        const projectId = matches.length === 1
+          ? matches[0].id
+          : (await tx.insert(projects).values({
+              name: group.name,
+              status: "active",
+              description: "Created from a legacy Knowledge Hub project sheet. Enrich project details after review.",
+            }).returning({ id: projects.id }))[0].id;
+        if (matches.length === 1) summary.linkedExisting += 1;
+        else summary.created += 1;
+
+        await tx.update(damDocuments)
+          .set({ projectId, projectName: group.name, updatedAt: new Date() })
+          .where(inArray(damDocuments.id, group.documentIds));
+        summary.linkedDocuments += group.documentIds.length;
+      }
+    });
+
+    return summary;
   }),
 
   // ── Update metadata ────────────────────────────────────────────────────────
