@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { proposals, proposalSections, tailoredResumes, rfpSessions } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
+import { normalizeGoNoGoResult } from "../../shared/goNoGo";
 
 export const proposalsRouter = router({
   list: protectedProcedure.query(async () => {
@@ -253,9 +254,9 @@ export const proposalsRouter = router({
       });
       const content = result.choices[0]?.message?.content ?? "{}";
       try {
-        return { ...JSON.parse(content), _provider: result._provider, _model: result._model };
+        return { ...normalizeGoNoGoResult(JSON.parse(content)), _provider: result._provider, _model: result._model };
       } catch {
-        return { score: 50, recommendation: "CONDITIONAL GO", rationale: content, strengths: [], risks: [], winThemes: [], _provider: result._provider, _model: result._model };
+        return { ...normalizeGoNoGoResult({ rationale: content }), _provider: result._provider, _model: result._model };
       }
     }),
 

@@ -2018,7 +2018,7 @@ export default function ProposalLaunchpad() {
                     <p className="text-xs text-muted-foreground">None identified.</p>
                   ) : (
                     <ul className="space-y-1.5">
-                      {goNoGoResult.strengths.map((s, i) => (
+                      {(Array.isArray(goNoGoResult.strengths) ? goNoGoResult.strengths : []).map((s, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
                           <span>{s}</span>
@@ -2040,7 +2040,7 @@ export default function ProposalLaunchpad() {
                     <p className="text-xs text-muted-foreground">None identified.</p>
                   ) : (
                     <ul className="space-y-1.5">
-                      {goNoGoResult.risks.map((r, i) => (
+                      {(Array.isArray(goNoGoResult.risks) ? goNoGoResult.risks : []).map((r, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm">
                           <AlertTriangle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
                           <span>{r}</span>
