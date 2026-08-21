@@ -28,6 +28,7 @@ import { trpc } from "@/lib/trpc";
 import { shouldPollForSkillCompletion } from "@/lib/draftSkillExecution";
 import { getWinThemeDraftDisplay } from "@/lib/winThemeDraft";
 import { getProposalWorkspaceLayout } from "@/lib/proposalWorkspaceLayout";
+import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -802,6 +803,7 @@ export default function ProposalWorkspace() {
     return `${resumeState.completedCount} of ${WORKFLOW_SKILL_NAMES.length} complete`;
   })();
   const workspaceLayout = getProposalWorkspaceLayout(workspaceMode, activeView);
+  const skillPipelineLayout = getSkillPipelineLayout();
 
   // Demo proposal guard — show a friendly message instead of firing UUID-only API calls
   if (!isRealProposal) {
@@ -1013,14 +1015,14 @@ export default function ProposalWorkspace() {
             {workspaceMode === "workflow" && (
             <>
             {/* ── Left Sidebar: Skill Pipeline ─────────────────────────── */}
-            <div className="w-56 shrink-0 border-r flex flex-col overflow-hidden bg-muted/10">
+            <div className={`w-56 shrink-0 border-r flex flex-col overflow-hidden bg-muted/10 ${skillPipelineLayout.sidebarClass}`}>
               <div className="px-3 py-2 border-b">
                 <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Skill Pipeline
                 </p>
               </div>
 
-              <ScrollArea className="flex-1">
+              <div className={skillPipelineLayout.listClass}>
                 <div className="p-1.5 space-y-0.5">
                   {/* Overview row */}
                   <button
@@ -1054,7 +1056,7 @@ export default function ProposalWorkspace() {
                     </div>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
 
               {/* Full Draft button */}
               {resumeState.completedCount > 0 && (

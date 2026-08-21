@@ -7,3 +7,10 @@ export function getProposalWorkspaceLayout(workspaceMode: string, activeView: st
     pageScrollableDraft,
   };
 }
+
+export function getSkillPipelineLayout() {
+  return {
+    sidebarClass: "min-h-0",
+    listClass: "flex-1 min-h-0 overflow-y-auto scrollbar-thin",
+  };
+}
