@@ -975,6 +975,20 @@ export function normalizeAnthropicModel(model: string): string {
   return model === "claude-sonnet-4-20250514" ? "claude-sonnet-5" : model;
 }
 
+/**
+ * A skill's persisted provider and model are independently editable. Guard the
+ * execution boundary so a model from one provider family can never be sent to
+ * another provider's native SDK (for example, Claude to Gemini).
+ */
+export function normalizeModelForSdkType(model: string, sdkType: SdkType): string {
+  const configured = model.trim();
+  if (sdkType === "anthropic") return normalizeAnthropicModel(configured);
+  if (sdkType === "google_gemini" && /^claude-/i.test(configured)) {
+    return resolveDefaultModel("google_gemini");
+  }
+  return configured;
+}
+
 /** Use the built-in Google route only when a configured Anthropic route is rejected and no distinct default provider can take over. */
 export function shouldFallbackToGoogleAfterAnthropicFailure(
   provider: Provider,
@@ -1618,7 +1632,7 @@ export async function invokeLLMWithSkill(
   const configuredModel = skillRow?.model || defaults?.defaultModel || resolveDefaultModel(provider);
   // sdkType drives routing — decoupled from the provider name string
   const sdkType = await resolveSdkType(provider);
-  const model = sdkType === "anthropic" ? normalizeAnthropicModel(configuredModel) : configuredModel;
+  const model = normalizeModelForSdkType(configuredModel, sdkType);
   const apiKey = await resolveApiKey(provider);
   const systemPrompt = skillRow?.systemPrompt ?? defaults?.systemPrompt ?? "";
   const userPromptTemplate = skillRow?.userPromptTemplate ?? defaults?.userPromptTemplate ?? "";
@@ -1708,9 +1722,7 @@ export async function invokeLLMWithSkill(
       const fallbackProvider = defaultProviderKey.provider as Provider;
       const fallbackSdkType = defaultProviderKey.sdkType;
       const configuredFallbackModel = defaultProviderKey.defaultModel || resolveDefaultModel(fallbackProvider);
-      const fallbackModel = fallbackSdkType === "anthropic"
-        ? normalizeAnthropicModel(configuredFallbackModel)
-        : configuredFallbackModel;
+      const fallbackModel = normalizeModelForSdkType(configuredFallbackModel, fallbackSdkType);
       console.warn(
         `[llmSkill] ${provider} (sdkType=${sdkType}) failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to default provider: ${fallbackProvider} (sdkType=${fallbackSdkType})/${fallbackModel}`
       );

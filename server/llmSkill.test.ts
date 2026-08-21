@@ -4,7 +4,7 @@
  * and the invokeLLMWithSkill routing logic.
  */
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SKILLS, normalizeAnthropicModel, type SkillType, type Provider } from "./_core/llmSkill";
+import { DEFAULT_SKILLS, normalizeAnthropicModel, normalizeModelForSdkType, type SkillType, type Provider } from "./_core/llmSkill";
 
 describe("LLM Skill Configuration", () => {
   describe("DEFAULT_SKILLS definitions", () => {
@@ -102,6 +102,22 @@ describe("LLM Skill Configuration", () => {
     it("routes the retired Sonnet 4 snapshot to the supported Sonnet 5 model", () => {
       expect(normalizeAnthropicModel("claude-sonnet-4-20250514")).toBe("claude-sonnet-5");
       expect(normalizeAnthropicModel("claude-sonnet-5")).toBe("claude-sonnet-5");
+    });
+  });
+
+  describe("provider-model compatibility", () => {
+    it("replaces a Claude model accidentally assigned to Gemini with the Gemini default", () => {
+      expect(normalizeModelForSdkType("claude-sonnet-4-20250514", "google_gemini"))
+        .toBe("gemini-2.5-flash-preview-05-20");
+      expect(normalizeModelForSdkType("claude-sonnet-5", "google_gemini"))
+        .toBe("gemini-2.5-flash-preview-05-20");
+    });
+
+    it("keeps a valid Gemini model and normalizes Anthropic legacy snapshots", () => {
+      expect(normalizeModelForSdkType("gemini-2.5-pro-preview-05-06", "google_gemini"))
+        .toBe("gemini-2.5-pro-preview-05-06");
+      expect(normalizeModelForSdkType("claude-sonnet-4-20250514", "anthropic"))
+        .toBe("claude-sonnet-5");
     });
   });
 
