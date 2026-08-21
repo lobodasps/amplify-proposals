@@ -26,6 +26,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { shouldPollForSkillCompletion } from "@/lib/draftSkillExecution";
+import { getWinThemeDraftDisplay } from "@/lib/winThemeDraft";
+import { getProposalWorkspaceLayout } from "@/lib/proposalWorkspaceLayout";
+import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -236,7 +239,7 @@ function SkillRow({
 
 // ─── Full Draft Section Card (inline-editable with autosave) ────────────────
 
-function FullDraftSectionCard({
+export function FullDraftSectionCard({
   section,
   onSave,
 }: {
@@ -282,6 +285,8 @@ function FullDraftSectionCard({
   const sectionScore = section.complianceStatus
     ? parseInt(section.complianceStatus, 10)
     : null;
+  const isStructuredWinTheme = section.title === "Win Themes"
+    && getWinThemeDraftDisplay(section.content).kind !== "prose";
 
   return (
     <Card className="group">
@@ -342,6 +347,8 @@ function FullDraftSectionCard({
             autoFocus
             className="min-h-[200px] text-sm leading-relaxed resize-y font-sans"
           />
+        ) : isStructuredWinTheme ? (
+          <WinThemeDraftContent content={section.content} />
         ) : (
           <div
             className="prose prose-sm dark:prose-invert max-w-none cursor-pointer hover:bg-muted/30 rounded-md p-2 -m-2 transition-colors"
@@ -794,6 +801,7 @@ export default function ProposalWorkspace() {
     if (resumeState.completedCount === 0) return "Ready to generate";
     return `${resumeState.completedCount} of ${WORKFLOW_SKILL_NAMES.length} complete`;
   })();
+  const workspaceLayout = getProposalWorkspaceLayout(workspaceMode, activeView);
 
   // Demo proposal guard — show a friendly message instead of firing UUID-only API calls
   if (!isRealProposal) {
@@ -828,7 +836,7 @@ export default function ProposalWorkspace() {
   return (
     <TooltipProvider>
       <AppLayout title="Proposal Workspace">
-        <div className="flex flex-col h-full overflow-x-hidden">
+        <div className={`flex flex-col overflow-x-hidden ${workspaceLayout.rootClass}`}>
           {/* ── Top Bar ──────────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center justify-between px-4 py-2.5 border-b shrink-0 gap-2 bg-background">
             <div className="flex items-center gap-3 min-w-0">
@@ -979,7 +987,7 @@ export default function ProposalWorkspace() {
           </div>
 
           {/* ── Body ─────────────────────────────────────────────────────── */}
-          <div className="flex flex-1 min-h-0">
+          <div className={`flex ${workspaceLayout.bodyClass}`}>
             {/* ── Draft Mode: Three-panel Proposal Draft Workspace ────────── */}
             {workspaceMode === "draft" && session && (
               <div className="flex-1 min-h-0 overflow-hidden">
@@ -1094,7 +1102,7 @@ export default function ProposalWorkspace() {
             </div>
 
             {/* ── Main Panel ───────────────────────────────────────────── */}
-            <div className="flex-1 overflow-y-auto flex flex-col">
+            <div className={`flex-1 flex flex-col ${workspaceLayout.mainClass}`}>
               {activeView === "overview" ? (
                 /* ── Overview Panel ──────────────────────────────────── */
                 <ScrollArea className="flex-1">
@@ -1232,7 +1240,7 @@ export default function ProposalWorkspace() {
                 </ScrollArea>
               ) : activeView === "full_draft" ? (
                 /* ── Full Draft Panel ──────────────────────────────────── */
-                <ScrollArea className="flex-1">
+                <div className="flex-1">
                   <div className="p-6 max-w-4xl mx-auto space-y-6">
                     <div className="flex items-center justify-between mb-2">
                       <div>
@@ -1282,7 +1290,7 @@ export default function ProposalWorkspace() {
                       ))
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               ) : selectedSkill ? (
                 /* ── Skill Output Panel ──────────────────────────────── */
                 <div className="flex flex-col">

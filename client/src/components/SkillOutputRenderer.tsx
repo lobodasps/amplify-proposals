@@ -15,7 +15,7 @@
  *   (all other json skills)    → GenericJsonViewer (collapsible key/value)
  */
 
-import { useState, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -78,7 +78,7 @@ interface WinThemeOutput {
   winThemes: WinTheme[];
 }
 
-function WinThemeCards({ data }: { data: WinThemeOutput }) {
+export function WinThemeCards({ data }: { data: WinThemeOutput }) {
   const themes = data.winThemes ?? [];
   if (themes.length === 0) {
     return (
