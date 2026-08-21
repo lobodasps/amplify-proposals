@@ -22,9 +22,10 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] `analytics.ts` router — compute real pipelineValue (SUM estimatedValue), proposalsSubmittedYTD, upcomingDeadlines from DB instead of hardcoded numbers
 
 ### Known Issues (3 fixes)
-- [ ] Fix outputType seeding: update `seedDefaultSkills` to upsert `outputType` on existing rows (not just insert-if-missing)
-- [ ] Fix firm placeholder guard: warn user in Workspace when `firm_settings` is empty instead of silently passing `[Not provided]`
-- [ ] Fix asset matching scroll: verify and fix scroll behavior with 10+ cards in AssetMatchingPanel
+- [x] Fix outputType seeding: update `seedDefaultSkills` to upsert `outputType` on existing rows (not just insert-if-missing)
+- [x] Fix firm placeholder guard: warn user in Workspace when `firm_settings` is empty instead of silently passing `[Not provided]`
+- [x] Fix asset matching scroll: verify and fix scroll behavior with 10+ cards in AssetMatchingPanel
+- [x] Add a regression test or documented verification path for AssetMatchingPanel with 10+ matches, proving the parent Sheet owns scrolling and no nested inner scroll container remains — component test renders 10 project matches and verifies no inner vertical scroll style; list wrappers no longer set `overflowY` or `maxHeight`
 
 ### GitHub Project Link
 - [ ] Diagnose and restore the project-level GitHub repository binding; the Management UI status check currently fails after account authorization

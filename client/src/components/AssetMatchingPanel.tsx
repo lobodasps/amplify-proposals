@@ -4,14 +4,13 @@
  * Proposal Launchpad Step 3 — Asset Matching (Phase 3 hybrid retrieval)
  *
  * Layout rules (no overlapping):
- *  • The outer wrapper is a flex-col with overflow-y: auto and a max-height so
- *    the whole panel scrolls as one unit inside the page.
+ *  • The parent Sheet owns vertical scrolling for the whole panel.
  *  • Each of the three sections (Project Sheets, Staff, Past Proposals) is
  *    position: static / relative — pure document flow, margin-bottom: 24px.
  *  • The Confirm footer is position: sticky, bottom: 0, so it stays visible
  *    while scrolling but never overlaps content.
- *  • No Radix ScrollArea — each card list uses a plain overflow-y: auto div
- *    with an explicit max-height so it clips internally without affecting flow.
+ *  • Card lists remain in normal document flow; they must not create inner scroll
+ *    containers that trap scrolling when a section has many results.
  *  • No z-index above 10 on any section container.
  *
  * Phase 3 additions:
@@ -21,7 +20,7 @@
  *  • isFallback replaced by matchQuality throughout
  */
 
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -458,7 +457,7 @@ export default function AssetMatchingPanel({
                 {allProjects.length === 0 ? (
                   <EmptyState message="No project sheets found — upload project sheets to Knowledge Hub" />
                 ) : (
-                  <div style={{ maxHeight: "280px", overflowY: "auto" }} className="space-y-2 pr-1">
+                  <div className="space-y-2 pr-1">
                     {allProjects.map((doc) => (
                       <label
                         key={doc.id}
@@ -525,7 +524,7 @@ export default function AssetMatchingPanel({
                 {allResumes.length === 0 ? (
                   <EmptyState message="No resumes found — upload staff resumes to Knowledge Hub" />
                 ) : (
-                  <div style={{ maxHeight: "320px", overflowY: "auto" }} className="space-y-2 pr-1">
+                  <div className="space-y-2 pr-1">
                     {allResumes.map((doc) => {
                       const isSelected = selectedResumeIds.has(doc.id);
                       const meta = doc.extractedMeta as Record<string, unknown> | null;
@@ -615,7 +614,7 @@ export default function AssetMatchingPanel({
                 {allProposals.length === 0 ? (
                   <EmptyState message="No past proposals found" />
                 ) : (
-                  <div style={{ maxHeight: "220px", overflowY: "auto" }} className="space-y-2 pr-1">
+                  <div className="space-y-2 pr-1">
                     {allProposals.map((doc) => (
                       <label
                         key={doc.id}
