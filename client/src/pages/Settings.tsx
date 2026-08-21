@@ -908,6 +908,9 @@ function ProviderKeysCard() {
               <p className="text-xs text-muted-foreground mt-1">
                 Add any number of provider keys. Mark one as <strong>Default</strong> — it will be used as fallback when a skill’s configured provider fails.
               </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                If Anthropic reports <strong>Request not allowed</strong>, confirm that the account permits the selected model or change the affected skill to Google Gemini. A configured default provider is used for fallback.
+              </p>
             </div>
             <Button size="sm" onClick={openAdd} className="gap-1 shrink-0">
               <Plus className="h-3.5 w-3.5" />Add Key

@@ -153,6 +153,10 @@ interface GoNoGoResult {
   strengths: string[];
   risks: string[];
   winThemes: string[];
+  _provider?: string;
+  _model?: string;
+  _usedDefaultModel?: boolean;
+  _defaultModelName?: string | null;
 }
 
 type WizardStep = "upload" | "processing" | "review" | "scoring" | "decision" | "asset_matching" | "archived";
@@ -938,6 +942,9 @@ export default function ProposalLaunchpad() {
         rfpSummary: rfpSummary || undefined,
       });
       setGoNoGoResult(result as GoNoGoResult);
+      if ((result as any)._usedDefaultModel) {
+        toast.warning(`Your configured provider was unavailable. Analysis completed with ${(result as any)._defaultModelName ?? `${(result as any)._provider}/${(result as any)._model}`}.`);
+      }
       setStep("decision");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Scoring failed";
@@ -1960,6 +1967,12 @@ export default function ProposalLaunchpad() {
                 ? "border-amber-500/40 bg-amber-50/30 dark:bg-amber-950/20"
                 : "border-red-500/40 bg-red-50/30 dark:bg-red-950/20"
             }`}>
+              {goNoGoResult._usedDefaultModel && (
+                <div className="mx-6 mt-6 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Your configured AI provider was unavailable. This analysis used <strong>{goNoGoResult._defaultModelName ?? `${goNoGoResult._provider}/${goNoGoResult._model}`}</strong> as the fallback.</span>
+                </div>
+              )}
               <CardContent className="pt-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
                   <div className="flex flex-col items-center gap-1 shrink-0">

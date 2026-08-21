@@ -254,9 +254,21 @@ export const proposalsRouter = router({
       });
       const content = result.choices[0]?.message?.content ?? "{}";
       try {
-        return { ...normalizeGoNoGoResult(JSON.parse(content)), _provider: result._provider, _model: result._model };
+        return {
+          ...normalizeGoNoGoResult(JSON.parse(content)),
+          _provider: result._provider,
+          _model: result._model,
+          _usedDefaultModel: result._usedDefaultModel ?? false,
+          _defaultModelName: result._defaultModelName ?? null,
+        };
       } catch {
-        return { ...normalizeGoNoGoResult({ rationale: content }), _provider: result._provider, _model: result._model };
+        return {
+          ...normalizeGoNoGoResult({ rationale: content }),
+          _provider: result._provider,
+          _model: result._model,
+          _usedDefaultModel: result._usedDefaultModel ?? false,
+          _defaultModelName: result._defaultModelName ?? null,
+        };
       }
     }),
 

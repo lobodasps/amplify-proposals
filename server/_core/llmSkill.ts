@@ -975,6 +975,15 @@ export function normalizeAnthropicModel(model: string): string {
   return model === "claude-sonnet-4-20250514" ? "claude-sonnet-5" : model;
 }
 
+/** Use the built-in Google route only when a configured Anthropic route is rejected and no distinct default provider can take over. */
+export function shouldFallbackToGoogleAfterAnthropicFailure(
+  provider: Provider,
+  isApiError: boolean,
+  defaultProvider?: string | null,
+): boolean {
+  return provider === "anthropic" && isApiError && (!defaultProvider || defaultProvider === "anthropic");
+}
+
 /**
  * Resolves the API key for a provider.
  * Priority order:
@@ -1754,6 +1763,52 @@ export async function invokeLLMWithSkill(
         return fallbackResult;
       } catch (fallbackErr: any) {
         // Default model fallback also failed — log and throw original error
+        logUsage({
+          skillType,
+          provider: fallbackProvider,
+          model: fallbackModel,
+          tokensIn: 0,
+          tokensOut: 0,
+          durationMs: Date.now() - startTime,
+          success: false,
+          errorMessage: fallbackErr.message,
+        });
+      }
+    }
+
+    // When Anthropic rejects the request and the workspace has no usable distinct default provider,
+    // use the platform Google route. This protects core launch actions from a forbidden Anthropic account.
+    if (shouldFallbackToGoogleAfterAnthropicFailure(provider, isApiError, defaultProviderKey?.provider)) {
+      const fallbackProvider: Provider = "google_gemini";
+      const fallbackModel = resolveDefaultModel(fallbackProvider);
+      try {
+        const fallbackApiKey = await resolveApiKey(fallbackProvider);
+        console.warn(
+          `[llmSkill] Anthropic failed for ${skillType} (${err.message?.slice(0, 80)}) — falling back to Google Gemini/${fallbackModel}`
+        );
+        const fallbackMessages = sanitizeMessagesForProvider(messages, "google_gemini");
+        const resp = await callGeminiNative(fallbackApiKey, fallbackModel, fallbackMessages, responseFormat, maxTokens, params.onRetry);
+        const fallbackResult = resp.result;
+        fallbackResult._provider = fallbackProvider;
+        fallbackResult._model = fallbackModel;
+        fallbackResult._usedDefaultModel = true;
+        fallbackResult._defaultModelName = `${fallbackProvider}/${fallbackModel}`;
+        fallbackResult._usage = {
+          tokensIn: resp.tokensIn,
+          tokensOut: resp.tokensOut,
+          estimatedCost: estimateCost(fallbackModel, resp.tokensIn, resp.tokensOut),
+        };
+        logUsage({
+          skillType,
+          provider: fallbackProvider,
+          model: fallbackModel,
+          tokensIn: resp.tokensIn,
+          tokensOut: resp.tokensOut,
+          durationMs: Date.now() - startTime,
+          success: true,
+        });
+        return fallbackResult;
+      } catch (fallbackErr: any) {
         logUsage({
           skillType,
           provider: fallbackProvider,
