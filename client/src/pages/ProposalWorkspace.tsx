@@ -25,6 +25,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { shouldPollForSkillCompletion } from "@/lib/draftSkillExecution";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -576,7 +577,7 @@ export default function ProposalWorkspace() {
           // The backend fires the LLM in a background job and returns
           // immediately with running:true. We then poll getById every 2s
           // until the skill reaches "complete" or "error" in workflowState.
-          await executeSkillMutation.mutateAsync({
+          const executeResult = await executeSkillMutation.mutateAsync({
             sessionId,
             skillName,
           });
@@ -592,7 +593,16 @@ export default function ProposalWorkspace() {
           let finalCompletedAt = new Date().toISOString();
           let skillErrorMessage: string | undefined;
 
-          while (true) {
+          if (executeResult.success === false) {
+            throw new Error(executeResult.errorMessage ?? `Skill "${skillName}" failed`);
+          }
+
+          if (!shouldPollForSkillCompletion(executeResult)) {
+            finalOutput = executeResult.output ?? "";
+            finalModel = executeResult.model ?? "unknown";
+            finalProvider = executeResult.provider ?? "unknown";
+            finalCompletedAt = executeResult.completedAt ?? new Date().toISOString();
+          } else while (true) {
             if (abortRef.current) break;
             if (Date.now() - pollStart > MAX_WAIT_MS) {
               throw new Error(`Skill "${skillName}" timed out after 15 minutes`);

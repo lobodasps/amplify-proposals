@@ -52,7 +52,7 @@ import {
   recordLaunchStage,
   type LaunchReviewData,
 } from "../../shared/launchWorkflow";
-
+import { waitForCompletionOrTimeout } from "../../shared/skillExecutionWait";
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
 const workflowSkillNameSchema = z.enum([
@@ -1343,6 +1343,14 @@ export const rfpSessionsRouter = router({
       //        immediately (avoids 180-300s gateway timeout on long skills).
       //        The frontend polls getById every 2s to detect completion.
 
+      type BackgroundSkillCompletion =
+        | { status: "complete"; output: string; model: string; provider: string; completedAt: string }
+        | { status: "error"; errorMessage: string };
+      let settleBackgroundSkill!: (result: BackgroundSkillCompletion) => void;
+      const backgroundSkillCompletion = new Promise<BackgroundSkillCompletion>((resolve) => {
+        settleBackgroundSkill = resolve;
+      });
+
       setImmediate(async () => {
         let llmOutput = "";
         let usedModel = "unknown";
@@ -1622,6 +1630,7 @@ export const rfpSessionsRouter = router({
         } catch (dbErr) {
           console.error(`[executeSkill] failed to write error state to DB:`, dbErr);
         }
+        settleBackgroundSkill({ status: "error", errorMessage });
         return; // exit setImmediate callback cleanly
       }
 
@@ -1851,10 +1860,44 @@ export const rfpSessionsRouter = router({
         }
       }
 
+        settleBackgroundSkill({
+          status: "complete",
+          output: llmOutput,
+          model: usedModel,
+          provider: usedProvider,
+          completedAt,
+        });
         console.log(`[executeSkill] background job complete: ${input.skillName} session=${input.sessionId}`);
       }); // end setImmediate
 
-      // ── 6. Return immediately — frontend polls getById for completion ──────
+      // ── 6. Return short calls directly; long calls continue in background ───
+      const inlineResult = await waitForCompletionOrTimeout(backgroundSkillCompletion);
+      if (inlineResult?.status === "complete") {
+        return {
+          success: true,
+          skillName: input.skillName,
+          output: inlineResult.output,
+          model: inlineResult.model,
+          provider: inlineResult.provider,
+          completedAt: inlineResult.completedAt,
+          cached: false,
+          running: false,
+        };
+      }
+      if (inlineResult?.status === "error") {
+        return {
+          success: false,
+          skillName: input.skillName,
+          output: "",
+          model: "error",
+          provider: "error",
+          completedAt: new Date().toISOString(),
+          cached: false,
+          running: false,
+          errorMessage: inlineResult.errorMessage,
+        };
+      }
+
       return {
         success: true,
         skillName: input.skillName,
