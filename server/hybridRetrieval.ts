@@ -20,6 +20,18 @@
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Keep only valid document UUIDs before building an `ANY(uuid[])` predicate.
+ * The PostgreSQL driver expands a bare interpolated JS array into a SQL tuple,
+ * which is not a valid uuid[] value for `ANY`. Each UUID is therefore bound as
+ * its own typed parameter inside an explicit PostgreSQL ARRAY constructor.
+ */
+export function validDocumentUuids(documentIds: string[]): string[] {
+  return Array.from(new Set(documentIds.filter((id) => UUID_PATTERN.test(id))));
+}
+
 // ─── Chunk-type weights ───────────────────────────────────────────────────────
 // Applied to ts_rank before summing into ftScore.
 // Higher weight = chunk type is a stronger relevance signal.
@@ -182,7 +194,8 @@ export async function fetchFtsScores(
   query: string
 ): Promise<Map<string, FtsResult>> {
   const result = new Map<string, FtsResult>();
-  if (!documentIds.length || !query.trim()) return result;
+  const validIds = validDocumentUuids(documentIds);
+  if (!validIds.length || !query.trim()) return result;
 
   // Sanitize query: remove special tsquery characters, collapse whitespace
   const sanitized = query
@@ -195,22 +208,35 @@ export async function fetchFtsScores(
   // ts_rank returns a float in [0, 1]; we apply chunk-type weight inline
   const db = await getDb();
   if (!db) return result;
-  const rows = await db.execute(sql`
-    SELECT
-      dc."damDocumentId",
-      dc."chunkType",
-      LEFT(dc.content, 200) AS preview,
-      dc."pageRef",
-      ts_rank(
-        to_tsvector('english', dc.content),
-        plainto_tsquery('english', ${sanitized})
-      ) AS raw_rank
-    FROM document_chunks dc
-    WHERE
-      dc."damDocumentId" = ANY(${documentIds}::uuid[])
-      AND to_tsvector('english', dc.content) @@ plainto_tsquery('english', ${sanitized})
-    ORDER BY dc."damDocumentId", raw_rank DESC
-  `);
+  const uuidParameters = sql.join(
+    validIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+
+  let rows: unknown;
+  try {
+    rows = await db.execute(sql`
+      SELECT
+        dc."damDocumentId",
+        dc."chunkType",
+        LEFT(dc.content, 200) AS preview,
+        dc."pageRef",
+        ts_rank(
+          to_tsvector('english', dc.content),
+          plainto_tsquery('english', ${sanitized})
+        ) AS raw_rank
+      FROM document_chunks dc
+      WHERE
+        dc."damDocumentId" = ANY(ARRAY[${uuidParameters}]::uuid[])
+        AND to_tsvector('english', dc.content) @@ plainto_tsquery('english', ${sanitized})
+      ORDER BY dc."damDocumentId", raw_rank DESC
+    `);
+  } catch (error) {
+    // FTS augments tag matching; a broken or temporarily unavailable chunk index
+    // must never prevent a user from resuming a saved Launch session.
+    console.warn("[Hybrid retrieval] Full-text chunk search unavailable:", error);
+    return result;
+  }
 
   // Group by document, apply chunk-type weights, take top 3 per document
   const byDoc = new Map<string, Array<{ chunkType: string; preview: string; pageRef: string | null; weightedRank: number }>>();
@@ -223,7 +249,7 @@ export async function fetchFtsScores(
     raw_rank: number;
   };
 
-  for (const row of (rows as unknown) as RawRow[]) {
+  for (const row of rows as RawRow[]) {
     const weight = getChunkTypeWeight(row.chunkType);
     const weightedRank = (row.raw_rank ?? 0) * weight;
     if (!byDoc.has(row.damDocumentId)) byDoc.set(row.damDocumentId, []);

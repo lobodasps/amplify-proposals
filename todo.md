@@ -33,6 +33,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ### Launch Generation Reliability
 - [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
+- [x] Fix launch-session document-chunk full-text search when PostgreSQL UUID document IDs are bound as a multi-value `ANY(...::uuid[])` expression; restore evidence retrieval for saved sessions — valid UUIDs are bound as explicit typed ARRAY elements, invalid IDs are ignored, and FTS failure returns tag-only matches rather than crashing Launch
 - [x] Add durable Launch session checkpoint state and persist reviewed RFP fields, completed stage status, per-stage errors, retry counts, and Go/No-Go output
 - [x] Restore `/launch?session=<id>` directly to the furthest completed step without repeating upload, classification, or extraction — active extraction sessions poll persisted state; review/decision sessions restore from saved checkpoints without re-uploading
 - [x] Add an isolated Retry Go/No-Go action that uses persisted review fields and does not rerun ingestion
