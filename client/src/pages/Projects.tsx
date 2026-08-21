@@ -18,10 +18,11 @@ import { toast } from "sonner";
 import {
   Plus, Search, Building2, MapPin, DollarSign, Calendar,
   Paperclip, Upload, Trash2, FileText, Image, File, Download,
-  ChevronRight, Filter, Users, Eye, Loader2,
+  ChevronRight, Filter, Users, Eye, Loader2, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildProjectSheetIntakeUrl } from "@/lib/knowledgeHubLinks";
+import { buildKnowledgeHubDocumentUrl, buildProjectSheetIntakeUrl } from "@/lib/knowledgeHubLinks";
+import { isResumeDerivedProjectSheet } from "@/lib/projectEvidencePresentation";
 
 const SERVICE_COLORS: Record<string, string> = {
   "Special Inspections": "bg-violet-100 text-violet-700 border-violet-200",
@@ -305,41 +306,55 @@ function AttachmentPanel({ project, onClose }: { project: any; onClose: () => vo
               <Skeleton className="h-14 w-full rounded-lg" />
             ) : (
               <div className="space-y-2">
-                {hubDocs.map((doc: any) => (
-                  <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-                    <div className="w-9 h-9 rounded-md bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                {hubDocs.map((doc: any) => {
+                  const resumeDerived = isResumeDerivedProjectSheet(doc);
+                  return (
+                    <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                      <div className="w-9 h-9 rounded-md bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{doc.title}</p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {doc.docType?.replace(/_/g, " ")}
+                          {resumeDerived ? ` · Extracted from ${doc.staffName ?? "staff"}'s resume` : ""}
+                          {!resumeDerived && doc.companyTag ? ` · ${doc.companyTag}` : ""}
+                          {doc.processingStatus === "indexed" ? " · Indexed" : ""}
+                        </p>
+                      </div>
+                      {resumeDerived ? (
+                        <Button asChild variant="ghost" size="icon" className="h-7 w-7" title="View extracted project sheet in Knowledge Hub">
+                          <a href={buildKnowledgeHubDocumentUrl(doc.id)}>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Open attached file"
+                            onClick={() => launchFreshFile("hub", doc.id)}
+                            disabled={launchingFileId === doc.id}
+                          >
+                            {launchingFileId === doc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Download attached file"
+                            onClick={() => launchFreshFile("hub", doc.id)}
+                            disabled={launchingFileId === doc.id}
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{doc.title}</p>
-                      <p className="text-xs text-muted-foreground capitalize">
-                        {doc.docType?.replace(/_/g, " ")}
-                        {doc.companyTag ? ` · ${doc.companyTag}` : ""}
-                        {doc.processingStatus === "indexed" ? " · Indexed" : ""}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="Open attached file"
-                      onClick={() => launchFreshFile("hub", doc.id)}
-                      disabled={launchingFileId === doc.id}
-                    >
-                      {launchingFileId === doc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="Download attached file"
-                      onClick={() => launchFreshFile("hub", doc.id)}
-                      disabled={launchingFileId === doc.id}
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

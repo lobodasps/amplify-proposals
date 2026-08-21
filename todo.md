@@ -77,6 +77,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Compare the live Supabase PostgreSQL catalog against `drizzle/schema.ts`, including tables, columns, types, defaults, nullability, primary/foreign keys, and indexes; document any drift before applying migrations — verified 2026-08-20: all 48 Drizzle tables exist with 0 table/column/type/nullability/default/PK/unique/index drift; 66 additional public tables belong to the pre-existing v0/timekeeping app
 
 ### Projects Information Architecture
+- [x] Investigate and correct the unexpected Ritesh Patel résumé launch from the Tompkinsville Project Experience record; preserve its valid extracted project sheet while routing résumé-derived sheets to the Knowledge Hub project-content view rather than launching the source résumé
 - [x] Assess apparent redundancy between Firm Records → Projects and Knowledge Hub project sheets; document the recommended canonical-record (`amp_projects`) to evidence-document (`dam_documents`) relationship in `PROJECTS_INFORMATION_ARCHITECTURE_RECOMMENDATION.md`
 - [x] Rename the canonical Projects experience surface to Project Experience; preserve `amp_projects` as the record of truth
 - [x] Add create-or-link Project Experience controls to Knowledge Hub project-sheet intake; persist `dam_documents.projectId` for newly associated documents without rewriting legacy free-text associations
