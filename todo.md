@@ -33,6 +33,13 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ### Launch Generation Reliability
 - [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
+- [x] Fix proposal scoring when unresolved `{{evaluationCriteria}}` or `{{contentToScore}}` placeholders reach the model: assemble real extracted criteria and completed proposal text, and display invalid runs as Not Scored rather than 0/100
+- [x] Restore `/proposals/:id` tRPC JSON responses after the partial saved-score update; resolve all TypeScript/server compile errors so API requests cannot fall back to HTML
+- [x] Fix saved Full Draft Win Themes values that render as raw JSON instead of structured theme cards — fenced JSON saved in `proposal_sections` now parses into theme cards; malformed payloads use a readable recovery view
+- [x] Replace misleading `Score 0/100` in saved Full Draft when no proposal score exists with normalized persisted scoring or an explicit unscored state — historical placeholder-driven scores show Not Scored with explanatory detail
+- [x] Add regression coverage for fenced JSON Win Themes saved in proposal_sections and placeholder-driven historical zero score state
+- [x] Fix all remaining section-level and full-draft `proposal_scorer` invocations to pass `evaluationCriteria` and `contentToScore`, not legacy `sectionContent` or `technicalApproach` variables
+- [x] Add regression coverage across full-proposal and section-level scoring paths proving unresolved placeholders never reach the scorer prompt and invalid inputs persist as unscored
 - [x] Fix Proposal Workspace Skill Pipeline clipping so skills 7–8 and the Full Draft action remain reachable below skill 6 at normal viewport heights — the full list now owns an explicit native scroll viewport with `min-h-0`; sidebar header and footer remain fixed
 - [x] Fix Proposal Scorecard rendering when saved AI scoring fields such as `gaps` are strings, objects, or null rather than arrays; normalize at the boundary and guard all list displays — strings, JSON strings, objects, and null normalize safely for criteria gaps, top gaps, improvements, unsupported claims, and coverage fields
 - [x] Fix Draft Mode full-proposal page overflow so users can scroll the workspace page beyond the viewport, not only the inner proposal panel — Full Draft now uses the AppLayout page scroll container; workflow views retain bounded inner scrolling

@@ -29,6 +29,7 @@ import { shouldPollForSkillCompletion } from "@/lib/draftSkillExecution";
 import { getWinThemeDraftDisplay } from "@/lib/winThemeDraft";
 import { getProposalWorkspaceLayout } from "@/lib/proposalWorkspaceLayout";
 import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
+import { getProposalScoreDisplay } from "../../../shared/proposalScoring";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -530,7 +531,8 @@ export default function ProposalWorkspace() {
   const progressPct = Math.round(
     (resumeState.completedCount / WORKFLOW_SKILL_NAMES.length) * 100
   );
-  const liveScore = session?.liveScore ?? null;
+  const proposalScoreDisplay = getProposalScoreDisplay(session?.liveScore, session?.liveScoreDetails);
+  const liveScore = proposalScoreDisplay.kind === "scored" ? proposalScoreDisplay.score : null;
 
   // ── Skill display name lookup ──────────────────────────────────────────────
   const skillDisplayName = useCallback(
@@ -865,25 +867,35 @@ export default function ProposalWorkspace() {
 
             <div className="flex items-center gap-3 shrink-0">
               {/* Live score badge */}
-              {liveScore !== null && (
+              {proposalScoreDisplay.kind === "scored" && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Badge
                       className={[
                         "text-sm font-bold px-3 py-1 cursor-default",
-                        liveScore >= 80
+                        proposalScoreDisplay.score >= 80
                           ? "bg-emerald-500 hover:bg-emerald-500 text-white"
-                          : liveScore >= 60
+                          : proposalScoreDisplay.score >= 60
                             ? "bg-amber-500 hover:bg-amber-500 text-white"
                             : "bg-red-500 hover:bg-red-500 text-white",
                       ].join(" ")}
                     >
-                      {liveScore}/100
+                      {proposalScoreDisplay.score}/100
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent>
                     Proposal Score (from Skill 8 — Proposal Scorer)
                   </TooltipContent>
+                </Tooltip>
+              )}
+              {proposalScoreDisplay.kind === "unscored" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300">
+                      Not Scored
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">{proposalScoreDisplay.reason}</TooltipContent>
                 </Tooltip>
               )}
 
@@ -1251,18 +1263,23 @@ export default function ProposalWorkspace() {
                           {proposalSections?.length ?? 0} sections · Edit any section inline, changes save automatically.
                         </p>
                       </div>
-                      {liveScore !== null && (
+                      {proposalScoreDisplay.kind === "scored" && (
                         <Badge
                           className={[
                             "text-sm font-bold px-3 py-1",
-                            liveScore >= 80
+                            proposalScoreDisplay.score >= 80
                               ? "bg-emerald-500 hover:bg-emerald-500 text-white"
-                              : liveScore >= 60
+                              : proposalScoreDisplay.score >= 60
                                 ? "bg-amber-500 hover:bg-amber-500 text-white"
                                 : "bg-red-500 hover:bg-red-500 text-white",
                           ].join(" ")}
                         >
-                          Score: {liveScore}/100
+                          Score: {proposalScoreDisplay.score}/100
+                        </Badge>
+                      )}
+                      {proposalScoreDisplay.kind === "unscored" && (
+                        <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300" title={proposalScoreDisplay.reason}>
+                          Not Scored · Missing Evaluation Data
                         </Badge>
                       )}
                     </div>

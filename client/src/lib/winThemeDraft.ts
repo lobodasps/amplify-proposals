@@ -18,7 +18,9 @@ export type WinThemeDraftDisplay =
 export function parseWinThemeDraft(content: string | null | undefined): DraftWinThemeOutput | null {
   if (!content?.trim()) return null;
   try {
-    const parsed = JSON.parse(content) as unknown;
+    const trimmed = content.trim();
+    const json = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? trimmed;
+    const parsed = JSON.parse(json) as unknown;
     const candidates = Array.isArray(parsed)
       ? parsed
       : parsed && typeof parsed === "object" && Array.isArray((parsed as { winThemes?: unknown }).winThemes)
@@ -29,7 +31,7 @@ export function parseWinThemeDraft(content: string | null | undefined): DraftWin
     const winThemes = candidates.flatMap((candidate, index) => {
       if (!candidate || typeof candidate !== "object") return [];
       const value = candidate as Record<string, unknown>;
-      const title = String(value.title ?? value.name ?? `Win Theme ${index + 1}`).trim();
+      const title = String(value.title ?? value.name ?? `Win Theme ${index + 1}`).trim().replace(/^(\*\*|__)(.*)(\*\*|__)$/, "$2");
       const statement = String(value.statement ?? value.theme ?? value.description ?? "").trim();
       const rationale = String(value.rationale ?? value.whyItMatters ?? "").trim();
       const proof = String(value.proof ?? value.proofPoint ?? value.evidence ?? "").trim();
@@ -56,7 +58,7 @@ export function getWinThemeDraftDisplay(content: string | null | undefined): Win
   const data = parseWinThemeDraft(content);
   if (data) return { kind: "cards", data };
   const trimmed = content?.trim() ?? "";
-  return trimmed.startsWith("{") || trimmed.startsWith("[")
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || /^```(?:json)?/i.test(trimmed)
     ? { kind: "recovery" }
     : { kind: "prose" };
 }

@@ -46,6 +46,13 @@ import {
 import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
 import { shouldExtractRfpTextBeforeLlm } from "../../shared/launchDocumentProcessing";
 import {
+  assembleProposalContent,
+  buildSectionScoringInput,
+  createUnscoredScoreOutput,
+  formatEvaluationCriteria,
+  getScoringReadiness,
+} from "../../shared/proposalScoring";
+import {
   buildGoNoGoInputHash,
   emptyLaunchState,
   readLaunchState,
@@ -468,8 +475,18 @@ async function buildSkillVariables(
         "proposal_scorer",
         rfpServiceLinesArr
       );
+      const contentToScore = assembleProposalContent([
+        { title: "Win Themes", content: winThemesOutput },
+        { title: "Technical Outline", content: outputs.technical_outline },
+        { title: "Technical Approach", content: technicalApproach },
+        { title: "Key Personnel", content: keyPersonnelOutput },
+        { title: "Past Performance", content: pastPerformance },
+        { title: "Fee Estimate", content: outputs.fee_estimator },
+      ]);
       return {
         rfpContext,
+        evaluationCriteria: evalCriteria,
+        contentToScore,
         evalCriteria,
         agency,
         firmName,
@@ -1590,20 +1607,31 @@ export const rfpSessionsRouter = router({
             }
           : undefined;
 
-        const result = await invokeLLMWithSkill({
-          skillType,
-          variables,
-          ...(responseFormat ? { responseFormat } : {}),
-          ...(systemOverride ? { systemOverride } : {}),
-          ...(extraUserContent && extraUserContent.length > 0 ? { extraUserContent } : {}),
-          ...(onRetry ? { onRetry } : {}),
-        });
+        if (input.skillName === "proposal_scorer") {
+          const readiness = getScoringReadiness(String(variables.evaluationCriteria ?? ""), String(variables.contentToScore ?? ""));
+          if (!readiness.ready) {
+            llmOutput = JSON.stringify(createUnscoredScoreOutput(readiness.reason!));
+            usedModel = "input-validation";
+            usedProvider = "internal";
+          }
+        }
 
-        llmOutput = result.choices[0]?.message?.content ?? "";
-        usedModel = result._model;
-        usedProvider = result._provider;
-        usedDefaultModel = result._usedDefaultModel ?? false;
-        defaultModelName = result._defaultModelName ?? undefined;
+        if (!llmOutput) {
+          const result = await invokeLLMWithSkill({
+            skillType,
+            variables,
+            ...(responseFormat ? { responseFormat } : {}),
+            ...(systemOverride ? { systemOverride } : {}),
+            ...(extraUserContent && extraUserContent.length > 0 ? { extraUserContent } : {}),
+            ...(onRetry ? { onRetry } : {}),
+          });
+
+          llmOutput = result.choices[0]?.message?.content ?? "";
+          usedModel = result._model;
+          usedProvider = result._provider;
+          usedDefaultModel = result._usedDefaultModel ?? false;
+          defaultModelName = result._defaultModelName ?? undefined;
+        }
       } catch (llmError) {
         // ── LLM failed inside setImmediate: write error state to DB (no throw —
         //    throwing here would cause an unhandled promise rejection).
@@ -1702,7 +1730,7 @@ export const rfpSessionsRouter = router({
               try {
                 const parsed = JSON.parse(llmOutput);
                 return {
-                  liveScore: typeof parsed.overallScore === "number" ? parsed.overallScore : null,
+                  liveScore: parsed.scoreStatus === "unscored" ? null : typeof parsed.overallScore === "number" ? parsed.overallScore : null,
                   liveScoreDetails: parsed,
                 };
               } catch {
@@ -2124,22 +2152,32 @@ export const rfpSessionsRouter = router({
           if (skillMapping.scorerSkill) {
             try {
               const scorerVars = await buildSkillVariables("proposal_scorer", session);
+              const sectionScoring = buildSectionScoringInput(
+                String(scorerVars.evaluationCriteria ?? ""),
+                input.sectionTitle,
+                content
+              );
               scorerVars.sectionType = sectionType;
               scorerVars.sectionTitle = input.sectionTitle;
-              scorerVars.sectionContent = content;
-              scorerVars.technicalApproach = content; // scorer expects this variable
+              scorerVars.evaluationCriteria = sectionScoring.evaluationCriteria;
+              scorerVars.contentToScore = sectionScoring.contentToScore;
 
-              const scorerResult = await invokeLLMWithSkill({
-                skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
-                variables: scorerVars,
-                responseFormat: getResponseFormat("proposal_scorer"),
-              });
+              if (!sectionScoring.readiness.ready) {
+                scorerOutput = createUnscoredScoreOutput(sectionScoring.readiness.reason!);
+                sectionStatus = "needs_attention";
+              } else {
+                const scorerResult = await invokeLLMWithSkill({
+                  skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
+                  variables: scorerVars,
+                  responseFormat: getResponseFormat("proposal_scorer"),
+                });
 
-              const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
-              const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
-              score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
-              scorerOutput = scorerParsed;
-              sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+                const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
+                const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
+                score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
+                scorerOutput = scorerParsed;
+                sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+              }
             } catch (scorerErr) {
               console.error(`[generateSection] scorer failed for ${sectionType}:`, scorerErr);
               sectionStatus = "complete"; // still complete even if scorer fails
@@ -2309,22 +2347,32 @@ export const rfpSessionsRouter = router({
               if (skillMapping.scorerSkill) {
                 try {
                   const scorerVars = await buildSkillVariables("proposal_scorer", freshSession);
+                  const sectionScoring = buildSectionScoringInput(
+                    String(scorerVars.evaluationCriteria ?? ""),
+                    title,
+                    content
+                  );
                   scorerVars.sectionType = sectionType;
                   scorerVars.sectionTitle = title;
-                  scorerVars.sectionContent = content;
-                  scorerVars.technicalApproach = content;
+                  scorerVars.evaluationCriteria = sectionScoring.evaluationCriteria;
+                  scorerVars.contentToScore = sectionScoring.contentToScore;
 
-                  const scorerResult = await invokeLLMWithSkill({
-                    skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
-                    variables: scorerVars,
-                    responseFormat: getResponseFormat("proposal_scorer"),
-                  });
+                  if (!sectionScoring.readiness.ready) {
+                    scorerOutput = createUnscoredScoreOutput(sectionScoring.readiness.reason!);
+                    sectionStatus = "needs_attention";
+                  } else {
+                    const scorerResult = await invokeLLMWithSkill({
+                      skillType: "proposal_scorer" as Parameters<typeof invokeLLMWithSkill>[0]["skillType"],
+                      variables: scorerVars,
+                      responseFormat: getResponseFormat("proposal_scorer"),
+                    });
 
-                  const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
-                  const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
-                  score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
-                  scorerOutput = scorerParsed;
-                  sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+                    const scorerRaw = scorerResult.choices[0]?.message?.content ?? "{}";
+                    const scorerParsed = JSON.parse(typeof scorerRaw === "string" ? scorerRaw : JSON.stringify(scorerRaw));
+                    score = typeof scorerParsed.overallScore === "number" ? scorerParsed.overallScore : null;
+                    scorerOutput = scorerParsed;
+                    sectionStatus = score != null && score >= 70 ? "complete" : "needs_attention";
+                  }
                 } catch (scorerErr) {
                   console.error(`[generateFullProposal] scorer failed for ${sectionType}:`, scorerErr);
                   sectionStatus = "complete";

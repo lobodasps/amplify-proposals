@@ -10,6 +10,15 @@ describe("parseWinThemeDraft", () => {
     });
   });
 
+  it("parses the fenced JSON shape persisted by older Draft Mode sections", () => {
+    const output = parseWinThemeDraft("```json\n{\"winThemes\":[{\"themeId\":\"WT1\",\"title\":\"**Remedial Design**\",\"statement\":\"Integrated delivery\",\"rationale\":\"NJDEP alignment\"}]}\n```");
+    expect(output?.winThemes[0]).toMatchObject({
+      title: "Remedial Design",
+      statement: "Integrated delivery",
+      rationale: "NJDEP alignment",
+    });
+  });
+
   it("leaves prose and malformed JSON to the ordinary proposal renderer", () => {
     expect(parseWinThemeDraft("A narrative win theme")).toBeNull();
     expect(parseWinThemeDraft("{not-json")).toBeNull();
