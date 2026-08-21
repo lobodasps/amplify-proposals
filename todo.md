@@ -33,6 +33,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ### Launch Generation Reliability
 - [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
+- [x] Fix Proposal Scorecard rendering when saved AI scoring fields such as `gaps` are strings, objects, or null rather than arrays; normalize at the boundary and guard all list displays — strings, JSON strings, objects, and null normalize safely for criteria gaps, top gaps, improvements, unsupported claims, and coverage fields
 - [x] Fix Draft Mode full-proposal page overflow so users can scroll the workspace page beyond the viewport, not only the inner proposal panel — Full Draft now uses the AppLayout page scroll container; workflow views retain bounded inner scrolling
 - [x] Render Win Themes structured output as readable proposal theme cards or prose, never raw JSON, while preserving structured fields for downstream use — valid saved JSON renders existing Win Theme cards; prose or malformed values retain safe narrative fallback
 - [x] Prevent malformed or legacy Win Themes JSON from falling through to raw proposal text; render a readable recovery view with an actionable format warning instead

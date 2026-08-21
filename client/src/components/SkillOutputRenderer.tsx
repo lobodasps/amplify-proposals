@@ -16,6 +16,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from "react";
+import { normalizeProposalScorecard } from "@/lib/proposalScorecard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -548,23 +549,24 @@ function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
   );
 }
 
-function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
-  const overall = data.overallScore ?? data.complianceScore ?? 0;
+export function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
+  const normalized = normalizeProposalScorecard(data);
+  const overall = normalized.overallScore;
   // Phase 7 Track B: deterministic sort — score desc, then criterion name asc (stable)
-  const rawCriteria = data.criteria ?? data.criteriaScores ?? [];
+  const rawCriteria = normalized.criteria;
   const criteria = [...rawCriteria].sort((a, b) => {
     const scoreDiff = b.score - a.score;
     if (scoreDiff !== 0) return scoreDiff;
     return a.criterion.localeCompare(b.criterion);
   });
-  const gaps = data.topGaps ?? [];
+  const gaps = normalized.topGaps;
   // Phase 7 Track B: prefer topImprovements, fall back to improvements
-  const improvements = data.topImprovements ?? data.improvements ?? [];
-  const winThemesCoverage = Array.isArray(data.winThemesCoverage) && data.winThemesCoverage.length > 0
-    ? data.winThemesCoverage
+  const improvements = normalized.topImprovements.length > 0 ? normalized.topImprovements : normalized.improvements;
+  const winThemesCoverage = normalized.winThemesCoverage.length > 0
+    ? normalized.winThemesCoverage
     : null;
-  const unsupportedClaims = data.unsupportedClaims ?? [];
-  const evidenceCoverage = data.evidenceCoverage;
+  const unsupportedClaims = normalized.unsupportedClaims;
+  const evidenceCoverage = normalized.evidenceCoverage;
 
   const overallColor =
     overall >= 80
@@ -583,9 +585,9 @@ function ProposalScorecard({ data }: { data: ProposalScorerOutput }) {
             Overall Proposal Score
           </p>
           <p className={`text-3xl font-bold ${overallColor}`}>{overall}/100</p>
-          {data.summary && (
+          {normalized.summary && (
             <p className="text-xs text-muted-foreground mt-1 max-w-sm leading-relaxed">
-              {data.summary}
+              {normalized.summary}
             </p>
           )}
         </div>
@@ -1255,7 +1257,7 @@ function JsonRenderer({
     case "win_themes":
       return <WinThemeCards data={parsed as WinThemeOutput} />;
     case "proposal_scorer":
-      return <ProposalScorecard data={parsed as ProposalScorerOutput} />;
+      return <ProposalScorecard data={normalizeProposalScorecard(parsed) as ProposalScorerOutput} />;
     // Track A (Phase 7): wire dedicated renderer components
     case "requirements_matrix_builder":
       return <ComplianceChecklist data={parsed as ComplianceChecklistOutput} />;
