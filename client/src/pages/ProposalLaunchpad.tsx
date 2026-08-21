@@ -28,9 +28,13 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import * as fflate from "fflate";
 import AppLayout from "@/components/AppLayout";
+import { LaunchRecoveryControls } from "@/components/LaunchRecoveryControls";
 import { trpc } from "@/lib/trpc";
 import { getMissingCriticalRfpFields } from "@/lib/launchExtraction";
+import { getGoNoGoActionLabel, getLaunchRestoreNotice } from "@/lib/launchRecoveryUi";
+import { restoreLaunchManifest } from "@/lib/launchSessionManifest";
 import { resolveLaunchClassificationLabel } from "../../../shared/launchDocumentProcessing";
+import { buildGoNoGoInputHash, resolveLaunchRestoreTarget, type LaunchReviewData } from "../../../shared/launchWorkflow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -178,11 +182,15 @@ const MANUAL_SERVICE_LINES = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function detectFileType(file: File): FileType {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".pdf") || file.type === "application/pdf") return "pdf";
+  return detectFileTypeFromMetadata(file.name, file.type);
+}
+
+function detectFileTypeFromMetadata(fileName: string, mimeType: string): FileType {
+  const name = fileName.toLowerCase();
+  if (name.endsWith(".pdf") || mimeType === "application/pdf") return "pdf";
   if (name.endsWith(".docx") || name.endsWith(".doc")) return "docx";
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) return "xlsx";
-  if (name.endsWith(".zip") || file.type.includes("zip")) return "zip";
+  if (name.endsWith(".zip") || mimeType.includes("zip")) return "zip";
   return "other";
 }
 
@@ -390,8 +398,9 @@ function FileTypeBadge({ type }: { type: FileType }) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ProposalLaunchpad() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { activeEntityId } = useEntityContext();
+  const sessionFromUrl = new URLSearchParams(location.split("?")[1] ?? "").get("session");
 
   // ── Entry mode ────────────────────────────────────────────────────────────
   const [entryMode, setEntryMode] = useState<EntryMode>("choose");
@@ -404,11 +413,16 @@ export default function ProposalLaunchpad() {
 
   // ── File queue ────────────────────────────────────────────────────────────
   const [queue, setQueue] = useState<QueuedFile[]>([]);
+  const [restoredManifest, setRestoredManifest] = useState<ReturnType<typeof restoreLaunchManifest>>([]);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState("");
 
   // ── Session state ─────────────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [lastGoNoGoInputHash, setLastGoNoGoInputHash] = useState<string | null>(null);
+  const [showReextractConfirm, setShowReextractConfirm] = useState(false);
+  const restoredSessionRef = useRef<string | null>(null);
+  const activeProcessingSessionRef = useRef<string | null>(null);
 
   // ── Extracted RFP data (editable) ────────────────────────────────────────
   const [rfpTitle, setRfpTitle] = useState("");
@@ -486,7 +500,81 @@ export default function ProposalLaunchpad() {
   const createProposal = trpc.proposals.create.useMutation();
   const linkSession = trpc.rfpSessions.linkToProposal.useMutation();
   const createOpportunity = trpc.opportunities.create.useMutation();
+  const saveLaunchReview = trpc.rfpSessions.saveLaunchReview.useMutation();
+  const saveLaunchGoNoGo = trpc.rfpSessions.saveLaunchGoNoGo.useMutation();
+  const markLaunchGoNoGoFailed = trpc.rfpSessions.markLaunchGoNoGoFailed.useMutation();
+  const prepareLaunchReextract = trpc.rfpSessions.prepareLaunchReextract.useMutation();
   const utils = trpc.useUtils();
+  const { data: persistedLaunchSession, refetch: refetchPersistedLaunchSession } = trpc.rfpSessions.getLaunchState.useQuery(
+    { sessionId: sessionFromUrl ?? "00000000-0000-0000-0000-000000000000" },
+    { enabled: Boolean(sessionFromUrl), refetchOnWindowFocus: false },
+  );
+
+  const launchReview: LaunchReviewData = {
+    title: rfpTitle,
+    agency: rfpAgency,
+    rfpNumber,
+    submissionDeadline: rfpDueDate,
+    estimatedValue: rfpEstValue,
+    serviceLines: rfpServiceLines,
+    scopeSummary: rfpSummary,
+  };
+  const currentGoNoGoInputHash = buildGoNoGoInputHash(launchReview);
+  const isStoredGoNoGoStale = Boolean(lastGoNoGoInputHash && lastGoNoGoInputHash !== currentGoNoGoInputHash);
+
+  const restorePersistedSession = useCallback((persisted: NonNullable<typeof persistedLaunchSession>) => {
+    const review = persisted.launchState.review;
+    const parserStatus = (persisted.workflowState as Record<string, { status?: string }>).rfp_parser?.status;
+    setSessionId(persisted.id);
+    setEntryMode("upload");
+    if (review) {
+      setRfpTitle(review.title ?? "");
+      setRfpAgency(review.agency ?? "");
+      setRfpNumber(review.rfpNumber ?? "");
+      setRfpDueDate(review.submissionDeadline ?? "");
+      setRfpEstValue(review.estimatedValue ?? "");
+      setRfpServiceLines(Array.isArray(review.serviceLines) ? review.serviceLines : []);
+      setRfpSummary(review.scopeSummary ?? "");
+    }
+    setRestoredManifest(restoreLaunchManifest(persisted.uploadedFiles));
+    const storedResult = persisted.launchState.goNoGo?.result;
+    if (storedResult && typeof storedResult === "object") {
+      setGoNoGoResult(storedResult as unknown as GoNoGoResult);
+      setLastGoNoGoInputHash(persisted.launchState.goNoGo?.inputHash ?? null);
+    }
+    const target = resolveLaunchRestoreTarget(persisted.launchState, parserStatus);
+    if (target === "processing") {
+      setProcessingStatus(getLaunchRestoreNotice(target));
+      setProcessingProgress(55);
+    }
+    setStep(target);
+  }, []);
+
+  useEffect(() => {
+    if (!persistedLaunchSession || activeProcessingSessionRef.current === persistedLaunchSession.id) return;
+    const parserStatus = (persistedLaunchSession.workflowState as Record<string, { status?: string }>).rfp_parser?.status ?? "pending";
+    const restoreKey = `${persistedLaunchSession.id}:${parserStatus}:${persistedLaunchSession.launchState.goNoGo?.status ?? "ready"}:${persistedLaunchSession.launchState.updatedAt}`;
+    if (restoredSessionRef.current === restoreKey) return;
+    restoredSessionRef.current = restoreKey;
+    restorePersistedSession(persistedLaunchSession);
+    if (parserStatus !== "running") toast.success(getLaunchRestoreNotice(resolveLaunchRestoreTarget(persistedLaunchSession.launchState, parserStatus)));
+  }, [persistedLaunchSession, restorePersistedSession]);
+
+  useEffect(() => {
+    if (!persistedLaunchSession || !sessionFromUrl) return;
+    const parserStatus = (persistedLaunchSession.workflowState as Record<string, { status?: string }>).rfp_parser?.status;
+    if (resolveLaunchRestoreTarget(persistedLaunchSession.launchState, parserStatus) !== "processing") return;
+    const interval = window.setInterval(() => { void refetchPersistedLaunchSession(); }, 2500);
+    return () => window.clearInterval(interval);
+  }, [persistedLaunchSession, sessionFromUrl, refetchPersistedLaunchSession]);
+
+  useEffect(() => {
+    if (!sessionId || step !== "review") return;
+    const timeout = window.setTimeout(() => {
+      saveLaunchReview.mutate({ sessionId, review: launchReview });
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [sessionId, step, rfpTitle, rfpAgency, rfpNumber, rfpDueDate, rfpEstValue, rfpServiceLines, rfpSummary]);
 
   // ── Firm profile for Quick Signal scoring ───────────────────────────────
   const { data: firmProfileData } = trpc.firmSettings.get.useQuery({ entityId: activeEntityId ?? undefined });
@@ -742,6 +830,11 @@ export default function ProposalLaunchpad() {
       addLog("Starting processing session", "info");
       const { sessionId: sid } = await createSession.mutateAsync({});
       setSessionId(sid);
+      // The current in-memory upload flow owns its queue. Mark it restored before
+      // adding the URL so the resume query only hydrates after a true reload/navigation.
+      restoredSessionRef.current = sid;
+      activeProcessingSessionRef.current = sid;
+      navigate(`/launch?session=${sid}`);
       setProcessingProgress(10);
 
       // 2. Upload all files sequentially, update queue status
@@ -911,6 +1004,7 @@ export default function ProposalLaunchpad() {
       setRfpSummary((parsed.scopeSummary ?? "") + xlsxNote);
 
       addLog("Extraction complete — ready for review", "success");
+      activeProcessingSessionRef.current = null;
       if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
       setProcessingProgress(100);
       setStep("review");
@@ -921,6 +1015,7 @@ export default function ProposalLaunchpad() {
         addLog(msg, "error");
       }
       toast.error(msg);
+      activeProcessingSessionRef.current = null;
       setStep("upload");
       setProcessingProgress(0);
       // Reset queue statuses
@@ -930,8 +1025,16 @@ export default function ProposalLaunchpad() {
 
   // ── Go/No-Go scoring ──────────────────────────────────────────────────────
   const handleRunGoNoGo = async () => {
+    if (sessionId && goNoGoResult && lastGoNoGoInputHash === currentGoNoGoInputHash) {
+      toast.info("Using the saved Go/No-Go analysis because the review inputs are unchanged.");
+      setStep("decision");
+      return;
+    }
     setStep("scoring");
     try {
+      if (sessionId) {
+        await saveLaunchReview.mutateAsync({ sessionId, review: launchReview });
+      }
       const estValue = rfpEstValue ? parseFloat(rfpEstValue.replace(/[^0-9.]/g, "")) : undefined;
       const result = await scoreGoNoGo.mutateAsync({
         pursuitTitle: rfpTitle,
@@ -941,14 +1044,74 @@ export default function ProposalLaunchpad() {
         dueDate: rfpDueDate || undefined,
         rfpSummary: rfpSummary || undefined,
       });
-      setGoNoGoResult(result as GoNoGoResult);
+      const persisted = sessionId
+        ? await saveLaunchGoNoGo.mutateAsync({
+            sessionId,
+            review: launchReview,
+            result: result as Record<string, unknown>,
+            provider: (result as { _provider?: string })._provider,
+            model: (result as { _model?: string })._model,
+          })
+        : null;
+      setGoNoGoResult((persisted?.result ?? result) as GoNoGoResult);
+      setLastGoNoGoInputHash(currentGoNoGoInputHash);
       if ((result as any)._usedDefaultModel) {
         toast.warning(`Your configured provider was unavailable. Analysis completed with ${(result as any)._defaultModelName ?? `${(result as any)._provider}/${(result as any)._model}`}.`);
       }
       setStep("decision");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Scoring failed";
+      if (sessionId) {
+        await markLaunchGoNoGoFailed.mutateAsync({ sessionId, error: msg }).catch(() => undefined);
+      }
       toast.error(msg);
+      setStep("review");
+    }
+  };
+
+  const handleExplicitReextract = async () => {
+    if (!sessionId) {
+      toast.error("This Launch session has not been saved yet.");
+      return;
+    }
+    setShowReextractConfirm(false);
+    activeProcessingSessionRef.current = sessionId;
+    setStep("processing");
+    setProcessingProgress(50);
+    setProcessingStatus("Preparing saved package for re-extraction…");
+    setStatusLog([]);
+    addLog("Explicit re-extraction requested; uploaded source files will be reused.", "warning");
+    try {
+      await prepareLaunchReextract.mutateAsync({ sessionId });
+      await executeSkill.mutateAsync({ sessionId, skillName: "rfp_parser", force: true });
+      const started = Date.now();
+      while (Date.now() - started < 15 * 60 * 1000) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        const refreshed = await utils.rfpSessions.getById.fetch({ id: sessionId });
+        const parser = (refreshed?.workflowState as Record<string, { status?: string; errorMessage?: string }> | null)?.rfp_parser;
+        if (parser?.status === "error") throw new Error(parser.errorMessage ?? "RFP re-extraction failed");
+        if (parser?.status !== "complete") continue;
+        const parsed = (refreshed?.extractedData ?? {}) as Partial<ParsedRfpData>;
+        setRfpTitle(parsed.projectTitle ?? "");
+        setRfpAgency(parsed.agency ?? "");
+        setRfpNumber(parsed.rfpNumber ?? "");
+        setRfpDueDate(parsed.submissionDeadline ?? "");
+        setRfpEstValue(parsed.estimatedValue ?? "");
+        setRfpServiceLines(Array.isArray(parsed.serviceLines) ? parsed.serviceLines : []);
+        setRfpSummary(parsed.scopeSummary ?? "");
+        setGoNoGoResult(null);
+        setLastGoNoGoInputHash(null);
+        activeProcessingSessionRef.current = null;
+        setProcessingProgress(100);
+        setStep("review");
+        toast.success("RFP information re-extracted from the saved package.");
+        return;
+      }
+      throw new Error("RFP re-extraction timed out. Your previous extracted details are still saved.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "RFP re-extraction failed";
+      activeProcessingSessionRef.current = null;
+      toast.error(message);
       setStep("review");
     }
   };
@@ -1049,7 +1212,12 @@ export default function ProposalLaunchpad() {
     setStep("upload");
     setEntryMode("choose");
     setQueue([]);
+    setRestoredManifest([]);
     setSessionId(null);
+    setLastGoNoGoInputHash(null);
+    restoredSessionRef.current = null;
+    activeProcessingSessionRef.current = null;
+    navigate("/launch");
     setProcessingProgress(0);
     setProcessingStatus("");
     setRfpTitle("");
@@ -1081,6 +1249,22 @@ export default function ProposalLaunchpad() {
         { label: "Extract Info", active: stepIndex >= 2 },
         { label: "Go/No-Go", active: stepIndex >= 4 },
       ];
+
+  const packageManifest = queue.length > 0
+    ? queue.map((entry) => ({
+        id: entry.id,
+        name: entry.file.name,
+        type: entry.type,
+        label: entry.label,
+        status: entry.status,
+      }))
+    : restoredManifest.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        type: entry.type,
+        label: entry.label,
+        status: "done" as const,
+      }));
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1760,18 +1944,18 @@ export default function ProposalLaunchpad() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  Package Processed — {queue.length} file{queue.length !== 1 ? "s" : ""}
+                  Package Processed — {packageManifest.length} file{packageManifest.length !== 1 ? "s" : ""}
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="space-y-1.5">
-                  {queue.map((entry) => {
+                  {packageManifest.map((entry) => {
                     const tier = LABEL_TIER_MAP[entry.label as RfpFileLabel] ?? "metadata_only";
                     const { label: tierLabel, className: tierClass } = TIER_BADGE[tier];
                     return (
                       <div key={entry.id} className="flex items-center gap-2.5 py-1.5 border-b border-border/50 last:border-0">
                         <FileTypeIcon type={entry.type} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        <span className="text-sm flex-1 truncate">{entry.file.name}</span>
+                        <span className="text-sm flex-1 truncate">{entry.name}</span>
                         <FileTypeBadge type={entry.type} />
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{entry.label}</Badge>
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tierClass} shrink-0 whitespace-nowrap`}>
@@ -1910,22 +2094,17 @@ export default function ProposalLaunchpad() {
               </CardContent>
             </Card>
 
-            {/* CTA */}
-            <div className="flex items-center justify-between gap-4">
-              <Button variant="ghost" size="sm" onClick={handleReset} className="text-muted-foreground">
-                <ArrowLeft className="w-4 h-4 mr-1.5" />
-                Start Over
-              </Button>
-              <Button
-                size="lg"
-                onClick={handleRunGoNoGo}
-                disabled={!rfpTitle.trim()}
-                className="gap-2"
-              >
-                Run Go/No-Go Analysis
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+            <LaunchRecoveryControls
+              hasSession={Boolean(sessionId)}
+              canRun={Boolean(rfpTitle.trim())}
+              isScoring={scoreGoNoGo.isPending}
+              hasSavedResult={Boolean(goNoGoResult)}
+              isCurrentResult={Boolean(goNoGoResult && lastGoNoGoInputHash === currentGoNoGoInputHash)}
+              isStaleResult={isStoredGoNoGoStale}
+              onStartOver={handleReset}
+              onRunGoNoGo={handleRunGoNoGo}
+              onReextract={handleExplicitReextract}
+            />
           </div>
         )}
 

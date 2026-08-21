@@ -981,6 +981,8 @@ export const rfpSessions = pgTable("rfp_sessions", {
   skillOutputs: jsonb("skillOutputs"),
   // Workflow state
   workflowState: jsonb("workflowState"),
+  // Launchpad checkpoint state: reviewed RFP fields, stage recovery, and Go/No-Go result reuse
+  launchState: jsonb("launchState"),
   // Valid values: not_started, in_progress, complete, error
   sessionStatus: text("sessionStatus").default("not_started").notNull(),
   // Live proposal score

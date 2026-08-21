@@ -45,6 +45,13 @@ import {
 } from "../../shared/proposalSections";
 import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
 import { shouldExtractRfpTextBeforeLlm } from "../../shared/launchDocumentProcessing";
+import {
+  buildGoNoGoInputHash,
+  emptyLaunchState,
+  readLaunchState,
+  recordLaunchStage,
+  type LaunchReviewData,
+} from "../../shared/launchWorkflow";
 
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
@@ -58,6 +65,28 @@ const workflowSkillNameSchema = z.enum([
   "fee_estimator",
   "proposal_scorer",
 ] as const);
+
+const launchReviewSchema = z.object({
+  title: z.string(),
+  agency: z.string(),
+  rfpNumber: z.string(),
+  submissionDeadline: z.string(),
+  estimatedValue: z.string(),
+  serviceLines: z.array(z.string()),
+  scopeSummary: z.string(),
+});
+
+function reviewFromParsedRfp(parsed: Partial<ParsedRfpData>): LaunchReviewData {
+  return {
+    title: parsed.projectTitle ?? "",
+    agency: parsed.agency ?? "",
+    rfpNumber: parsed.rfpNumber ?? "",
+    submissionDeadline: parsed.submissionDeadline ?? "",
+    estimatedValue: parsed.estimatedValue ?? "",
+    serviceLines: Array.isArray(parsed.serviceLines) ? parsed.serviceLines : [],
+    scopeSummary: parsed.scopeSummary ?? "",
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -690,6 +719,7 @@ export const rfpSessionsRouter = router({
           sessionStatus: "not_started",
           workflowState: initialWorkflowState,
           skillOutputs: {},
+          launchState: emptyLaunchState(),
           createdBy: ctx.user.id,
         })
         .returning({ id: rfpSessions.id });
@@ -709,6 +739,137 @@ export const rfpSessionsRouter = router({
         .where(eq(rfpSessions.id, input.id))
         .limit(1);
       return rows[0] ?? null;
+    }),
+
+  /** Returns the durable state needed to resume Launch after navigation, refresh, or a stage failure. */
+  getLaunchState: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) return null;
+      const parsed = (session.extractedData ?? {}) as Partial<ParsedRfpData>;
+      const launchState = readLaunchState(session.launchState);
+      return {
+        id: session.id,
+        uploadedFiles: session.uploadedFiles ?? [],
+        workflowState: session.workflowState ?? {},
+        launchState: {
+          ...launchState,
+          review: launchState.review ?? reviewFromParsedRfp(parsed),
+        },
+      };
+    }),
+
+  /** Persists reviewer-confirmed RFP data before scoring and marks prior Go/No-Go output stale if inputs changed. */
+  saveLaunchReview: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid(), review: launchReviewSchema }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      const inputHash = buildGoNoGoInputHash(input.review);
+      const state = recordLaunchStage(session.launchState, "review", "complete", "Review details saved");
+      const previousGoNoGo = state.goNoGo;
+      const goNoGo = previousGoNoGo?.inputHash && previousGoNoGo.inputHash !== inputHash
+        ? { ...previousGoNoGo, status: "ready" as const }
+        : previousGoNoGo;
+      const launchState = {
+        ...state,
+        currentStage: goNoGo?.status === "complete" ? "complete" as const : "review" as const,
+        stageStatus: { ...state.stageStatus, review: "complete" as const, go_no_go: goNoGo?.status === "complete" ? "complete" as const : "ready" as const },
+        review: input.review,
+        ...(goNoGo ? { goNoGo } : {}),
+      };
+      await db.update(rfpSessions).set({ launchState, updatedAt: new Date() }).where(eq(rfpSessions.id, input.sessionId));
+      return { success: true, inputHash, reusedResult: goNoGo?.status === "complete" && goNoGo.inputHash === inputHash };
+    }),
+
+  /** Stores an isolated Go/No-Go result so a refresh or later return never re-runs extraction. */
+  saveLaunchGoNoGo: protectedProcedure
+    .input(z.object({
+      sessionId: z.string().uuid(),
+      review: launchReviewSchema,
+      result: z.record(z.string(), z.unknown()),
+      provider: z.string().optional(),
+      model: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      const inputHash = buildGoNoGoInputHash(input.review);
+      const current = readLaunchState(session.launchState);
+      if (current.goNoGo?.status === "complete" && current.goNoGo.inputHash === inputHash && current.goNoGo.result) {
+        return { result: current.goNoGo.result, cached: true, inputHash };
+      }
+      const stage = recordLaunchStage(current, "go_no_go", "complete", "Go/No-Go analysis completed");
+      const launchState = {
+        ...stage,
+        currentStage: "complete" as const,
+        stageStatus: { ...stage.stageStatus, go_no_go: "complete" as const, complete: "complete" as const },
+        review: input.review,
+        goNoGo: {
+          status: "complete" as const,
+          inputHash,
+          result: input.result,
+          ...(input.provider ? { provider: input.provider } : {}),
+          ...(input.model ? { model: input.model } : {}),
+          completedAt: Date.now(),
+        },
+      };
+      await db.update(rfpSessions).set({ launchState, updatedAt: new Date() }).where(eq(rfpSessions.id, input.sessionId));
+      return { result: input.result, cached: false, inputHash };
+    }),
+
+  /** Preserves extraction and review while recording a scoring failure that can be retried in isolation. */
+  markLaunchGoNoGoFailed: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid(), error: z.string().max(1000) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      const current = readLaunchState(session.launchState);
+      const stage = recordLaunchStage(current, "go_no_go", "failed", input.error);
+      const retries = (stage.retryCounts.go_no_go ?? 0) + 1;
+      const launchState = {
+        ...stage,
+        currentStage: "review" as const,
+        stageStatus: { ...stage.stageStatus, go_no_go: "failed" as const },
+        retryCounts: { ...stage.retryCounts, go_no_go: retries },
+        goNoGo: { ...(stage.goNoGo ?? { status: "failed" as const }), status: "failed" as const, error: input.error },
+      };
+      await db.update(rfpSessions).set({ launchState, updatedAt: new Date() }).where(eq(rfpSessions.id, input.sessionId));
+      return { success: true, retries };
+    }),
+
+  /** Explicitly prepares an already-uploaded package for expensive RFP re-extraction; it never runs implicitly. */
+  prepareLaunchReextract: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      const current = readLaunchState(session.launchState);
+      const stage = recordLaunchStage(current, "extract", "running", "Explicit re-extraction requested");
+      const launchState = {
+        ...stage,
+        currentStage: "extract" as const,
+        retryCounts: { ...stage.retryCounts, extract: (stage.retryCounts.extract ?? 0) + 1 },
+        goNoGo: { status: "ready" as const },
+      };
+      await db.update(rfpSessions).set({ launchState, sessionStatus: "in_progress", updatedAt: new Date() }).where(eq(rfpSessions.id, input.sessionId));
+      return { success: true };
     }),
 
   // ── Phase 6: Get evidence sources for a session (Sources panel) ───────────
@@ -832,9 +993,18 @@ export const rfpSessionsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+      const uploadStage = recordLaunchStage(session.launchState, "upload", "complete", `${input.files.length} source file(s) saved`);
+      const launchState = {
+        ...uploadStage,
+        currentStage: "extract" as const,
+        stageStatus: { ...uploadStage.stageStatus, classify: "complete" as const, extract: "ready" as const },
+      };
       await db
         .update(rfpSessions)
-        .set({ uploadedFiles: input.files })
+        .set({ uploadedFiles: input.files, launchState, updatedAt: new Date() })
         .where(eq(rfpSessions.id, input.sessionId));
       return { success: true };
     }),
@@ -1163,6 +1333,9 @@ export const rfpSessionsRouter = router({
         .set({
           workflowState: runningState,
           sessionStatus: "in_progress",
+          ...(input.skillName === "rfp_parser"
+            ? { launchState: recordLaunchStage(session.launchState, "extract", "running", "RFP extraction started") }
+            : {}),
         })
         .where(eq(rfpSessions.id, input.sessionId));
 
@@ -1435,11 +1608,15 @@ export const rfpSessionsRouter = router({
         const errorState: WorkflowState = { ...runningState, [input.skillName as string]: errorEntry } as WorkflowState;
 
         try {
+          const launchState = input.skillName === "rfp_parser"
+            ? recordLaunchStage(session.launchState, "extract", "failed", errorMessage)
+            : readLaunchState(session.launchState);
           await db
             .update(rfpSessions)
             .set({
               workflowState: errorState,
               sessionStatus: "error",
+              ...(input.skillName === "rfp_parser" ? { launchState } : {}),
             })
             .where(eq(rfpSessions.id, input.sessionId));
         } catch (dbErr) {
@@ -1496,6 +1673,18 @@ export const rfpSessionsRouter = router({
               }
             })()
           : undefined;
+
+      const launchStatePatch = input.skillName === "rfp_parser"
+        ? (() => {
+            const completed = recordLaunchStage(freshSession.launchState, "extract", "complete", "RFP extraction completed");
+            return {
+              ...completed,
+              currentStage: "review" as const,
+              stageStatus: { ...completed.stageStatus, extract: "complete" as const, review: "ready" as const, go_no_go: "ready" as const },
+              review: reviewFromParsedRfp(extractedDataPatch ?? {}),
+            };
+          })()
+        : undefined;
 
       // For proposal_scorer: also save liveScore and scorerEvidenceInput (Phase 5)
       const scorerPatch =
@@ -1616,6 +1805,7 @@ export const rfpSessionsRouter = router({
           workflowState: completedState,
           sessionStatus: allComplete ? "complete" : "in_progress",
           ...(extractedDataPatch ? { extractedData: extractedDataPatch } : {}),
+          ...(launchStatePatch ? { launchState: launchStatePatch } : {}),
           ...(scorerPatch ?? {}),
           ...(evidenceBundlesPatch ?? {}),
           ...(scorerEvidenceInputPatch ?? {}),

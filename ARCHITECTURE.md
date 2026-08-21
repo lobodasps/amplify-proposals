@@ -790,7 +790,21 @@ The v0 Timekeeping system is authoritative for person identity and certification
 `/personnel` is now a legacy route that redirects to `/staff`. `staffDirectory.listEvidence` reads both canonical `profiles.id` associations and an explicit legacy `personnel` association when available. New resume and certification documents require an explicit Timekeeping staff selection or a deliberate unmatched-review choice; `dam.create` no longer auto-creates or name-matches personnel rows. Staff displays review queues for unlinked legacy DAM documents and legacy personnel records, preserving data without unsafe automatic matching.
 
 ### Checkpoint
-
 | Version | Description |
 |---------|-------------|
 | `65fedf27` | Project Experience consolidation and Staff Phase 1: explicit DAM project links, v0-backed Staff directory/certifications, legacy Personnel redirect, and safe review queues |
+
+---
+## Resumable Launch Workflow — Aug 21, 2026
+
+The Launchpad no longer treats RFP intake as a one-shot browser session. `rfp_sessions.launchState` is a JSONB checkpoint that persists review data, stage statuses, bounded stage history, retry counts, and the most recent Go/No-Go result. The primary RFP parser continues to persist its structured output in `extractedData`; Launch state adds recovery metadata without replacing existing workflow/evidence storage.
+
+| Stage | Persistence and recovery behavior |
+|---|---|
+| Upload / classify | Saved uploaded-file manifest and stage checkpoint are retained by `rfp_sessions` |
+| Extract | The parser writes a durable completion or failure checkpoint and the review payload |
+| Review | User edits autosave before Go/No-Go so a browser refresh or provider failure restores the completed extraction |
+| Go/No-Go | Result is saved with a deterministic input hash; unchanged inputs reopen the saved result with no model call |
+| Re-extract | Explicit, confirmation-gated operation only; reuses stored files and never re-uploads them |
+
+`/launch?session=<uuid>` restores the furthest completed state. A Go/No-Go error returns the user to the persisted review screen and records a stage-specific failure/retry count; it never restarts document ingestion. Editing saved fields marks an earlier score stale and exposes an isolated **Re-run Go/No-Go** action. The interface displays a confirmation before the only token-consuming recovery action, **Re-extract package**.

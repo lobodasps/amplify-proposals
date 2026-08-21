@@ -32,6 +32,16 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 
 ### Launch Generation Reliability
 - [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
+- [x] Add durable Launch session checkpoint state and persist reviewed RFP fields, completed stage status, per-stage errors, retry counts, and Go/No-Go output
+- [x] Restore `/launch?session=<id>` directly to the furthest completed step without repeating upload, classification, or extraction — active extraction sessions poll persisted state; review/decision sessions restore from saved checkpoints without re-uploading
+- [x] Add an isolated Retry Go/No-Go action that uses persisted review fields and does not rerun ingestion
+- [x] Add a deterministic Go/No-Go input hash, successful-result reuse, and stale-result indication after review edits
+- [x] Add explicit confirmed Re-extract package behavior; no extraction stage may rerun implicitly
+- [x] Add stage-specific retry history, recovery telemetry, unit tests, and end-to-end session state validation — full workflow integration test verifies processing restore, persisted review, cached score reuse, isolated scoring failure, and explicit re-extraction without changing the uploaded manifest
+- [x] Add router/integration tests for persisted Launch review, Go/No-Go reuse, scoring failure, and explicit re-extraction state transitions
+- [x] Implement and test true mid-pipeline `/launch?session=<id>` recovery using the persisted upload manifest rather than synthetic files or re-uploading — manifest metadata is rendered directly; no synthetic browser `File` objects are created
+- [x] Add Launchpad UI tests for review restore, cached Go/No-Go, stale-score notice, isolated scoring retry, and confirmed re-extraction — `LaunchRecoveryControls.test.tsx` tests the rendered component interactions and confirmation gate
+- [x] Add a full workflow integration test for `/launch?session=` restore, persisted review recovery, cached Go/No-Go reuse, failed Go/No-Go retry, and confirmed re-extraction without re-uploading
 - [x] Fix `/launch` Go/No-Go analysis when Anthropic returns 403 Request not allowed; fall back to a permitted configured provider and expose actionable configuration status — `go_no_go_advisor` now uses verified `google_gemini/gemini-2.5-flash`; Anthropic 403s also fall back to Google when no distinct default provider exists
 - [x] Show a Launchpad status notice when Go/No-Go uses a fallback provider after an Anthropic 403, including the provider and model actually used
 - [x] Add Settings guidance for an unusable Anthropic provider configuration and its Google Gemini fallback path

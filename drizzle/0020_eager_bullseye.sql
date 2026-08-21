@@ -1,0 +1,1 @@
+ALTER TABLE "rfp_sessions" ADD COLUMN "launchState" jsonb;
