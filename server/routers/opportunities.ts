@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { opportunities, opportunityCompetitors, opportunityDebriefs } from "../../drizzle/schema";
+import { opportunities, opportunityCompetitors, opportunityDebriefs, pursuits } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
+import { buildPursuitFromOpportunity } from "../../shared/opportunityPursuit";
 
 export const opportunitiesRouter = router({
   list: protectedProcedure.query(async () => {
@@ -28,6 +29,34 @@ export const opportunitiesRouter = router({
       if (!db) throw new Error("DB unavailable");
       await db.update(opportunities).set({ status: input.status as any }).where(eq(opportunities.id, input.id));
       return { success: true };
+    }),
+
+  /** Converts a Business Development opportunity into one linked Pursuit. Repeated clicks return the existing pursuit. */
+  addToPursuit: protectedProcedure
+    .input(z.object({ opportunityId: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const existing = await db
+        .select({ id: pursuits.id })
+        .from(pursuits)
+        .where(eq(pursuits.opportunityId, input.opportunityId))
+        .limit(1);
+      if (existing[0]) return { success: true, pursuitId: existing[0].id, created: false };
+
+      const opportunity = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
+      if (!opportunity[0]) throw new Error("Opportunity not found");
+
+      const rows = await db.transaction(async (tx) => {
+        const inserted = await tx.insert(pursuits).values(buildPursuitFromOpportunity(opportunity[0])).returning({ id: pursuits.id });
+        await tx
+          .update(opportunities)
+          .set({ status: "pursuing", updatedAt: new Date() })
+          .where(eq(opportunities.id, input.opportunityId));
+        return inserted;
+      });
+      return { success: true, pursuitId: rows[0]?.id ?? null, created: true };
     }),
 
   /** Score an opportunity for fit — uses the opportunity_scorer skill */

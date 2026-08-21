@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { Globe, Sparkles, RefreshCw, Search, Filter, ExternalLink, Clock, Plus, Zap, Loader2, FileText, X, Upload, PenLine } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
@@ -343,12 +344,23 @@ function NewOpportunityDialog({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Opportunities() {
+  const [, setLocation] = useLocation();
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [newOppOpen, setNewOppOpen] = useState(false);
 
   // Fetch live opportunities from DB (merged with demo data for display)
   const { data: liveOpps = [] } = trpc.opportunities.list.useQuery();
+  const utils = trpc.useUtils();
+  const addToPursuit = trpc.opportunities.addToPursuit.useMutation({
+    onSuccess: (result) => {
+      utils.opportunities.list.invalidate();
+      utils.pursuits.list.invalidate();
+      toast.success(result.created ? "Pursuit created." : "This opportunity is already in Pursuits.");
+      if (result.pursuitId) setLocation(`/pursuits/${result.pursuitId}`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const handleSync = async () => {
     setSyncing(true);
@@ -494,8 +506,8 @@ export default function Opportunities() {
                           {opp.score > 0 && <Progress value={opp.score} className="h-1.5" />}
                         </div>
                         <span className="text-[10px] text-muted-foreground">{opp.source}</span>
-                        <Button size="sm" className="h-6 text-[10px] bg-amplify-gradient text-white px-2.5 gap-1" onClick={() => toast.success(`Pursuit created for: ${opp.title}`)}>
-                          <Plus className="w-3 h-3" /> Add to Pursuits
+                        <Button size="sm" className="h-6 text-[10px] bg-amplify-gradient text-white px-2.5 gap-1" disabled={addToPursuit.isPending} onClick={() => addToPursuit.mutate({ opportunityId: opp.id })}>
+                          {addToPursuit.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add to Pursuits
                         </Button>
                         <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => toast.info("Opening agency portal...")}>
                           <ExternalLink className="w-3 h-3" />
