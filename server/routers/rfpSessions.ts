@@ -14,8 +14,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex, llmUsageLogs } from "../../drizzle/schema";
-import { eq, inArray } from "drizzle-orm";
+import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex, llmUsageLogs, certificationTypes, userCertifications } from "../../drizzle/schema";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
   WorkflowSkillName,
@@ -101,6 +101,37 @@ function reviewFromParsedRfp(parsed: Partial<ParsedRfpData>): LaunchReviewData {
     serviceLines: Array.isArray(parsed.serviceLines) ? parsed.serviceLines : [],
     scopeSummary: parsed.scopeSummary ?? "",
   };
+}
+
+async function getActiveCertificationText(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  profileIds: string[],
+): Promise<Map<string, string>> {
+  if (profileIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      profileId: userCertifications.userId,
+      certificationName: certificationTypes.name,
+      expirationDate: userCertifications.expirationDate,
+    })
+    .from(userCertifications)
+    .innerJoin(certificationTypes, eq(userCertifications.certificationId, certificationTypes.id))
+    .where(and(
+      inArray(userCertifications.userId, profileIds),
+      or(
+        isNull(userCertifications.expirationDate),
+        sql`${userCertifications.expirationDate} >= CURRENT_DATE`,
+      ),
+    ));
+
+  const certificationsByProfile = new Map<string, string[]>();
+  for (const row of rows) {
+    const expiration = row.expirationDate ? ` (expires ${row.expirationDate})` : "";
+    const list = certificationsByProfile.get(row.profileId) ?? [];
+    list.push(`${row.certificationName}${expiration}`);
+    certificationsByProfile.set(row.profileId, list);
+  }
+  return new Map(Array.from(certificationsByProfile.entries()).map(([id, certifications]) => [id, certifications.join(", ")]));
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -191,24 +222,32 @@ async function buildSkillVariables(
   // Personnel data — prefer pursuit DAM-based selections
   let personnelSummary = "No personnel selected.";
   if (pursuitSelectedPersonnel.length > 0 && db) {
-    // Hydrate from DAM documents (extractedMeta has resume details)
+    // DAM documents supply résumé narrative only. Certifications are always
+    // read live from the shared Timekeeping profile/certification model.
     const damIds = pursuitSelectedPersonnel.map(p => p.damDocumentId);
     const selectedDam = await db.select().from(damDocuments).where(inArray(damDocuments.id, damIds));
     const damMap = new Map(selectedDam.map(d => [d.id, d]));
+    const certificationsByProfile = await getActiveCertificationText(
+      db,
+      selectedDam.flatMap((document) => document.staffId ? [document.staffId] : []),
+    );
     personnelSummary = pursuitSelectedPersonnel.map(p => {
       const doc = damMap.get(p.damDocumentId);
       const meta = doc?.extractedMeta as Record<string, any> | null;
-      const certs = meta?.certifications ? (Array.isArray(meta.certifications) ? meta.certifications.join(", ") : meta.certifications) : "N/A";
+      const certs = doc?.staffId ? certificationsByProfile.get(doc.staffId) ?? "N/A" : "N/A";
       const yearsExp = meta?.yearsExperience ?? "?";
       const title = meta?.title ?? p.role ?? "Staff";
       return `- ${p.staffName} | ${title} | Role: ${p.role || "TBD"} | ${yearsExp} yrs exp | Certs: ${certs} | Summary: ${meta?.summary ?? doc?.extractedText?.slice(0, 200) ?? "N/A"}`;
     }).join("\n");
   } else if (db && selectedPersonnelIds.length > 0) {
-    const allPersonnel = await db.select().from(personnel).limit(200);
-    const selected = allPersonnel.filter(p => selectedPersonnelIds.includes(p.id));
+    const selected = await db.select().from(personnel).where(inArray(personnel.id, selectedPersonnelIds));
     if (selected.length > 0) {
+      const certificationsByProfile = await getActiveCertificationText(
+        db,
+        selected.flatMap((person) => person.userId ? [person.userId] : []),
+      );
       personnelSummary = selected.map(p => {
-        const certs = Array.isArray(p.certifications) ? (p.certifications as string[]).join(", ") : "";
+        const certs = p.userId ? certificationsByProfile.get(p.userId) ?? "" : "";
         const licenses = Array.isArray(p.licenses) ? (p.licenses as string[]).join(", ") : "";
         return `- ${p.name} | ${p.title ?? "Staff"} | ${p.yearsExperience ?? "?"} yrs exp | Certs: ${certs || "N/A"} | Licenses: ${licenses || "N/A"} | Summary: ${p.summary ?? "N/A"}`;
       }).join("\n");
@@ -507,7 +546,7 @@ async function buildSkillVariables(
         { title: "Key Personnel", content: keyPersonnelOutput },
         { title: "Past Performance", content: pastPerformance },
         { title: "Fee Estimate", content: outputs.fee_estimator },
-      ]);
+]);
       return {
         rfpContext,
         evaluationCriteria: evalCriteria,

@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 import { eq, desc, and, or, sql, like, isNull, inArray } from "drizzle-orm";
-import { protectedProcedure, router } from "../_core/trpc";
+import { permissionProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { damDocuments, projects, documentChunks } from "../../drizzle/schema";
 import { buildChunksFromDocument } from "../chunkBuilder";
@@ -1754,7 +1754,7 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
   // Processes documents with chunkStatus = 'pending' (or 'error' if retryErrors=true).
   // Per-document error isolation: one failure does not stop the batch.
   // Safe to run multiple times — delete-then-insert ensures idempotency.
-  backfillChunks: protectedProcedure
+  backfillChunks: permissionProcedure("proposalsSettingsAdmin")
     .input(
       z.object({
         batchSize: z.number().int().min(1).max(100).default(50),
@@ -1762,11 +1762,8 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         docType: z.string().optional(), // limit to a specific docType
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      // Admin-only: batch backfill is a destructive bulk operation
-      if (ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
-      }
+    .mutation(async ({ input }) => {
+      // Writer access is enforced by the shared Timekeeping permission gate.
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 

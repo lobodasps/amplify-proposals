@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -316,38 +316,20 @@ function AppSettingsTab() {
 }
 
 function UsersTab() {
-  const utils = trpc.useUtils();
   const { data: users = [], isLoading } = trpc.userManagement.listUsers.useQuery();
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ email: "", firstName: "", lastName: "", role: "user" as "admin" | "user" });
-
-  const invite = trpc.userManagement.inviteUser.useMutation({
-    onSuccess: () => {
-      toast.success(`Invite sent to ${inviteForm.email}`);
-      utils.userManagement.listUsers.invalidate();
-      setInviteOpen(false);
-      setInviteForm({ email: "", firstName: "", lastName: "", role: "user" });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const ROLE_BADGE: Record<string, string> = {
-    admin: "bg-blue-100 text-blue-700 border-blue-300",
-    user: "bg-gray-100 text-gray-600 border-gray-300",
-  };
 
   return (
     <>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" /> Users
+            <Users className="h-4 w-4" /> Shared Users
             <span className="text-xs font-normal text-muted-foreground ml-1">({users.length})</span>
           </CardTitle>
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="h-3 w-3 mr-1" /> Invite User
-          </Button>
         </CardHeader>
+        <CardDescription className="px-6 pb-3 text-sm">
+          User, role, and permission assignment is managed in Timekeeping/V0. Amplify Proposals reads shared access only.
+        </CardDescription>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -362,7 +344,6 @@ function UsersTab() {
                   <tr className="border-b bg-muted/30">
                     <th className="text-left p-3 font-medium text-muted-foreground">Name</th>
                     <th className="text-left p-3 font-medium text-muted-foreground">Email</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground">Role</th>
                     <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 font-medium text-muted-foreground">Joined</th>
                   </tr>
@@ -372,11 +353,6 @@ function UsersTab() {
                     <tr key={u.id} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="p-3 font-medium">{u.name}</td>
                       <td className="p-3 text-muted-foreground">{u.email}</td>
-                      <td className="p-3">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded border capitalize ${ROLE_BADGE[u.role] ?? ROLE_BADGE.user}`}>
-                          {u.role}
-                        </span>
-                      </td>
                       <td className="p-3">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
                           u.isActive ? "bg-green-50 text-green-700 border-green-300" : "bg-gray-100 text-gray-500 border-gray-300"
@@ -396,69 +372,6 @@ function UsersTab() {
         </CardContent>
       </Card>
 
-      {/* Invite User Dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Invite User</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <Label>Email Address *</Label>
-              <Input
-                type="email"
-                value={inviteForm.email}
-                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="renuka@example.com"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>First Name</Label>
-                <Input
-                  value={inviteForm.firstName}
-                  onChange={(e) => setInviteForm((f) => ({ ...f, firstName: e.target.value }))}
-                  placeholder="Renuka"
-                />
-              </div>
-              <div>
-                <Label>Last Name</Label>
-                <Input
-                  value={inviteForm.lastName}
-                  onChange={(e) => setInviteForm((f) => ({ ...f, lastName: e.target.value }))}
-                  placeholder="S"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Role</Label>
-              <Select
-                value={inviteForm.role}
-                onValueChange={(v) => setInviteForm((f) => ({ ...f, role: v as "admin" | "user" }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              An invitation email will be sent. The user will set their password when they accept the invite.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-            <Button
-              disabled={!inviteForm.email || invite.isPending}
-              onClick={() => invite.mutate(inviteForm)}
-            >
-              {invite.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Send Invite
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

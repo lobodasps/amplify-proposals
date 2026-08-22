@@ -1,32 +1,9 @@
 import { z } from "zod";
-import { and, desc, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
-import { supabase } from "../supabase";
 import { getDb } from "../db";
-import { assets, damDocuments, personnel } from "../../drizzle/schema";
+import { assets, certificationTypes, damDocuments, personnel, profiles, userCertifications } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-
-type V0Profile = {
-  id: string;
-  email: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  phone_number: string | null;
-  labor_category: string | null;
-  is_active: boolean | null;
-  employer_company_id: string | null;
-  employee_id: string | null;
-};
-
-type V0Certification = {
-  user_id: string;
-  certification_id: string;
-  issue_date: string | null;
-  expiration_date: string | null;
-  issuing_authority: string | null;
-  certificate_file_path: string | null;
-  notes: string | null;
-};
 
 export function parseJsonArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
@@ -42,80 +19,63 @@ export function parseJsonArray(value: unknown): string[] {
 export const staffDirectoryRouter = router({
   /**
    * v0 profiles are the staff system of record. Legacy personnel fields are
-   * included only as proposal-specific compatibility information until review.
-   */
+  * included only as proposal-specific compatibility information until review.
+  */
   list: protectedProcedure.query(async () => {
-    const [profilesResult, certificationsResult, legacyDb] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, email, first_name, last_name, phone_number, labor_category, is_active, employer_company_id, employee_id")
-        .eq("is_active", true)
-        .order("last_name", { ascending: true }),
-      supabase
-        .from("user_certifications")
-        .select("user_id, certification_id, issue_date, expiration_date, issuing_authority, certificate_file_path, notes"),
-      getDb(),
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+    const [profileRows, rawCertifications, legacyPeople] = await Promise.all([
+      db.select().from(profiles).where(eq(profiles.isActive, true)).orderBy(profiles.lastName),
+      db.select({
+        userId: userCertifications.userId,
+        certificationId: userCertifications.certificationId,
+        certificationName: certificationTypes.name,
+        issueDate: userCertifications.issueDate,
+        expirationDate: userCertifications.expirationDate,
+        issuingAuthority: userCertifications.issuingAuthority,
+        certificateFilePath: userCertifications.certificateFilePath,
+        notes: userCertifications.notes,
+      })
+        .from(userCertifications)
+        .innerJoin(certificationTypes, eq(userCertifications.certificationId, certificationTypes.id))
+        .where(or(isNull(userCertifications.expirationDate), gte(userCertifications.expirationDate, new Date().toISOString().slice(0, 10)))),
+      db.select().from(personnel).orderBy(personnel.name).limit(500),
     ]);
-
-    if (profilesResult.error) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: profilesResult.error.message });
-    }
-    if (certificationsResult.error) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: certificationsResult.error.message });
-    }
-
-    const rawCertifications = (certificationsResult.data ?? []) as V0Certification[];
-    const certificationIds = Array.from(new Set(rawCertifications.map((item) => item.certification_id).filter(Boolean)));
-    const certificationNames = new Map<string, string>();
-    if (certificationIds.length > 0) {
-      const { data, error } = await supabase
-        .from("certification_types")
-        .select("id, name")
-        .in("id", certificationIds);
-      if (error) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      }
-      (data ?? []).forEach((item: { id: string; name: string }) => certificationNames.set(item.id, item.name));
-    }
-
-    const legacyPeople = legacyDb
-      ? await legacyDb.select().from(personnel).orderBy(personnel.name).limit(500)
-      : [];
     const legacyByProfileId = new Map(
       legacyPeople.filter((item) => item.userId).map((item) => [item.userId!, item]),
     );
-    const certificationsByProfileId = new Map<string, V0Certification[]>();
+    const certificationsByProfileId = new Map<string, typeof rawCertifications>();
     rawCertifications.forEach((certification) => {
-      const list = certificationsByProfileId.get(certification.user_id) ?? [];
+      const list = certificationsByProfileId.get(certification.userId) ?? [];
       list.push(certification);
-      certificationsByProfileId.set(certification.user_id, list);
+      certificationsByProfileId.set(certification.userId, list);
     });
 
-    return ((profilesResult.data ?? []) as V0Profile[]).map((profile) => {
+    return profileRows.map((profile) => {
       const legacy = legacyByProfileId.get(profile.id);
-      const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email || "Unnamed staff member";
+      const fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.email || "Unnamed staff member";
       return {
         id: profile.id,
         name: fullName,
-        firstName: profile.first_name ?? "",
-        lastName: profile.last_name ?? "",
+        firstName: profile.firstName ?? "",
+        lastName: profile.lastName ?? "",
         email: profile.email,
-        phone: profile.phone_number,
-        title: legacy?.title ?? profile.labor_category ?? null,
+        phone: profile.phoneNumber,
+        title: legacy?.title ?? profile.laborCategory ?? null,
         summary: legacy?.summary ?? null,
         yearsExperience: legacy?.yearsExperience ?? null,
         education: legacy?.education ?? null,
         serviceLines: parseJsonArray(legacy?.serviceLines),
         proposalTags: parseJsonArray(legacy?.tags),
         legacyPersonnelId: legacy?.id ?? null,
-        employeeId: profile.employee_id,
+        employeeId: profile.employeeId,
         certifications: (certificationsByProfileId.get(profile.id) ?? []).map((certification) => ({
-          id: certification.certification_id,
-          name: certificationNames.get(certification.certification_id) ?? "Certification",
-          issueDate: certification.issue_date,
-          expirationDate: certification.expiration_date,
-          issuingAuthority: certification.issuing_authority,
-          certificateFilePath: certification.certificate_file_path,
+          id: certification.certificationId,
+          name: certification.certificationName,
+          issueDate: certification.issueDate,
+          expirationDate: certification.expirationDate,
+          issuingAuthority: certification.issuingAuthority,
+          certificateFilePath: certification.certificateFilePath,
           notes: certification.notes,
         })),
       };
@@ -158,22 +118,19 @@ export const staffDirectoryRouter = router({
 
   /** Legacy proposal staff entries are retained for review rather than inferred against v0 profiles. */
   listLegacyPersonnelNeedingReview: protectedProcedure.query(async () => {
-    const [profilesResult, db] = await Promise.all([
-      supabase.from("profiles").select("id"),
-      getDb(),
-    ]);
-    if (profilesResult.error) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: profilesResult.error.message });
-    }
+    const db = await getDb();
     if (!db) return [];
-    const profileIds = new Set((profilesResult.data ?? []).map((profile: { id: string }) => profile.id));
-    const legacyPeople = await db.select({
+    const [profileRows, legacyPeople] = await Promise.all([
+      db.select({ id: profiles.id }).from(profiles),
+      db.select({
       id: personnel.id,
       userId: personnel.userId,
       name: personnel.name,
       title: personnel.title,
       email: personnel.email,
-    }).from(personnel).orderBy(personnel.name).limit(500);
+      }).from(personnel).orderBy(personnel.name).limit(500),
+    ]);
+    const profileIds = new Set(profileRows.map((profile) => profile.id));
     return legacyPeople.filter((person) => !person.userId || !profileIds.has(person.userId));
   }),
 });

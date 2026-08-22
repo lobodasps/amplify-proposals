@@ -13,8 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ROLE_LABELS } from "../../../shared/types";
-import type { UserRole } from "../../../shared/types";
+import { trpc } from "@/lib/trpc";
+import { EMPTY_PROPOSAL_PERMISSIONS, NAV_PERMISSION_BY_PATH, type ProposalPermissions } from "../../../shared/proposalPermissions";
 import {
   LayoutDashboard,
   Target,
@@ -65,7 +65,6 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   badge?: string;
-  roles?: UserRole[];
   /** Short description shown as a tooltip subtitle when sidebar is expanded */
   description?: string;
 }
@@ -79,7 +78,6 @@ interface NavGroup {
   items: NavItem[];
   /** If true, always visible (no collapse) */
   pinned?: boolean;
-  roles?: UserRole[];
 }
 
 // ─── Navigation Structure (Option A+C) ───────────────────────────────────────
@@ -309,14 +307,14 @@ function groupContainsPath(group: NavGroup, path: string): boolean {
 
 function NavGroupSection({
   group,
-  userRole,
+  permissions,
   location,
   collapsed,
   isOpen,
   onToggle,
 }: {
   group: NavGroup;
-  userRole: UserRole;
+  permissions: ProposalPermissions;
   location: string;
   collapsed: boolean;
   isOpen: boolean;
@@ -325,9 +323,10 @@ function NavGroupSection({
   const GroupIcon = group.icon;
   const isActive = groupContainsPath(group, location);
 
-  const visibleItems = group.items.filter(
-    (item) => !item.roles || item.roles.includes(userRole)
-  );
+  const visibleItems = group.items.filter((item) => {
+    const permission = NAV_PERMISSION_BY_PATH[item.href];
+    return !permission || permissions[permission];
+  });
 
   if (visibleItems.length === 0) return null;
 
@@ -461,8 +460,11 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
-
-  const userRole = (user?.role as UserRole) ?? "read_only";
+  const { data: permissionData } = trpc.permissions.me.useQuery(undefined, {
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+  const permissions = permissionData ?? EMPTY_PROPOSAL_PERMISSIONS;
 
   // Track which groups are open — default: open the group containing the current path
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -527,13 +529,11 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
         <div className="space-y-0.5">
           {NAV_GROUPS.map((group) => {
-            // Check if the whole group is role-gated
-            if (group.roles && !group.roles.includes(userRole)) return null;
             return (
               <NavGroupSection
                 key={group.id}
                 group={group}
-                userRole={userRole}
+                permissions={permissions}
                 location={location}
                 collapsed={collapsed}
                 isOpen={openGroups[group.id] ?? false}
@@ -566,9 +566,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                     <div className="text-sm font-semibold text-sidebar-foreground truncate">
                       {user.name || "User"}
                     </div>
-                    <div className="text-xs text-sidebar-foreground/50 truncate">
-                      {ROLE_LABELS[userRole] ?? userRole}
-                    </div>
+                    <div className="text-xs text-sidebar-foreground/50 truncate">Shared access profile</div>
                   </div>
                 )}
               </button>
@@ -578,13 +576,15 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                 <div className="font-semibold text-sm">{user.name}</div>
                 <div className="text-xs text-muted-foreground">{user.email}</div>
               </div>
-              <DropdownMenuItem asChild>
-                <Link href="/settings">
-                  <div className="flex items-center gap-2 cursor-pointer">
-                    <User className="w-4 h-4" /> Profile & Settings
-                  </div>
-                </Link>
-              </DropdownMenuItem>
+              {permissions.proposalsSettingsAdmin && (
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <div className="flex items-center gap-2 cursor-pointer">
+                      <User className="w-4 h-4" /> Profile & Settings
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
                 <LogOut className="w-4 h-4 mr-2" /> Sign Out

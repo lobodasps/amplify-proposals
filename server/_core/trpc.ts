@@ -1,6 +1,8 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
+import type { ProposalPermissionKey } from "../../shared/proposalPermissions";
+import { hasSharedProposalPermission } from "../permissions";
 import type { TrpcContext } from "./context";
 
 const t = initTRPC.context<TrpcContext>().create({
@@ -27,19 +29,20 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
-export const adminProcedure = t.procedure.use(
-  t.middleware(async opts => {
-    const { ctx, next } = opts;
+export function permissionProcedure(permission: ProposalPermissionKey) {
+  return t.procedure.use(
+    t.middleware(async opts => {
+      const { ctx, next } = opts;
+      if (!ctx.user) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      }
+      if (!(await hasSharedProposalPermission(ctx.user.id, permission))) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this Amplify Proposals feature." });
+      }
+      return next({ ctx: { ...ctx, user: ctx.user } });
+    }),
+  );
+}
 
-    if (!ctx.user || ctx.user.role !== 'admin') {
-      throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
-    }
-
-    return next({
-      ctx: {
-        ...ctx,
-        user: ctx.user,
-      },
-    });
-  }),
-);
+/** @deprecated Use permissionProcedure with a named shared permission. */
+export const adminProcedure = permissionProcedure("proposalsSettingsAdmin");

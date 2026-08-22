@@ -7,10 +7,83 @@ import {
   integer,
   jsonb,
   timestamp,
+  date,
   real,
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+// ─── Shared Timekeeping / V0 identity and authorization tables ───────────────
+// These are owned by Timekeeping/V0. Amplify Proposals reads only the fields
+// declared below and never manages identities, certifications, or permissions.
+
+export const profiles = pgTable("profiles", {
+  id: uuid("id").primaryKey(),
+  email: text("email").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phoneNumber: text("phone_number"),
+  laborCategory: text("labor_category"),
+  employerCompanyId: uuid("employer_company_id"),
+  employeeId: text("employee_id"),
+  role: text("role"),
+  permissionScope: text("permission_scope"),
+  isActive: boolean("is_active"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  personType: text("person_type").notNull(),
+  hasRateStructure: boolean("has_rate_structure").notNull(),
+  isPayrollProcessed: boolean("is_payroll_processed").notNull(),
+});
+
+export const certificationTypes = pgTable("certification_types", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+});
+
+export const userCertifications = pgTable("user_certifications", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  certificationId: uuid("certification_id").notNull().references(() => certificationTypes.id),
+  expirationDate: date("expiration_date"),
+  issueDate: date("issue_date"),
+  issuingAuthority: text("issuing_authority"),
+  certificateFilePath: text("certificate_file_path"),
+  notes: text("notes"),
+});
+
+const sharedProposalPermissionColumns = {
+  proposalsSettingsAdmin: boolean("proposals_settings_admin").notNull(),
+  qbSyncAdmin: boolean("qb_sync_admin").notNull(),
+  proposalsReportsView: boolean("proposals_reports_view").notNull(),
+  complianceView: boolean("compliance_view").notNull(),
+  contractAnalyzerView: boolean("contract_analyzer_view").notNull(),
+  pursuitsProposalsView: boolean("pursuits_proposals_view").notNull(),
+  bdView: boolean("bd_view").notNull(),
+  rfpIntelligenceView: boolean("rfp_intelligence_view").notNull(),
+  firmRecordView: boolean("firm_record_view").notNull(),
+  firmRecordEdit: boolean("firm_record_edit").notNull(),
+  contractsView: boolean("contracts_view").notNull(),
+  contractsEdit: boolean("contracts_edit").notNull(),
+};
+
+export const userPermissions = pgTable("user_permissions", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  ...sharedProposalPermissionColumns,
+});
+
+export const permissionRoles = pgTable("permission_roles", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ...sharedProposalPermissionColumns,
+});
+
+export const userRoleAssignments = pgTable("user_role_assignments", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  roleId: uuid("role_id").notNull().references(() => permissionRoles.id, { onDelete: "cascade" }),
+});
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +167,8 @@ export type InsertProject = typeof projects.$inferInsert;
 
 export const personnel = pgTable("personnel", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("userId"),
+  userId: uuid("userId").references(() => profiles.id, { onDelete: "set null" }),
+  employerType: text("employerType").$type<"internal" | "subconsultant">().default("internal").notNull(),
   name: text("name").notNull(),
   title: text("title"),
   email: text("email"),
@@ -102,6 +176,8 @@ export const personnel = pgTable("personnel", {
   yearsExperience: integer("yearsExperience"),
   education: text("education"),
   licenses: jsonb("licenses"),
+  // Deprecated legacy cache. Never use as a certification source; live records
+  // are read from shared user_certifications and certification_types.
   certifications: jsonb("certifications"),
   serviceLines: jsonb("serviceLines"),
   summary: text("summary"),

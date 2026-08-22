@@ -25,6 +25,7 @@ import { rfpSessionsRouter } from "./routers/rfpSessions";
 import { damRouter } from "./routers/dam";
 import { userManagementRouter } from "./routers/userManagement";
 import { staffDirectoryRouter } from "./routers/staffDirectory";
+import { permissionsRouter } from "./routers/permissions";
 
 export const appRouter = router({
   system: systemRouter,
@@ -36,6 +37,7 @@ export const appRouter = router({
       return { success: true } as const;
     }),
   }),
+  permissions: permissionsRouter,
   pursuits: pursuitsRouter,
   proposals: proposalsRouter,
   assets: assetsRouter,

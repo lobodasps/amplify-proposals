@@ -32,6 +32,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Align staff, certifications, and access checks with the shared Timekeeping/V0 model: typed Drizzle stubs, live active-certification reads, personnel identity/employer fields, and shared permission flags without new permission-management UI
 - [x] Fix Proposal Document layout so the compliance header remains responsive without overlapping content and the workspace provides usable horizontal and vertical scrolling
 - [x] Add ProposalDraftWorkspace regression coverage for constrained-width compliance-header wrapping and explicit outer horizontal/vertical scroll ownership with the scorecard shown or hidden
 - [x] Perform authenticated route-level verification of Proposal Document layout after the scrolling repair; the browser test session remained unauthenticated, but the user confirmed the repaired layout directly in the signed-in Preview
