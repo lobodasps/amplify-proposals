@@ -60,7 +60,11 @@ import {
   type LaunchReviewData,
 } from "../../shared/launchWorkflow";
 import { waitForCompletionOrTimeout } from "../../shared/skillExecutionWait";
-import { buildFeeEstimatorTemplateVariables, buildFeeScheduleContext } from "../../shared/feeEstimator";
+import {
+  buildFeeEstimatorTemplateVariables,
+  createFeeEvidenceUnavailableOutput,
+  findFeePricingEvidence,
+} from "../../shared/feeEstimator";
 import { requireNonEmptySkillOutput } from "../../shared/skillOutput";
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
@@ -460,6 +464,7 @@ async function buildSkillVariables(
 
     case "fee_estimator": {
       const feeEvidenceDocuments = db ? await db.select().from(damDocuments).limit(200) : [];
+      const pricingEvidence = findFeePricingEvidence(feeEvidenceDocuments, pursuitSelectedPastProposalIds);
       return buildFeeEstimatorTemplateVariables({
         rfpContext,
         technicalOutline,
@@ -470,7 +475,7 @@ async function buildSkillVariables(
         firmSize,
         laborCategories:
           "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative.",
-        feeScheduleContext: buildFeeScheduleContext(feeEvidenceDocuments),
+        pricingEvidence,
       });
     }
 
@@ -692,15 +697,15 @@ Each section must:
 4. Note any specific RFP language to mirror
 Return as a structured outline with section headers and bullet points.`,
 
-    fee_estimator: `You are an expert AEC fee estimator with deep knowledge of NJ/NY/NYC public-agency contract structures.
-Generate a preliminary fee estimate based on the project scope.
-Structure the estimate by:
-1. Major tasks/phases (from the technical outline)
-2. Labor categories and estimated hours per task
-3. Direct costs (travel, equipment, subconsultants)
-4. Total fee by task and overall
-Note: Actual billing rates will be confirmed with the Timekeeping system.
-Return as a structured fee table with totals.`,
+	fee_estimator: `You are an expert AEC fee estimator with deep knowledge of NJ/NY/NYC public-agency contract structures.
+	Generate a preliminary fee estimate based on the project scope.
+	Structure the estimate by:
+	1. Major tasks/phases (from the technical outline)
+	2. Labor categories and estimated hours per task
+	3. Direct costs (travel, equipment, subconsultants)
+	4. Total fee by task and overall
+	Use only the permitted fee evidence supplied in the prompt. Cite the source document for every rate, price, or comparable value. Never infer or fabricate rates, hours, multipliers, or totals.
+	Return a structured fee table with totals only when the supplied evidence supports them.`,
   };
   return overrides[skillName];
 }
@@ -1392,6 +1397,12 @@ export const rfpSessionsRouter = router({
           }
         }
         const variables = await buildSkillVariables(input.skillName, session);
+
+        if (input.skillName === "fee_estimator" && variables.feeEvidenceStatus === "unavailable") {
+          llmOutput = createFeeEvidenceUnavailableOutput(variables.feeEvidenceSummary ?? "No permitted fee evidence was found.");
+          usedModel = "evidence-validation";
+          usedProvider = "internal";
+        }
 
         // ── Substitution validator: scan for unresolved {variable} or {{variable}} patterns ──
         const missingVariables: string[] = [];
