@@ -14,7 +14,7 @@
  *   - trpc.rfpSessions.updateSectionContent → saves user edits to proposals.sections jsonb
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -166,15 +166,17 @@ function ComplianceBar({
         : "bg-red-500";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30 text-xs shrink-0">
-      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="font-medium truncate max-w-[200px]" title={pursuitTitle}>
-        {pursuitTitle || "Proposal Document"}
-      </span>
-      <Separator orientation="vertical" className="h-4" />
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 border-b bg-muted/30 text-xs shrink-0">
+      <div className="flex min-w-0 max-w-full items-center gap-2">
+        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="font-medium truncate max-w-[min(100%,18rem)]" title={pursuitTitle}>
+          {pursuitTitle || "Proposal Document"}
+        </span>
+      </div>
+      <Separator orientation="vertical" className="hidden h-4 sm:block" />
 
       {/* Compliance bar */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
+      <div className="flex flex-1 min-w-[14rem] flex-wrap items-center gap-x-2 gap-y-1">
         <div className="relative h-2 w-32 rounded-full bg-muted overflow-hidden shrink-0">
           <div
             className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${barColor}`}
@@ -193,46 +195,48 @@ function ComplianceBar({
       </div>
 
       {/* Generate All button */}
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7 text-xs gap-1 shrink-0"
-        onClick={onGenerateAll}
-        disabled={isGenerating}
-      >
-        {isGenerating ? (
-          <>
-            <Loader2 className="h-3 w-3 animate-spin" />
-            <span className="max-w-[140px] truncate">{generatingLabel}</span>
-          </>
-        ) : (
-          <>
-            <Zap className="h-3 w-3" />
-            Generate Full Proposal
-          </>
-        )}
-      </Button>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs gap-1 shrink-0"
+          onClick={onGenerateAll}
+          disabled={isGenerating}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span className="max-w-[140px] truncate">{generatingLabel}</span>
+            </>
+          ) : (
+            <>
+              <Zap className="h-3 w-3" />
+              Generate Full Proposal
+            </>
+          )}
+        </Button>
 
-      {/* Export button */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="sm"
-            variant={canExport ? "default" : "outline"}
-            className="h-7 text-xs gap-1 shrink-0"
-            onClick={onExport}
-            disabled={!canExport}
-          >
-            <Download className="h-3 w-3" />
-            Export Package
-          </Button>
-        </TooltipTrigger>
-        {!canExport && (
-          <TooltipContent>
-            Proposal must be at least 80% compliant before export. Current: {overallScore}%
-          </TooltipContent>
-        )}
-      </Tooltip>
+        {/* Export button */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={canExport ? "default" : "outline"}
+              className="h-7 text-xs gap-1 shrink-0"
+              onClick={onExport}
+              disabled={!canExport}
+            >
+              <Download className="h-3 w-3" />
+              Export Package
+            </Button>
+          </TooltipTrigger>
+          {!canExport && (
+            <TooltipContent>
+              Proposal must be at least 80% compliant before export. Current: {overallScore}%
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </div>
     </div>
   );
 }
@@ -819,7 +823,7 @@ export default function ProposalDraftWorkspace({
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {/* Compliance Bar */}
         <ComplianceBar
           sections={sections}
@@ -832,47 +836,49 @@ export default function ProposalDraftWorkspace({
         />
 
         {/* Three-panel layout */}
-        <div className="flex flex-1 min-h-0">
-          {/* Left: Section Navigator */}
-          <SectionNavigator
-            sections={sections}
-            selectedType={selectedType}
-            onSelect={setSelectedType}
-            onGenerateAll={() => setShowGenerateAllDialog(true)}
-            isGenerating={isGenerating}
-            structureSource={structureSource}
-          />
-
-          {/* Center: Section Editor */}
-          <SectionEditor
-            section={selectedSection}
-            sessionId={sessionId}
-            onGenerate={handleGenerate}
-            onRegenerate={handleRegenerate}
-            isGenerating={isGenerating}
-            onContentSaved={() => refetchSections()}
-          />
-
-          {/* Right: Section Scorecard (collapsible) */}
-          {showScorecardPanel ? (
-            <SectionScorecard
-              section={selectedSection}
-              onImprove={() => selectedType && handleRegenerate(selectedType)}
+        <div className="flex-1 min-h-0 min-w-0 overflow-auto">
+          <div className="relative flex min-h-full min-w-[880px]">
+            {/* Left: Section Navigator */}
+            <SectionNavigator
+              sections={sections}
+              selectedType={selectedType}
+              onSelect={setSelectedType}
+              onGenerateAll={() => setShowGenerateAllDialog(true)}
+              isGenerating={isGenerating}
+              structureSource={structureSource}
             />
-          ) : null}
 
-          {/* Toggle scorecard button */}
-          <button
-            onClick={() => setShowScorecardPanel((v) => !v)}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1 rounded-l-md bg-muted border border-r-0 text-muted-foreground hover:text-foreground transition-colors"
-            title={showScorecardPanel ? "Hide scorecard" : "Show scorecard"}
-          >
+            {/* Center: Section Editor */}
+            <SectionEditor
+              section={selectedSection}
+              sessionId={sessionId}
+              onGenerate={handleGenerate}
+              onRegenerate={handleRegenerate}
+              isGenerating={isGenerating}
+              onContentSaved={() => refetchSections()}
+            />
+
+            {/* Right: Section Scorecard (collapsible) */}
             {showScorecardPanel ? (
-              <PanelRightClose className="h-3.5 w-3.5" />
-            ) : (
-              <PanelRightOpen className="h-3.5 w-3.5" />
-            )}
-          </button>
+              <SectionScorecard
+                section={selectedSection}
+                onImprove={() => selectedType && handleRegenerate(selectedType)}
+              />
+            ) : null}
+
+            {/* Toggle scorecard button */}
+            <button
+              onClick={() => setShowScorecardPanel((v) => !v)}
+              className="sticky right-0 top-1/2 z-10 h-fit self-center p-1 rounded-l-md bg-muted border border-r-0 text-muted-foreground hover:text-foreground transition-colors"
+              title={showScorecardPanel ? "Hide scorecard" : "Show scorecard"}
+            >
+              {showScorecardPanel ? (
+                <PanelRightClose className="h-3.5 w-3.5" />
+              ) : (
+                <PanelRightOpen className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

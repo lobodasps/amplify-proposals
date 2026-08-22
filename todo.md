@@ -32,6 +32,9 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Fix Proposal Document layout so the compliance header remains responsive without overlapping content and the workspace provides usable horizontal and vertical scrolling
+- [x] Add ProposalDraftWorkspace regression coverage for constrained-width compliance-header wrapping and explicit outer horizontal/vertical scroll ownership with the scorecard shown or hidden
+- [x] Perform authenticated route-level verification of Proposal Document layout after the scrolling repair; the browser test session remained unauthenticated, but the user confirmed the repaired layout directly in the signed-in Preview
 - [x] Verify and correct Generate Full Proposal section ordering: use an explicit extracted RFP section map in declared order when available; otherwise use a clearly labeled evaluation-criteria-derived sequence rather than silently defaulting to the standard template
 - [x] Diagnose and fix the failed Proposal Scorer execution for RFP 2025-27 – Historic Landscape Design without rerunning completed proposal sections; the scorer used Anthropic Sonnet 5 and failed with a transient raw `fetch failed` transport error despite valid extracted criteria and completed sections. All provider calls now retry raw transport failures with backoff and allow configured-provider fallback after retry exhaustion.
 - [x] Add router-level coverage proving `proposal_scorer` can retry after a transient provider failure without rerunning completed upstream skills
