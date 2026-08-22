@@ -32,6 +32,7 @@ import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
 import { getProposalScoreDisplay } from "../../../shared/proposalScoring";
 import { isBlankSkillOutput } from "../../../shared/skillOutput";
 import { isLegacyFeeEstimateWithoutEvidenceProvenance } from "../../../shared/feeEstimator";
+import { GENERATED_SECTIONS_DESCRIPTION, GENERATED_SECTIONS_LABEL, PROPOSAL_DOCUMENT_LABEL } from "@/lib/proposalViewTerminology";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -726,8 +727,8 @@ export default function ProposalWorkspace() {
       setActiveSkill(null);
 
       if (!abortRef.current) {
-        toast.success("Proposal generation complete!", {
-          description: `All ${WORKFLOW_SKILL_NAMES.length} skills completed and saved. Switching to Full Draft view.`,
+          toast.success("Proposal generation complete!", {
+            description: `All ${WORKFLOW_SKILL_NAMES.length} skills completed and saved. Switching to ${GENERATED_SECTIONS_LABEL}.`,
         });
         setActiveView("full_draft");
         refetchSections();
@@ -1022,7 +1023,7 @@ export default function ProposalWorkspace() {
                   : "border-transparent text-muted-foreground hover:text-foreground",
               ].join(" ")}
             >
-              Proposal Draft
+              {PROPOSAL_DOCUMENT_LABEL}
             </button>
           </div>
 
@@ -1096,7 +1097,7 @@ export default function ProposalWorkspace() {
                 </div>
               </div>
 
-              {/* Full Draft button */}
+              {/* Skill-assembled sections button */}
               {resumeState.completedCount > 0 && (
                 <div className="px-3 py-2 border-t">
                   <button
@@ -1108,7 +1109,7 @@ export default function ProposalWorkspace() {
                     ].join(" ")}
                   >
                     <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs font-medium">Full Draft</span>
+                    <span className="text-xs font-medium">{GENERATED_SECTIONS_LABEL}</span>
                     {resumeState.isFullyComplete && (
                       <Badge variant="secondary" className="ml-auto text-[9px] px-1.5 py-0">
                         Ready
@@ -1155,7 +1156,7 @@ export default function ProposalWorkspace() {
                         </CardTitle>
                         <CardDescription>
                           {resumeState.isFullyComplete
-                            ? "All 8 skills completed. Your proposal draft is ready for review."
+                            ? `All 8 skills completed. Your ${GENERATED_SECTIONS_LABEL.toLowerCase()} are ready for review.`
                             : resumeState.hasError
                               ? `Error in "${skillDisplayName(resumeState.erroredSkill!)}". Click the skill to retry from that point.`
                               : isRunning && activeSkill
@@ -1279,14 +1280,14 @@ export default function ProposalWorkspace() {
                   </div>
                 </ScrollArea>
               ) : activeView === "full_draft" ? (
-                /* ── Full Draft Panel ──────────────────────────────────── */
+                /* ── Skill-generated sections panel ────────────────────── */
                 <div className="flex-1">
                   <div className="p-6 max-w-4xl mx-auto space-y-6">
                     <div className="flex items-center justify-between mb-2">
                       <div>
-                        <h2 className="text-lg font-semibold">Full Proposal Draft</h2>
+                        <h2 className="text-lg font-semibold">{GENERATED_SECTIONS_LABEL}</h2>
                         <p className="text-sm text-muted-foreground">
-                          {proposalSections?.length ?? 0} sections · Edit any section inline, changes save automatically.
+                          {proposalSections?.length ?? 0} sections · Edit any section inline, changes save automatically. {GENERATED_SECTIONS_DESCRIPTION}
                         </p>
                       </div>
                       {proposalScoreDisplay.kind === "scored" && (

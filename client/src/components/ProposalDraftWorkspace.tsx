@@ -169,7 +169,7 @@ function ComplianceBar({
     <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30 text-xs shrink-0">
       <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       <span className="font-medium truncate max-w-[200px]" title={pursuitTitle}>
-        {pursuitTitle || "Proposal Draft"}
+        {pursuitTitle || "Proposal Document"}
       </span>
       <Separator orientation="vertical" className="h-4" />
 
@@ -813,7 +813,7 @@ export default function ProposalDraftWorkspace({
         {/* Compliance Bar */}
         <ComplianceBar
           sections={sections}
-          pursuitTitle={pursuitTitle ?? "Proposal Draft"}
+          pursuitTitle={pursuitTitle ?? "Proposal Document"}
           dueDate={dueDate}
           onExport={handleExport}
           onGenerateAll={() => setShowGenerateAllDialog(true)}
