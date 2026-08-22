@@ -464,7 +464,11 @@ async function buildSkillVariables(
 
     case "fee_estimator": {
       const feeEvidenceDocuments = db ? await db.select().from(damDocuments).limit(200) : [];
-      const pricingEvidence = findFeePricingEvidence(feeEvidenceDocuments, pursuitSelectedPastProposalIds);
+      const evidenceServiceLines = (pursuitServiceLines || (Array.isArray(extracted.serviceLines) ? extracted.serviceLines.join(",") : ""))
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const pricingEvidence = findFeePricingEvidence(feeEvidenceDocuments, pursuitSelectedPastProposalIds, evidenceServiceLines);
       return buildFeeEstimatorTemplateVariables({
         rfpContext,
         technicalOutline,

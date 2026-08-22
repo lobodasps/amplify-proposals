@@ -30,6 +30,25 @@ describe("Fee Estimator evidence gate", () => {
     expect(evidence.sourceSummary).not.toContain("Project Sheet");
   });
 
+  it("allows an unselected past proposal only when it has pricing and overlaps the pursuit service lines", () => {
+    const evidence = findFeePricingEvidence([
+      { id: "relevant", docType: "past_proposal", title: "Environmental Remediation Support", contractValue: "$425,000", extractedMeta: { serviceLines: ["Environmental"] } },
+      { id: "unrelated", docType: "past_proposal", title: "Bridge Inspection Support", contractValue: "$900,000", extractedMeta: { serviceLines: ["Structural"] } },
+    ], [], ["Environmental"]);
+
+    expect(evidence.available).toBe(true);
+    expect(evidence.sourceSummary).toContain("Environmental Remediation Support");
+    expect(evidence.sourceSummary).not.toContain("Bridge Inspection Support");
+    expect(evidence.sourceSummary).toContain("Relevant priced prior proposal");
+  });
+
+  it("does not use an unselected priced prior proposal when the pursuit has no service-line context", () => {
+    const evidence = findFeePricingEvidence([
+      { id: "past-1", docType: "past_proposal", title: "Environmental Remediation Support", contractValue: "$425,000" },
+    ], []);
+    expect(evidence.available).toBe(false);
+  });
+
   it("includes fee-bearing extracted metadata from a selected prior proposal in the cited prompt context", () => {
     const evidence = findFeePricingEvidence([{
       id: "past-1",

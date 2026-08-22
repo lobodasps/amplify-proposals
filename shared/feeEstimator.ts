@@ -24,6 +24,7 @@ export function isLegacyFeeEstimateWithoutEvidenceProvenance(entry?: {
 
 const RATE_ARTIFACT_PATTERN = /\b(fee|billing|labor|rate|price)\b/i;
 const PRICING_VALUE_PATTERN = /(?:\$\s?[\d,.]+|\b(?:fee|price|billing rate|labor rate|hourly rate|not-to-exceed|NTE)\b)/i;
+const GENERIC_RELEVANCE_TERMS = new Set(["and", "the", "for", "with", "services", "service", "engineering", "proposal", "project"]);
 
 function metadataAsText(metadata: unknown): string {
   return metadata && typeof metadata === "object" ? JSON.stringify(metadata) : "";
@@ -38,6 +39,19 @@ function documentEvidenceText(document: FeePricingEvidenceDocument): string {
     document.extractedText,
     metadataAsText(document.extractedMeta),
   ].filter(Boolean).join("\n");
+}
+
+function relevanceTokens(value: string): Set<string> {
+  return new Set(
+    value.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !GENERIC_RELEVANCE_TERMS.has(token))
+  );
+}
+
+function hasRelevantServiceOverlap(document: FeePricingEvidenceDocument, serviceLines: string[]): boolean {
+  const targetTerms = relevanceTokens(serviceLines.join(" "));
+  if (targetTerms.size === 0) return false;
+  const documentTerms = relevanceTokens(documentEvidenceText(document));
+  return Array.from(targetTerms).some((term) => documentTerms.has(term));
 }
 
 function metadataPricingExcerpt(metadata: unknown): string {
@@ -67,10 +81,11 @@ function sourceExcerpt(document: FeePricingEvidenceDocument): string {
   return value ? `Recorded contract/proposal value: ${value}` : "Pricing metadata is available; use only stated amounts and rates.";
 }
 
-/** Approved rate artifacts and explicitly selected priced prior proposals are the only permitted fee inputs. */
+/** Approved rate artifacts, selected priced proposals, and relevant priced prior proposals are permitted fee inputs. */
 export function findFeePricingEvidence(
   documents: FeePricingEvidenceDocument[],
-  selectedPastProposalIds: string[]
+  selectedPastProposalIds: string[],
+  serviceLines: string[] = []
 ): FeePricingEvidence {
   const selectedIds = new Set(selectedPastProposalIds);
   const rateArtifacts = documents.filter((document) => {
@@ -78,17 +93,23 @@ export function findFeePricingEvidence(
     return (document.docType === "spreadsheet" || document.docType === "other")
       && RATE_ARTIFACT_PATTERN.test([document.title, document.fileName, document.tags].filter(Boolean).join(" "));
   });
-  const pricedPastProposals = documents.filter((document) =>
+  const selectedPricedPastProposals = documents.filter((document) =>
     document.id && selectedIds.has(document.id) && document.docType === "past_proposal"
       && PRICING_VALUE_PATTERN.test(documentEvidenceText(document))
   );
+  const relevantPricedPastProposals = documents.filter((document) =>
+    document.id && !selectedIds.has(document.id) && document.docType === "past_proposal"
+      && PRICING_VALUE_PATTERN.test(documentEvidenceText(document))
+      && hasRelevantServiceOverlap(document, serviceLines)
+  );
   const sources = [
     ...rateArtifacts.map((document) => ({ type: "Knowledge Hub rate artifact", document })),
-    ...pricedPastProposals.map((document) => ({ type: "Selected priced prior proposal", document })),
+    ...selectedPricedPastProposals.map((document) => ({ type: "Selected priced prior proposal", document })),
+    ...relevantPricedPastProposals.map((document) => ({ type: "Relevant priced prior proposal", document })),
   ].slice(0, 6);
 
   if (sources.length === 0) {
-    const sourceSummary = "Searched Knowledge Hub rate sheets and price-labeled spreadsheets, plus the pursuit's selected past proposals with stated pricing. No permitted fee evidence was found.";
+    const sourceSummary = "Searched Knowledge Hub rate sheets and price-labeled spreadsheets, plus selected and service-line-relevant past proposals with stated pricing. No permitted fee evidence was found.";
     return { available: false, sourceSummary, promptContext: sourceSummary };
   }
 
