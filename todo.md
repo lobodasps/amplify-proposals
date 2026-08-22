@@ -32,6 +32,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Investigate why the Fee Estimator returned no result; no usable fee schedule or rate evidence exists in Knowledge Hub, Fee Estimator had incomplete generic-template variables, and an empty LLM response was incorrectly saved as complete. It now receives complete prompt context, explicitly distinguishes no-rate evidence, blocks blank-output completion, and makes historical blank results retryable.
 - [x] Fix `/launch` generation failure when an Anthropic provider key is configured with unavailable model `claude-sonnet-4-20250514`; use supported model routing and preserve provider fallback behavior — migrated 9 live skill rows to `claude-sonnet-5`, normalized legacy settings at runtime, and updated Settings suggestions
 - [x] Fix proposal scoring when unresolved `{{evaluationCriteria}}` or `{{contentToScore}}` placeholders reach the model: assemble real extracted criteria and completed proposal text, and display invalid runs as Not Scored rather than 0/100
 - [x] Restore `/proposals/:id` tRPC JSON responses after the partial saved-score update; resolve all TypeScript/server compile errors so API requests cannot fall back to HTML

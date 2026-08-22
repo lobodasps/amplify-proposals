@@ -60,6 +60,8 @@ import {
   type LaunchReviewData,
 } from "../../shared/launchWorkflow";
 import { waitForCompletionOrTimeout } from "../../shared/skillExecutionWait";
+import { buildFeeEstimatorTemplateVariables, buildFeeScheduleContext } from "../../shared/feeEstimator";
+import { requireNonEmptySkillOutput } from "../../shared/skillOutput";
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
 const workflowSkillNameSchema = z.enum([
@@ -244,7 +246,7 @@ async function buildSkillVariables(
   let firmName = "Our firm";
   let firmLegalName = "";
   let firmDescription = "AEC firm specializing in public-agency markets in NJ/NY/NYC.";
-  let firmSize = "";
+  let firmSize = "Not specified";
   let firmFoundingYear = "";
   let firmServiceLines = pursuitServiceLines || "Special Inspections, Construction Management, Traffic Engineering, Landscape/Streetscape, Environmental";
   let firmCertifications = "";
@@ -261,7 +263,7 @@ async function buildSkillVariables(
       firmName = firmRow.firmName || firmRow.legalName || firmName;
       firmLegalName = firmRow.legalName || firmRow.firmName || firmName;
       firmFoundingYear = firmRow.foundingYear ? String(firmRow.foundingYear) : "";
-      firmSize = firmRow.employeeCount || "";
+      firmSize = firmRow.employeeCount || "Not specified";
       firmGeographicFocus = firmRow.geographicFocus || firmGeographicFocus;
       firmStateRegistrations = Array.isArray(firmRow.stateRegistrations) && firmRow.stateRegistrations.length > 0
         ? firmRow.stateRegistrations.join(", ")
@@ -456,8 +458,9 @@ async function buildSkillVariables(
       };
     }
 
-    case "fee_estimator":
-      return {
+    case "fee_estimator": {
+      const feeEvidenceDocuments = db ? await db.select().from(damDocuments).limit(200) : [];
+      return buildFeeEstimatorTemplateVariables({
         rfpContext,
         technicalOutline,
         agency,
@@ -467,7 +470,9 @@ async function buildSkillVariables(
         firmSize,
         laborCategories:
           "Principal-in-Charge, Project Manager, Senior Engineer/Inspector, Engineer/Inspector, Field Inspector, Administrative.",
-      };
+        feeScheduleContext: buildFeeScheduleContext(feeEvidenceDocuments),
+      });
+    }
 
     case "proposal_scorer": {
       const { evidenceContext: scorerEvidence } = await buildEvidenceBundle(
@@ -1626,7 +1631,7 @@ export const rfpSessionsRouter = router({
             ...(onRetry ? { onRetry } : {}),
           });
 
-          llmOutput = result.choices[0]?.message?.content ?? "";
+          llmOutput = requireNonEmptySkillOutput(result.choices[0]?.message?.content, input.skillName);
           usedModel = result._model;
           usedProvider = result._provider;
           usedDefaultModel = result._usedDefaultModel ?? false;

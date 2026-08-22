@@ -30,6 +30,7 @@ import { getWinThemeDraftDisplay } from "@/lib/winThemeDraft";
 import { getProposalWorkspaceLayout } from "@/lib/proposalWorkspaceLayout";
 import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
 import { getProposalScoreDisplay } from "../../../shared/proposalScoring";
+import { isBlankSkillOutput } from "../../../shared/skillOutput";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -501,8 +502,22 @@ export default function ProposalWorkspace() {
   // ── Sync server → local state on session load ──────────────────────────────
   useEffect(() => {
     if (session) {
-      setLocalOutputs((session.skillOutputs ?? {}) as SkillOutputs);
-      setLocalState((session.workflowState ?? {}) as WorkflowState);
+      const outputs = (session.skillOutputs ?? {}) as SkillOutputs;
+      const workflowState = (session.workflowState ?? {}) as WorkflowState;
+      const recoveredState: WorkflowState = Object.fromEntries(
+        (Object.entries(workflowState) as Array<[WorkflowSkillName, SkillStateEntry]>).map(([skillName, entry]) => {
+          if (entry?.status === "complete" && isBlankSkillOutput(outputs[skillName])) {
+            return [skillName, {
+              ...entry,
+              status: "error",
+              errorMessage: "This earlier run completed without saving output. Retry this skill to generate the missing content.",
+            } satisfies SkillStateEntry];
+          }
+          return [skillName, entry];
+        })
+      ) as WorkflowState;
+      setLocalOutputs(outputs);
+      setLocalState(recoveredState);
     }
   }, [session]);
 
@@ -590,6 +605,7 @@ export default function ProposalWorkspace() {
           const executeResult = await executeSkillMutation.mutateAsync({
             sessionId,
             skillName,
+            force: localState[skillName]?.status === "error" && isBlankSkillOutput(localOutputs[skillName]),
           });
 
           // ── Poll DB until skill completes or errors ────────────────────────
