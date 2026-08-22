@@ -64,7 +64,7 @@ function deterministicAssetSuggestions<T extends { id: string; docType?: string 
   limit: number,
   personnelRequirements?: unknown,
 ) {
-  return rankKnowledgeHubDocuments(documents, { docTypes, serviceLines, limit, personnelRequirements }).map(({ document, relevanceScore, autoMatched, reasons }) => ({
+  const ranked = rankKnowledgeHubDocuments(documents, { docTypes, serviceLines, limit, personnelRequirements }).map(({ document, relevanceScore, autoMatched, reasons }) => ({
     ...document,
     compositeScore: relevanceScore,
     matchQuality: relevanceScore > 0.5 ? "tag-only" as const : "fallback" as const,
@@ -72,6 +72,20 @@ function deterministicAssetSuggestions<T extends { id: string; docType?: string 
     autoMatched,
     matchReasons: reasons,
   }));
+  const suggestedIds = new Set(ranked.map((document) => document.id));
+  return [
+    ...ranked,
+    ...documents
+      .filter((document) => !suggestedIds.has(document.id))
+      .map((document) => ({
+        ...document,
+        compositeScore: undefined,
+        matchQuality: "fallback" as const,
+        topChunks: [],
+        autoMatched: false,
+        matchReasons: [],
+      })),
+  ];
 }
 
 function serviceLineCandidateCondition(serviceLines: string[], additionalTerms = "") {
@@ -1543,13 +1557,11 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         createdAt: damDocuments.createdAt,
       };
 
-      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
-        .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed"), serviceLineCondition))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(50);
+        .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed")))
+        .orderBy(desc(damDocuments.createdAt));
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
@@ -1580,7 +1592,6 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         createdAt: damDocuments.createdAt,
       };
 
-      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
@@ -1588,10 +1599,8 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
           eq(damDocuments.docType, "resume"),
           eq(damDocuments.resumeVersion, "base"),
           eq(damDocuments.processingStatus, "indexed"),
-          serviceLineCandidateCondition(input.serviceLines, JSON.stringify(input.personnelRequirements ?? "")),
         ))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(50);
+        .orderBy(desc(damDocuments.createdAt));
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
@@ -1621,13 +1630,11 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         chunkStatus: damDocuments.chunkStatus,
       };
 
-      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
-        .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed"), serviceLineCondition))
-        .orderBy(desc(damDocuments.createdAt))
-        .limit(50);
+        .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed")))
+        .orderBy(desc(damDocuments.createdAt));
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
@@ -1645,7 +1652,6 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
-      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select({
           id: damDocuments.id,
@@ -1661,11 +1667,9 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         .where(and(
           inArray(damDocuments.docType, ["rate_sheet", "spreadsheet", "other"]),
           eq(damDocuments.processingStatus, "indexed"),
-          serviceLineCondition,
         ))
-        .limit(50);
       const corpusSize = allDocs.length;
-      const results = rankKnowledgeHubDocuments(allDocs, {
+      const ranked = rankKnowledgeHubDocuments(allDocs, {
         docTypes: ["rate_sheet", "spreadsheet", "other"],
         serviceLines: input.serviceLines,
         requirePricing: true,
@@ -1677,6 +1681,19 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         autoMatched,
         matchReasons: reasons,
       }));
+      const suggestedIds = new Set(ranked.map((document) => document.id));
+      const results = [
+        ...ranked,
+        ...allDocs
+          .filter((document) => !suggestedIds.has(document.id))
+          .map((document) => ({
+            ...document,
+            compositeScore: undefined,
+            matchQuality: "fallback" as const,
+            autoMatched: false,
+            matchReasons: [],
+          })),
+      ];
       const matchQuality: MatchQuality = results.some((result) => result.matchQuality === "tag-only") ? "tag-only" : "fallback";
       return { results, matchQuality, corpusSize };
     }),

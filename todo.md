@@ -32,6 +32,8 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Fix Asset Matching so every eligible Knowledge Hub project sheet, resume, past proposal, and fee artifact is visible; rank and label suggested selections without hiding nonsuggested assets
+- [x] Return all eligible fee artifacts after ranked fee suggestions and add regression coverage for full-list visibility across resumes, past proposals, and fee artifacts
 - [x] Complete centralized deterministic Knowledge Hub matching: persist writer-approved suggestion provenance, move remaining full-corpus suggestion queries to constrained database retrieval, and retain no-silent-auto-fill behavior without vector infrastructure
 - [x] Surface per-asset approved-suggestion provenance in Sources, including source type, match score/reasons, and writer approval time
 - [x] Extend resume candidate filtering to use personnel-requirement terms in PostgreSQL before deterministic ranking when service lines are absent or insufficient

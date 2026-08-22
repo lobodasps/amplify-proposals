@@ -505,7 +505,7 @@ export default function AssetMatchingPanel({
           <div>
             <h2 className="text-lg font-semibold">Asset Matching</h2>
             <p className="text-sm text-muted-foreground">
-              These are deterministic Knowledge Hub suggestions. Review and confirm the assets you approve for proposal generation. Matching by service lines:{" "}
+              All eligible Knowledge Hub records are listed below. Deterministic suggestions appear first; review, keep, remove, or add any assets you approve for proposal generation. Matching by service lines:{" "}
               {serviceLines.length > 0 ? serviceLines.join(", ") : "none specified"}
             </p>
           </div>

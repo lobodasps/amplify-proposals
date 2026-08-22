@@ -15,18 +15,31 @@ const projectResults = Array.from({ length: 10 }, (_, index) => ({
   staffName: null,
   projectName: `Project ${index + 1}`,
   extractedMeta: {},
-  autoMatched: true,
-  compositeScore: 0.82,
-  matchReasons: ["Service-line overlap: 100%"],
+  autoMatched: index !== 9,
+  compositeScore: index !== 9 ? 0.82 : undefined,
+  matchReasons: index !== 9 ? ["Service-line overlap: 100%"] : [],
 }));
+
+const resumeResults = [
+  { id: "resume-suggested", title: "Suggested Resume", staffName: "Suggested Staff", tags: "Civil", extractedMeta: {}, autoMatched: true, compositeScore: 0.8, matchReasons: ["Service-line overlap: 100%"] },
+  { id: "resume-other", title: "Other Resume", staffName: "Other Staff", tags: "General", extractedMeta: {}, autoMatched: false, matchReasons: [] },
+];
+const proposalResults = [
+  { id: "proposal-suggested", title: "Suggested Past Proposal", clientName: null, contractValue: null, tags: "Civil", extractedMeta: {}, autoMatched: true, compositeScore: 0.8, matchReasons: ["Service-line overlap: 100%"] },
+  { id: "proposal-other", title: "Other Past Proposal", clientName: null, contractValue: null, tags: "General", extractedMeta: {}, autoMatched: false, matchReasons: [] },
+];
+const feeResults = [
+  { id: "fee-suggested", title: "Suggested Fee Schedule", docType: "rate_sheet", tags: "Civil", contractValue: null, autoMatched: true, compositeScore: 0.8, matchReasons: ["Pricing evidence"] },
+  { id: "fee-other", title: "Other Fee Artifact", docType: "spreadsheet", tags: "General", contractValue: null, autoMatched: false, matchReasons: [] },
+];
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     dam: {
       matchProjectSheets: { useQuery: () => ({ data: { results: projectResults, matchQuality: "hybrid", corpusSize: 10 }, isLoading: false }) },
-      matchResumes: { useQuery: () => ({ data: { results: [], matchQuality: "fallback", corpusSize: 0 }, isLoading: false }) },
-      matchPastProposals: { useQuery: () => ({ data: { results: [], matchQuality: "fallback", corpusSize: 0 }, isLoading: false }) },
-      matchFeeEvidence: { useQuery: () => ({ data: { results: [], matchQuality: "fallback", corpusSize: 0 }, isLoading: false }) },
+      matchResumes: { useQuery: () => ({ data: { results: resumeResults, matchQuality: "hybrid", corpusSize: 2 }, isLoading: false }) },
+      matchPastProposals: { useQuery: () => ({ data: { results: proposalResults, matchQuality: "hybrid", corpusSize: 2 }, isLoading: false }) },
+      matchFeeEvidence: { useQuery: () => ({ data: { results: feeResults, matchQuality: "hybrid", corpusSize: 2 }, isLoading: false }) },
       searchForAssetMatching: { useQuery: () => ({ data: [] }) },
     },
     pursuits: {
@@ -55,6 +68,17 @@ describe("AssetMatchingPanel", () => {
     await waitFor(() => expect(screen.getByText("Project 10")).toBeTruthy());
     expect(screen.getAllByText(/Project \d+/)).toHaveLength(10);
     expect(container.querySelectorAll('[style*="overflow-y"], [style*="overflowY"]').length).toBe(0);
+  });
+
+  it("keeps nonsuggested eligible assets visible alongside writer-reviewed suggestions", async () => {
+    render(<AssetMatchingPanel pursuitId="pursuit-1" serviceLines={["Civil"]} onComplete={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText("Project 10")).toBeTruthy());
+    expect(screen.getByText("Project 10")).toBeTruthy();
+    expect(screen.getAllByText("Suggested · approval required")).toHaveLength(12);
+    expect(screen.getByText("Other Staff")).toBeTruthy();
+    expect(screen.getByText("Other Past Proposal")).toBeTruthy();
+    expect(screen.getByText("Other Fee Artifact")).toBeTruthy();
   });
 
   it("records writer-approved suggestion provenance when a suggested asset is confirmed", async () => {
