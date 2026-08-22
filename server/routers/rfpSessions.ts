@@ -42,6 +42,7 @@ import {
   DEFAULT_SECTIONS,
   inferSectionType,
   computeOverallCompliance,
+  resolveProposalStructure,
 } from "../../shared/proposalSections";
 import { LABEL_TIER_MAP, type ExtractionTier, type RfpFileLabel } from "../../shared/types";
 import { shouldExtractRfpTextBeforeLlm } from "../../shared/launchDocumentProcessing";
@@ -2093,30 +2094,21 @@ export const rfpSessionsRouter = router({
         }
       }
 
-      // Try to load section_map from rfp_structured_index
-      let sectionDefs: Array<{ sectionType: SectionType; title: string; pageLimit: number; wordLimit: number; order: number }> = [];
+      // Prefer explicit RFP structure; otherwise derive a transparent criteria-based order.
+      let sectionMap: string | null = null;
       if (session.pursuitId) {
         const idxRows = await db.select().from(rfpStructuredIndex)
           .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId))
           .limit(1);
-        const idx = idxRows[0];
-        if (idx?.sectionMap) {
-          try {
-            const parsed = JSON.parse(idx.sectionMap) as Array<{ title: string; pageLimit?: number; order?: number }>;
-            sectionDefs = parsed.map((s, i) => ({
-              sectionType: inferSectionType(s.title),
-              title: s.title,
-              pageLimit: s.pageLimit ?? 0,
-              wordLimit: (s.pageLimit ?? 0) * 450,
-              order: s.order ?? i + 1,
-            }));
-          } catch { /* fall through to defaults */ }
-        }
+        sectionMap = idxRows[0]?.sectionMap ?? null;
       }
-
-      if (sectionDefs.length === 0) {
-        sectionDefs = DEFAULT_SECTIONS.map(s => ({ ...s }));
-      }
+      const extracted = (session.extractedData ?? {}) as Partial<ParsedRfpData>;
+      const structure = resolveProposalStructure({
+        sectionMap,
+        evaluationCriteria: extracted.evaluationCriteria,
+        submissionFormat: extracted.submissionFormat,
+      });
+      const sectionDefs = structure.sections;
 
       // Merge with existing section data
       const sections = sectionDefs.map(def => {
@@ -2136,7 +2128,7 @@ export const rfpSessionsRouter = router({
         } as ProposalSection;
       });
 
-      return { sections, sectionsRecord };
+      return { sections, sectionsRecord, structureSource: structure.source };
     }),
 
   /**
@@ -2383,25 +2375,19 @@ export const rfpSessionsRouter = router({
             }
           }
 
-          // ── Step b: Load section definitions ─────────────────────────────
-          let sectionDefs: Array<{ sectionType: SectionType; title: string; pageLimit: number; wordLimit: number; order: number }> = [];
+          // ── Step b: Resolve section definitions from the RFP structure ────
+          let sectionMap: string | null = null;
           if (session.pursuitId) {
             const idxRows = await db.select().from(rfpStructuredIndex)
               .where(eq(rfpStructuredIndex.pursuitId, session.pursuitId)).limit(1);
-            if (idxRows[0]?.sectionMap) {
-              try {
-                const parsed = JSON.parse(idxRows[0].sectionMap) as Array<{ title: string; pageLimit?: number; order?: number }>;
-                sectionDefs = parsed.map((s, i) => ({
-                  sectionType: inferSectionType(s.title),
-                  title: s.title,
-                  pageLimit: s.pageLimit ?? 0,
-                  wordLimit: (s.pageLimit ?? 0) * 450,
-                  order: s.order ?? i + 1,
-                }));
-              } catch { /* fall through */ }
-            }
+            sectionMap = idxRows[0]?.sectionMap ?? null;
           }
-          if (sectionDefs.length === 0) sectionDefs = DEFAULT_SECTIONS.map(s => ({ ...s }));
+          const extracted = (session.extractedData ?? {}) as Partial<ParsedRfpData>;
+          const sectionDefs = resolveProposalStructure({
+            sectionMap,
+            evaluationCriteria: extracted.evaluationCriteria,
+            submissionFormat: extracted.submissionFormat,
+          }).sections;
 
           // ── Step c: Generate each section in order ────────────────────────
           for (const def of sectionDefs) {

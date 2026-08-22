@@ -81,6 +81,101 @@ export const DEFAULT_SECTIONS: DefaultSectionDef[] = [
   { sectionType: "fee_proposal",        title: "Fee Proposal",              pageLimit: 0,  wordLimit: 0,    order: 8 },
 ];
 
+export type ProposalStructureSource = "rfp_section_map" | "rfp_evaluation_criteria" | "standard_template";
+
+export interface RfpStructureCriterion {
+  title?: string;
+  description?: string;
+}
+
+export interface RfpStructureInput {
+  sectionMap?: string | null;
+  evaluationCriteria?: unknown;
+  submissionFormat?: string | null;
+}
+
+const DEFAULT_BY_TYPE = new Map(DEFAULT_SECTIONS.map((section) => [section.sectionType, section]));
+
+function createSection(sectionType: SectionType, title: string, order: number, pageLimit?: number): DefaultSectionDef {
+  const base = DEFAULT_BY_TYPE.get(sectionType);
+  const resolvedPageLimit = pageLimit ?? base?.pageLimit ?? 0;
+  return {
+    sectionType,
+    title,
+    pageLimit: resolvedPageLimit,
+    wordLimit: resolvedPageLimit * 450,
+    order,
+  };
+}
+
+/**
+ * Resolves the proposal navigator/generation order from explicit RFP structure
+ * whenever it exists. When the RFP parser did not produce a section map, derives
+ * an auditable sequence from the parsed evaluation criteria and labels that source
+ * rather than representing it as an explicit RFP-mandated outline.
+ */
+export function resolveProposalStructure(input: RfpStructureInput): {
+  sections: DefaultSectionDef[];
+  source: ProposalStructureSource;
+} {
+  if (input.sectionMap) {
+    try {
+      const parsed = JSON.parse(input.sectionMap) as Array<{ title?: string; pageLimit?: number; order?: number }>;
+      const mapped = parsed
+        .filter((section) => section.title?.trim())
+        .map((section, index) => ({ section, index }))
+        .sort((a, b) => (a.section.order ?? a.index + 1) - (b.section.order ?? b.index + 1))
+        .map(({ section }, index) => createSection(
+          inferSectionType(section.title!),
+          section.title!.trim(),
+          index + 1,
+          section.pageLimit,
+        ));
+      if (mapped.length > 0) return { sections: mapped, source: "rfp_section_map" };
+    } catch {
+      // Fall through to criteria or standard template.
+    }
+  }
+
+  const criteria = Array.isArray(input.evaluationCriteria)
+    ? input.evaluationCriteria as RfpStructureCriterion[]
+    : [];
+  if (criteria.length > 0) {
+    const sections: DefaultSectionDef[] = [];
+    const seen = new Set<SectionType>();
+    const add = (sectionType: SectionType, title: string) => {
+      if (seen.has(sectionType)) return;
+      seen.add(sectionType);
+      sections.push(createSection(sectionType, title, sections.length + 1));
+    };
+
+    if (/transmittal\s+letter|cover\s+letter/i.test(input.submissionFormat ?? "")) {
+      add("cover_letter", "Transmittal Letter");
+    }
+
+    for (const criterion of criteria) {
+      const title = criterion.title?.trim() || "Proposal Requirement";
+      const description = criterion.description ?? "";
+      const combined = `${title} ${description}`;
+      const type = inferSectionType(combined);
+      if (type === "firm_qualifications") {
+        add("firm_qualifications", title);
+        if (/personnel|staff|resum[eé]|license|qualifications and experience of personnel/i.test(combined)) {
+          add("key_personnel", "Key Personnel and Resumes");
+        }
+        if (/client history|references|past performance|project experience/i.test(combined)) {
+          add("project_experience", "Relevant Project Experience and References");
+        }
+      } else {
+        add(type, title);
+      }
+    }
+    if (sections.length > 0) return { sections, source: "rfp_evaluation_criteria" };
+  }
+
+  return { sections: DEFAULT_SECTIONS.map((section) => ({ ...section })), source: "standard_template" };
+}
+
 // ─── Proposal Section Data Model ────────────────────────────────────────────
 
 /**
@@ -188,7 +283,7 @@ export function inferSectionType(title: string): SectionType {
   const lower = title.toLowerCase();
   if (/cover\s*letter|transmittal/i.test(lower)) return "cover_letter";
   if (/executive\s*summary|overview/i.test(lower)) return "executive_summary";
-  if (/firm\s*(qualifications?|experience|capability|profile)/i.test(lower)) return "firm_qualifications";
+  if (/firm\s*(qualifications?|experience|capability|profile)|general\s*qualifications?|proposer'?s?\s*qualifications?/i.test(lower)) return "firm_qualifications";
   if (/technical\s*(approach|methodology|plan|solution)/i.test(lower)) return "technical_approach";
   if (/project\s*(experience|examples?|past\s*performance)|sf[\s-]*330.*section\s*f/i.test(lower)) return "project_experience";
   if (/key\s*personnel|staff(ing)?|team|resumes?|sf[\s-]*330.*section\s*e/i.test(lower)) return "key_personnel";

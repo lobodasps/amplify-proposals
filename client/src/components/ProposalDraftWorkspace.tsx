@@ -245,12 +245,14 @@ function SectionNavigator({
   onSelect,
   onGenerateAll,
   isGenerating,
+  structureSource,
 }: {
   sections: SectionWithDef[];
   selectedType: string | null;
   onSelect: (sectionType: string) => void;
   onGenerateAll: () => void;
   isGenerating: boolean;
+  structureSource?: "rfp_section_map" | "rfp_evaluation_criteria" | "standard_template";
 }) {
   const sectionsRecord: Record<string, ProposalSection> = {};
   for (const s of sections) sectionsRecord[s.sectionType] = s;
@@ -273,6 +275,13 @@ function SectionNavigator({
           )}
           Generate Full Proposal
         </Button>
+        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+          {structureSource === "rfp_section_map"
+            ? "Order follows the RFP’s extracted submission structure."
+            : structureSource === "rfp_evaluation_criteria"
+              ? "Order is derived from the RFP evaluation criteria; no explicit submission outline was extracted."
+              : "Standard proposal sequence shown because the RFP did not yield a usable structure."}
+        </p>
       </div>
 
       <ScrollArea className="flex-1">
@@ -703,6 +712,7 @@ export default function ProposalDraftWorkspace({
   );
 
   const sections = (sectionsData?.sections ?? []) as SectionWithDef[];
+  const structureSource = sectionsData?.structureSource as "rfp_section_map" | "rfp_evaluation_criteria" | "standard_template" | undefined;
 
   // ── Polling for active sections ─────────────────────────────────────────────
   const hasActiveSections = sections.some(
@@ -830,6 +840,7 @@ export default function ProposalDraftWorkspace({
             onSelect={setSelectedType}
             onGenerateAll={() => setShowGenerateAllDialog(true)}
             isGenerating={isGenerating}
+            structureSource={structureSource}
           />
 
           {/* Center: Section Editor */}
