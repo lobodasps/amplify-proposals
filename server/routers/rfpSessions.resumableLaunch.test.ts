@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }));
+const { getDbMock, invokeSkillMock } = vi.hoisted(() => ({ getDbMock: vi.fn(), invokeSkillMock: vi.fn() }));
 
 vi.mock("../db", () => ({ getDb: getDbMock }));
 vi.mock("../_core/llmSkill", () => ({
-  invokeLLMWithSkill: vi.fn(),
+  invokeLLMWithSkill: invokeSkillMock,
   getSkillProvider: vi.fn().mockResolvedValue("google_gemini"),
 }));
 
@@ -23,13 +23,13 @@ const review = {
 };
 
 function inMemorySessionDb(sessionRef: { current: Record<string, unknown> }) {
+  const selection = {
+    where: () => selection,
+    limit: async () => [sessionRef.current],
+  };
   return {
     select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => [sessionRef.current],
-        }),
-      }),
+      from: () => selection,
     }),
     update: () => ({
       set: (patch: Record<string, unknown>) => ({
@@ -39,6 +39,9 @@ function inMemorySessionDb(sessionRef: { current: Record<string, unknown> }) {
         },
       }),
     }),
+    insert: () => ({
+      values: async () => [],
+    }),
   };
 }
 
@@ -46,6 +49,7 @@ describe("rfpSessions resumable Launch state", () => {
   let sessionRef: { current: Record<string, unknown> };
 
   beforeEach(() => {
+    invokeSkillMock.mockReset();
     sessionRef = {
       current: {
         id: sessionId,
@@ -136,5 +140,46 @@ describe("rfpSessions resumable Launch state", () => {
 
     await expect(caller.executeSkill({ sessionId, skillName: "key_personnel" }))
       .rejects.toThrow("Writer approval required");
+  });
+
+  it("retries only a failed proposal scorer and preserves all completed upstream outputs", async () => {
+    const upstreamOutputs = {
+      rfp_parser: "Parsed RFP scope",
+      win_themes: "Win themes",
+      technical_outline: "Technical outline",
+      technical_writer: "Technical approach",
+      key_personnel: "Key personnel",
+      past_performance: "Past performance",
+      fee_estimator: "Fee estimate",
+    };
+    sessionRef.current = {
+      id: sessionId,
+      pursuitId: null,
+      extractedData: { evaluationCriteria: [{ id: "EC1", title: "Technical", weight: "100%", description: "Address scope" }] },
+      skillOutputs: upstreamOutputs,
+      workflowState: {
+        ...Object.fromEntries(Object.keys(upstreamOutputs).map((key) => [key, { status: "complete" }])),
+        proposal_scorer: { status: "error", errorMessage: "fetch failed" },
+      },
+    };
+    getDbMock.mockResolvedValue(inMemorySessionDb(sessionRef));
+    invokeSkillMock.mockResolvedValue({
+      choices: [{ message: { role: "assistant", content: JSON.stringify({ overallScore: 81, criteriaScores: [], gaps: [] }) } }],
+      _provider: "anthropic",
+      _model: "claude-sonnet-5",
+    });
+    const caller = rfpSessionsRouter.createCaller({
+      user: { id: "22222222-2222-4222-8222-222222222222", role: "user" },
+      req: {} as any,
+      res: {} as any,
+    } as any);
+
+    await caller.executeSkill({ sessionId, skillName: "proposal_scorer", force: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(invokeSkillMock).toHaveBeenCalledWith(expect.objectContaining({ skillType: "proposal_scorer" }));
+    expect((sessionRef.current.skillOutputs as Record<string, string>).proposal_scorer).toContain("overallScore");
+    expect(sessionRef.current.skillOutputs).toMatchObject(upstreamOutputs);
+    expect((sessionRef.current.workflowState as Record<string, { status: string }>).proposal_scorer.status).toBe("complete");
   });
 });

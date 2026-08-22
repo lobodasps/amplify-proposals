@@ -4,9 +4,18 @@
  * and the invokeLLMWithSkill routing logic.
  */
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SKILLS, normalizeAnthropicModel, normalizeModelForSdkType, type SkillType, type Provider } from "./_core/llmSkill";
+import { DEFAULT_SKILLS, isRetryableProviderFailure, normalizeAnthropicModel, normalizeModelForSdkType, type SkillType, type Provider } from "./_core/llmSkill";
 
 describe("LLM Skill Configuration", () => {
+  describe("transient provider transport handling", () => {
+    it("retries raw fetch failures but not permanent request errors", () => {
+      expect(isRetryableProviderFailure(new Error("fetch failed"))).toBe(true);
+      expect(isRetryableProviderFailure(new Error("socket hang up"))).toBe(true);
+      expect(isRetryableProviderFailure({ status: 503 })).toBe(true);
+      expect(isRetryableProviderFailure({ status: 400 })).toBe(false);
+    });
+  });
+
   describe("DEFAULT_SKILLS definitions", () => {
     it("should define all expected skill types", () => {
       const expectedSkills: SkillType[] = [

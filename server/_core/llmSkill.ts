@@ -1234,7 +1234,7 @@ async function callAnthropic(
     payload.tool_choice = { type: "tool", name: responseFormat.json_schema.name };
   }
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await retryWithBackoff(() => fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1242,7 +1242,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(payload),
-  });
+  }), `callAnthropic/${model}`);
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Anthropic API error: ${res.status} ${err}`);
@@ -1411,31 +1411,36 @@ function resolveGeminiModelForNativeSDK(model: string): string {
 
 // ─── Retry-with-backoff for transient Gemini errors ─────────────────────────
 
-const GEMINI_RETRY_STATUS_CODES = new Set([429, 502, 503]);
-const GEMINI_RETRY_DELAYS_MS = [5_000, 15_000, 30_000]; // after attempt 1, 2, 3
+const TRANSIENT_RETRY_STATUS_CODES = new Set([429, 502, 503]);
+const PROVIDER_RETRY_DELAYS_MS = [5_000, 15_000, 30_000]; // after attempt 1, 2, 3
+
+export function isRetryableProviderFailure(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status !== undefined && TRANSIENT_RETRY_STATUS_CODES.has(status)) return true;
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(message);
+}
 
 async function retryWithBackoff<T>(fn: () => Promise<T>, label: string, onRetry?: (status: number, attempt: number, delaySec: number) => Promise<void>): Promise<T> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt <= GEMINI_RETRY_DELAYS_MS.length; attempt++) {
+  for (let attempt = 0; attempt <= PROVIDER_RETRY_DELAYS_MS.length; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
       lastErr = err;
       const status = (err as { status?: number })?.status;
-      const isRetryable = status !== undefined && GEMINI_RETRY_STATUS_CODES.has(status);
-      if (!isRetryable || attempt === GEMINI_RETRY_DELAYS_MS.length) break;
-      const delayMs = GEMINI_RETRY_DELAYS_MS[attempt];
+      if (!isRetryableProviderFailure(err) || attempt === PROVIDER_RETRY_DELAYS_MS.length) break;
+      const delayMs = PROVIDER_RETRY_DELAYS_MS[attempt];
       const delaySec = delayMs / 1000;
-      console.warn(`[${label}] Gemini ${status} — retrying in ${delaySec}s (attempt ${attempt + 1} of ${GEMINI_RETRY_DELAYS_MS.length})`);
+      console.warn(`[${label}] provider ${status ?? "transport"} failure — retrying in ${delaySec}s (attempt ${attempt + 1} of ${PROVIDER_RETRY_DELAYS_MS.length})`);
       if (onRetry) {
-        try { await onRetry(status, attempt + 1, delaySec); } catch { /* non-fatal */ }
+        try { await onRetry(status ?? 0, attempt + 1, delaySec); } catch { /* non-fatal */ }
       }
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
-  const status = (lastErr as { status?: number })?.status;
-  if (status !== undefined && GEMINI_RETRY_STATUS_CODES.has(status)) {
-    throw new Error(`Gemini API unavailable after 3 attempts — please retry in a few minutes`);
+  if (isRetryableProviderFailure(lastErr)) {
+    throw new Error(`Provider API unavailable after 3 attempts — please retry in a few minutes`);
   }
   throw lastErr;
 }
@@ -1709,6 +1714,8 @@ export async function invokeLLMWithSkill(
       err.message?.includes("500") ||
       err.message?.includes("502") ||
       err.message?.includes("503") ||
+      err.message?.includes("fetch failed") ||
+      err.message?.includes("Provider API unavailable") ||
       err.message?.includes("authentication") ||
       err.message?.includes("Unauthorized") ||
       err.message?.includes("Invalid API key") ||

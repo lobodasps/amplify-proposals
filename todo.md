@@ -32,6 +32,9 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Diagnose and fix the failed Proposal Scorer execution for RFP 2025-27 – Historic Landscape Design without rerunning completed proposal sections; the scorer used Anthropic Sonnet 5 and failed with a transient raw `fetch failed` transport error despite valid extracted criteria and completed sections. All provider calls now retry raw transport failures with backoff and allow configured-provider fallback after retry exhaustion.
+- [x] Add router-level coverage proving `proposal_scorer` can retry after a transient provider failure without rerunning completed upstream skills
+- [x] Validate scorer-only recovery preserves completed Historic Landscape proposal sections, then remove temporary scorer-audit scripts; the live session completed scorer-only at 18:04 with five evidence items and all seven upstream outputs retained
 - [x] Fix Asset Matching so every eligible Knowledge Hub project sheet, resume, past proposal, and fee artifact is visible; rank and label suggested selections without hiding nonsuggested assets
 - [x] Return all eligible fee artifacts after ranked fee suggestions and add regression coverage for full-list visibility across resumes, past proposals, and fee artifacts
 - [x] Complete centralized deterministic Knowledge Hub matching: persist writer-approved suggestion provenance, move remaining full-corpus suggestion queries to constrained database retrieval, and retain no-silent-auto-fill behavior without vector infrastructure
