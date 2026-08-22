@@ -39,7 +39,7 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 | `dam_documents` | Knowledge Hub / DAM file records with extractedMeta (JSONB), extractedText, tags |
 | `contracts` | Full contract lifecycle with hierarchy (primary → child → sub-project) |
 | `contract_amendments` | Amendments and change orders with amountBehavior logic |
-| `personnel` | Staff records linked to Supabase profiles |
+| `personnel` | Amplify proposal-staff compatibility records linked by enforced `userId → profiles.id`; `employerType` distinguishes internal and subconsultant personnel |
 | `amp_projects` | Amplify project records (renamed from `projects` to avoid conflict) |
 | `amp_users` | Amplify user/role records (renamed from `users`) |
 | `amp_clients` | Amplify client records (renamed from `clients`) |
@@ -63,6 +63,14 @@ These are defined in `drizzle/schema.ts` and pushed via `pnpm db:push` (which ru
 ### v0 / Timekeeping Tables (66 tables, managed externally)
 
 These pre-existing tables power the JPCL/Strans timekeeping and billing system. They include `profiles`, `projects`, `companies`, `clients`, `tasks`, `time_entries`, `billing_rules`, `phases`, `owners`, etc. Amplify reads from these tables (particularly `profiles` for auth resolution and `companies` for entity IDs) but does not write to them except during contract activation (creates a project record).
+
+### Shared Staff, Certification, and Permission Authority
+
+Timekeeping/V0 is the system of record for staff identity (`profiles`), certifications (`user_certifications` joined to `certification_types`), and access assignment (`user_permissions`, `permission_roles`, and `user_role_assignments`). Amplify declares lightweight typed Drizzle stubs solely for the fields it reads; these remain Timekeeping-owned tables and are never created or altered by Amplify migrations.
+
+`personnel` remains an Amplify-owned proposal compatibility layer. Its optional `userId` has an enforced foreign key to `profiles.id`, and `employerType` is `internal` or `subconsultant`. Legacy `personnel.certifications` is retained only for backward compatibility and is never used as a certification source. Proposal skill hydration and Staff Directory views read active/non-expired certifications from the shared tables at query time.
+
+Amplify access gates resolve named shared proposal permissions rather than `amp_users.role`. Direct `user_permissions` and role-derived `permission_roles` are merged. During the transition where detailed proposal flags remain unset, Timekeeping-managed `profiles.permission_scope = 'all'` or `profiles.role = 'admin'` preserves all-access behavior. Timekeeping/V0 remains the sole role and permission-assignment interface; Amplify exposes no role-assignment controls.
 
 ---
 
