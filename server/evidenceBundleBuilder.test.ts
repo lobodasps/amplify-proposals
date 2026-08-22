@@ -128,7 +128,7 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { getDb } from "./db";
-import { buildEvidenceBundle } from "./evidenceBundleBuilder";
+import { buildDocumentFallbackEvidenceItems, buildEvidenceBundle } from "./evidenceBundleBuilder";
 
 const mockGetDb = vi.mocked(getDb);
 
@@ -179,6 +179,23 @@ describe("buildEvidenceBundle", () => {
       expect(result.evidenceContext).toBe("");
     });
 
+    it("uses extracted document content as a labeled fallback when chunks are unavailable", async () => {
+      const docWithExtraction = {
+        ...MOCK_DOC_PROJECT,
+        extractedText: "Route 9 bridge inspection scope, client requirements, and project outcomes.",
+        extractedMeta: null,
+      };
+      const mockDb = setupMockDb({ chunks: [], docs: [docWithExtraction] });
+      mockGetDb.mockResolvedValue(mockDb as never);
+
+      const result = await buildEvidenceBundle(["doc-proj-1"], "win_themes", []);
+
+      expect(result.hasSufficientEvidence).toBe(true);
+      expect(result.bundle.items[0].chunkType).toBe("document_fallback");
+      expect(result.bundle.items[0].sourceDocTitle).toBe("Route 9 Bridge Inspection");
+      expect(result.evidenceContext).toContain("Route 9 bridge inspection scope");
+    });
+
     it("returns empty bundle when DB throws (non-blocking fallback)", async () => {
       mockGetDb.mockRejectedValue(new Error("DB connection failed"));
 
@@ -195,6 +212,16 @@ describe("buildEvidenceBundle", () => {
       expect(result.bundle.skillName).toBe("key_personnel");
       expect(result.bundle.sourceDocIds).toEqual([]);
     });
+  });
+
+  it("builds fallback evidence from extracted metadata when text is unavailable", () => {
+    const items = buildDocumentFallbackEvidenceItems([{
+      ...MOCK_DOC_PROJECT,
+      extractedText: null,
+      extractedMeta: { summary: "An extracted project summary." },
+    }] as never, { totalCap: 4, sourceTypeCaps: { project_sheet: 2 } });
+    expect(items).toHaveLength(1);
+    expect(items[0].content).toContain("An extracted project summary.");
   });
 
   // ── 2. Confidence threshold filtering ────────────────────────────────────

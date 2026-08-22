@@ -19,6 +19,8 @@
  */
 
 import { trpc } from "@/lib/trpc";
+import { getEvidenceSourceAvailabilityMessage } from "@/lib/evidenceSourceAvailability";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -38,6 +40,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Database,
+  RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
 import type { EvidenceBundle, EvidenceItem } from "../../../shared/workflowTypes";
@@ -45,6 +48,7 @@ import type { EvidenceBundle, EvidenceItem } from "../../../shared/workflowTypes
 // ─── Skill display metadata ───────────────────────────────────────────────────
 
 const SKILL_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+  rfp_parser: { label: "RFP Parser", icon: <FileText className="h-3.5 w-3.5" />, color: "text-slate-600 dark:text-slate-400" },
   win_themes: {
     label: "Win Themes",
     icon: <Award className="h-3.5 w-3.5" />,
@@ -70,6 +74,19 @@ const SKILL_META: Record<string, { label: string; icon: React.ReactNode; color: 
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     color: "text-rose-600 dark:text-rose-400",
   },
+  technical_outline: { label: "Technical Outline", icon: <BookOpen className="h-3.5 w-3.5" />, color: "text-blue-600 dark:text-blue-400" },
+  fee_estimator: { label: "Fee Estimate", icon: <Database className="h-3.5 w-3.5" />, color: "text-emerald-600 dark:text-emerald-400" },
+};
+
+const ALL_WORKFLOW_SKILLS = [
+  "rfp_parser", "win_themes", "technical_outline", "technical_writer",
+  "key_personnel", "past_performance", "fee_estimator", "proposal_scorer",
+];
+
+const NOT_APPLICABLE_SOURCE_MESSAGES: Record<string, string> = {
+  rfp_parser: "This skill uses the uploaded RFP package. It does not assemble Knowledge Hub evidence excerpts.",
+  technical_outline: "This skill is derived from the parsed RFP and Win Themes output. It does not independently retrieve Knowledge Hub evidence.",
+  fee_estimator: "This skill uses approved rate artifacts and relevant priced prior proposals. Its pricing-source summary is recorded with the Fee Estimate output.",
 };
 
 // ─── Chunk type badge color ───────────────────────────────────────────────────
@@ -191,10 +208,12 @@ function SkillBundleSection({
   skillName,
   bundle,
   isScorer = false,
+  emptyMessage,
 }: {
   skillName: string;
   bundle: EvidenceBundle;
   isScorer?: boolean;
+  emptyMessage?: string;
 }) {
   const [open, setOpen] = useState(true);
   const meta = SKILL_META[skillName] ?? {
@@ -242,7 +261,7 @@ function SkillBundleSection({
         <div className="space-y-2 pb-3 pl-1">
           {items.length === 0 ? (
             <p className="text-xs text-muted-foreground italic py-2 pl-2">
-              No evidence items were assembled for this skill.
+              {emptyMessage ?? getEvidenceSourceAvailabilityMessage(bundle.sourceDocIds)}
             </p>
           ) : (
             items.map((item, i) => (
@@ -253,7 +272,9 @@ function SkillBundleSection({
           {/* Scorer-specific: assembled-at timestamp */}
           {bundle.assembledAt && (
             <p className="text-[10px] text-muted-foreground pl-1 pt-1">
-              Assembled {new Date(bundle.assembledAt).toLocaleString()}
+              {(bundle as EvidenceBundle & { reconstructedAt?: number }).reconstructedAt
+                ? `Rebuilt from current selected assets ${new Date((bundle as EvidenceBundle & { reconstructedAt: number }).reconstructedAt).toLocaleString()}`
+                : `Assembled ${new Date(bundle.assembledAt).toLocaleString()}`}
             </p>
           )}
         </div>
@@ -269,10 +290,14 @@ interface EvidenceSourcesPanelProps {
 }
 
 export default function EvidenceSourcesPanel({ sessionId }: EvidenceSourcesPanelProps) {
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.rfpSessions.getEvidenceSources.useQuery(
     { sessionId },
     { enabled: !!sessionId }
   );
+  const rebuildSources = trpc.rfpSessions.rebuildEvidenceSources.useMutation({
+    onSuccess: () => utils.rfpSessions.getEvidenceSources.invalidate({ sessionId }),
+  });
 
   if (isLoading) {
     return (
@@ -310,50 +335,71 @@ export default function EvidenceSourcesPanel({ sessionId }: EvidenceSourcesPanel
             Evidence sources are assembled when the Win Themes, Technical Approach, Key Personnel,
             Past Performance, or Proposal Scorer skills run. Complete those skills to see sources here.
           </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs mt-3"
+            disabled={rebuildSources.isPending}
+            onClick={() => rebuildSources.mutate({ sessionId })}
+          >
+            <RefreshCw className={`h-3 w-3 mr-1.5 ${rebuildSources.isPending ? "animate-spin" : ""}`} />
+            Rebuild from current assets
+          </Button>
         </div>
       </div>
     );
   }
 
-  // Ordered skill display: generation skills first, scorer last
-  const GENERATION_SKILLS = ["win_themes", "technical_writer", "key_personnel", "past_performance"];
+  const emptyBundle = (skillName: string): EvidenceBundle => ({
+    skillName,
+    items: [],
+    assembledAt: Date.now(),
+    sourceDocIds: [],
+  });
 
   return (
     <ScrollArea className="h-full">
       <div className="p-4 space-y-1">
-        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-          These are the verified source documents and excerpts that were assembled into the evidence
-          bundle for each skill. Use this panel to inspect what supported each section of the proposal.
-        </p>
+        <div className="rounded-lg border bg-muted/30 p-3 mb-4 space-y-2">
+          <p className="text-xs leading-relaxed"><strong>Sources</strong> shows the document excerpts a skill actually used or, for a legacy rebuild, the current selected-asset evidence assembled for review.</p>
+          <p className="text-xs text-muted-foreground leading-relaxed"><strong>Assets</strong> opens the editable pursuit inputs—project sheets, resumes, and prior proposals—from which future skills may draw sources. Selecting an asset does not mean every skill used it.</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={rebuildSources.isPending}
+            onClick={() => rebuildSources.mutate({ sessionId })}
+          >
+            <RefreshCw className={`h-3 w-3 mr-1.5 ${rebuildSources.isPending ? "animate-spin" : ""}`} />
+            Rebuild from current assets
+          </Button>
+          <p className="text-[10px] text-muted-foreground">Use this for older proposals with empty bundles. Rebuilt entries are labeled and do not overwrite the historical execution record.</p>
+        </div>
 
-        {/* Generation skill bundles */}
-        {GENERATION_SKILLS.map((skillName) => {
-          const bundle = evidenceBundles?.[skillName];
-          if (!bundle) return null;
+        {ALL_WORKFLOW_SKILLS.map((skillName) => {
+          const rawBundle = skillName === "proposal_scorer"
+            ? scorerEvidenceInput
+            : evidenceBundles?.[skillName];
+          const bundle = skillName === "proposal_scorer" && rawBundle
+            ? {
+                ...rawBundle,
+                ...(liveScoreDetails?.evidenceCoverage !== undefined
+                  ? { evidenceCoverage: liveScoreDetails.evidenceCoverage }
+                  : {}),
+              }
+            : rawBundle;
           return (
             <div key={skillName}>
-              <SkillBundleSection skillName={skillName} bundle={bundle} />
+              <SkillBundleSection
+                skillName={skillName}
+                bundle={(bundle ?? emptyBundle(skillName)) as EvidenceBundle}
+                isScorer={skillName === "proposal_scorer"}
+                emptyMessage={NOT_APPLICABLE_SOURCE_MESSAGES[skillName]}
+              />
               <Separator className="my-1" />
             </div>
           );
         })}
-
-        {/* Scorer evidence input */}
-        {scorerEvidenceInput && (
-          <div>
-            <SkillBundleSection
-              skillName="proposal_scorer"
-              bundle={{
-                ...scorerEvidenceInput,
-                // Attach real evidenceCoverage from liveScoreDetails for the coverage bar
-                ...(liveScoreDetails?.evidenceCoverage !== undefined
-                  ? { evidenceCoverage: liveScoreDetails.evidenceCoverage }
-                  : {}),
-              } as unknown as EvidenceBundle}
-              isScorer
-            />
-          </div>
-        )}
 
         {/* Unsupported claims summary — sourced from liveScoreDetails (real scorer output) */}
         {liveScoreDetails?.unsupportedClaims && liveScoreDetails.unsupportedClaims.length > 0 && (

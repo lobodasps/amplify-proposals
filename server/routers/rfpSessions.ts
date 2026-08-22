@@ -930,6 +930,59 @@ export const rfpSessionsRouter = router({
       };
     }),
 
+  // ── Rebuild legacy evidence sources from current selected assets ────────────
+  // This does not claim to reproduce historical prompt provenance. It creates a
+  // clearly marked current-asset evidence view for sessions created before source
+  // bundles or document-level fallbacks were available.
+  rebuildEvidenceSources: protectedProcedure
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const rows = await db.select().from(rfpSessions).where(eq(rfpSessions.id, input.sessionId)).limit(1);
+      const session = rows[0];
+      if (!session) throw new Error("Session not found");
+
+      const pursuit = session.pursuitId
+        ? (await db.select().from(pursuits).where(eq(pursuits.id, session.pursuitId)).limit(1))[0] ?? null
+        : null;
+      const docIds = pursuit
+        ? [
+            ...(Array.isArray(pursuit.selectedProjectIds) ? pursuit.selectedProjectIds as string[] : []),
+            ...(Array.isArray(pursuit.selectedPastProposalIds) ? pursuit.selectedPastProposalIds as string[] : []),
+            ...(Array.isArray(pursuit.selectedPersonnel)
+              ? (pursuit.selectedPersonnel as Array<{ damDocumentId: string }>).map((person) => person.damDocumentId)
+              : []),
+          ].filter(Boolean)
+        : [];
+      const serviceLines = Array.isArray(pursuit?.serviceLines)
+        ? (pursuit!.serviceLines as string[]).map((line) => line.trim()).filter(Boolean)
+        : pursuit?.serviceLines
+          ? String(pursuit.serviceLines).split(",").map((line) => line.trim()).filter(Boolean)
+          : [];
+      const reconstructedAt = Date.now();
+      const skills = ["win_themes", "technical_writer", "key_personnel", "past_performance"];
+      const rebuiltEntries = await Promise.all(skills.map(async (skillName) => {
+        const { bundle } = await buildEvidenceBundle(docIds, skillName, serviceLines);
+        return [skillName, { ...bundle, reconstructedAt }] as const;
+      }));
+      const { bundle: scorerBundle } = await buildEvidenceBundle(docIds, "proposal_scorer", serviceLines);
+      const evidenceBundles = Object.fromEntries(rebuiltEntries) as EvidenceBundleMap;
+      const reconstructedScorerBundle = { ...scorerBundle, reconstructedAt };
+
+      await db.update(rfpSessions).set({
+        evidenceBundles,
+        scorerEvidenceInput: reconstructedScorerBundle,
+      }).where(eq(rfpSessions.id, input.sessionId));
+
+      return {
+        success: true,
+        sourceDocCount: docIds.length,
+        evidenceItemCount: Object.values(evidenceBundles).reduce((total, bundle) => total + (bundle?.items.length ?? 0), 0)
+          + reconstructedScorerBundle.items.length,
+      };
+    }),
+
   // ── List sessions for a pursuit ───────────────────────────────────────────
   listByPursuit: protectedProcedure
     .input(z.object({ pursuitId: z.string().uuid() }))

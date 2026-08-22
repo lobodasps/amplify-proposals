@@ -24,6 +24,17 @@ import { getDb } from "./db";
 import { documentChunks, damDocuments } from "../drizzle/schema";
 import type { EvidenceBundle, EvidenceItem } from "../shared/workflowTypes";
 
+type EvidenceFallbackDocument = {
+  id: string;
+  docType: string | null;
+  title: string | null;
+  projectName: string | null;
+  clientName: string | null;
+  tags: string | null;
+  extractedText: string | null;
+  extractedMeta: unknown;
+};
+
 // ─── Skill-specific configuration ─────────────────────────────────────────────
 
 /**
@@ -134,6 +145,64 @@ const CHUNK_TYPE_WEIGHTS: Record<string, number> = {
   image_caption: 0.5,
 };
 
+function fallbackDocumentContent(document: EvidenceFallbackDocument): string {
+  const extractedText = document.extractedText?.trim();
+  if (extractedText) return extractedText.slice(0, 1_500);
+  if (!document.extractedMeta || typeof document.extractedMeta !== "object") return "";
+  const metadata = document.extractedMeta as Record<string, unknown>;
+  const directFields = [metadata.summary, metadata.description, metadata.scope, metadata.highlights]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const sectionText = Array.isArray(metadata.sections)
+    ? metadata.sections.slice(0, 3).flatMap((section) => {
+        if (!section || typeof section !== "object") return [] as string[];
+        const { title, content } = section as { title?: unknown; content?: unknown };
+        return [
+          typeof title === "string" ? title : "",
+          typeof content === "string" ? content : "",
+        ].filter(Boolean);
+      })
+    : [];
+  return [...directFields, ...sectionText].join("\n\n").slice(0, 1_500);
+}
+
+/**
+ * A selected Knowledge Hub document can be fully extracted but not yet chunked.
+ * Preserve that distinction in provenance instead of pretending no source exists.
+ */
+export function buildDocumentFallbackEvidenceItems(
+  documents: EvidenceFallbackDocument[],
+  config: Pick<SkillEvidenceConfig, "totalCap" | "sourceTypeCaps">,
+): EvidenceItem[] {
+  const sourceTypeCounts: Record<string, number> = {};
+  const items: EvidenceItem[] = [];
+  for (const document of documents) {
+    if (items.length >= config.totalCap) break;
+    const sourceType = document.docType ?? "other";
+    const cap = config.sourceTypeCaps[sourceType] ?? 2;
+    if ((sourceTypeCounts[sourceType] ?? 0) >= cap) continue;
+    const content = fallbackDocumentContent(document);
+    if (!content) continue;
+    sourceTypeCounts[sourceType] = (sourceTypeCounts[sourceType] ?? 0) + 1;
+    items.push({
+      chunkId: `document-fallback:${document.id}`,
+      damDocumentId: document.id,
+      documentName: document.projectName || document.title || "Untitled",
+      sourceDocTitle: document.projectName || document.title || "Untitled",
+      docType: sourceType,
+      sourceDocType: sourceType,
+      chunkType: "document_fallback",
+      content,
+      pageRef: null,
+      sectionRef: null,
+      relevanceScore: 0.35,
+      extractionMethod: "document_fallback",
+      confidence: 0.5,
+    });
+  }
+  return items;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export interface BuildEvidenceBundleResult {
@@ -193,8 +262,6 @@ export async function buildEvidenceBundle(
       .from(documentChunks)
       .where(inArray(documentChunks.damDocumentId, docIds));
 
-    if (chunks.length === 0) return emptyResult;
-
     // ── Fetch document metadata for source type resolution ───────────────────
     const docs = await db
       .select({
@@ -204,9 +271,27 @@ export async function buildEvidenceBundle(
         projectName: damDocuments.projectName,
         clientName: damDocuments.clientName,
         tags: damDocuments.tags,
+        extractedText: damDocuments.extractedText,
+        extractedMeta: damDocuments.extractedMeta,
       })
       .from(damDocuments)
       .where(inArray(damDocuments.id, docIds));
+
+    if (chunks.length === 0) {
+      const items = buildDocumentFallbackEvidenceItems(docs as EvidenceFallbackDocument[], config);
+      const bundle: EvidenceBundle = {
+        skillName,
+        items,
+        assembledAt: Date.now(),
+        sourceDocIds: docIds,
+        candidateCount: 0,
+      };
+      return {
+        bundle,
+        evidenceContext: items.length > 0 ? formatEvidenceContext(items, skillName) : "",
+        hasSufficientEvidence: items.length > 0,
+      };
+    }
 
     const docMap = new Map(docs.map((d) => [d.id, d]));
 
@@ -278,17 +363,21 @@ export async function buildEvidenceBundle(
       });
     }
 
-    const hasSufficientEvidence = selectedItems.length > 0;
+    const finalItems = selectedItems.length > 0
+      ? selectedItems
+      : buildDocumentFallbackEvidenceItems(docs as EvidenceFallbackDocument[], config);
+    const hasSufficientEvidence = finalItems.length > 0;
 
     const bundle: EvidenceBundle = {
       skillName,
-      items: selectedItems,
+      items: finalItems,
       assembledAt: Date.now(),
       sourceDocIds: docIds,
+      candidateCount: chunks.length,
     };
 
     const evidenceContext = hasSufficientEvidence
-      ? formatEvidenceContext(selectedItems, skillName)
+      ? formatEvidenceContext(finalItems, skillName)
       : "";
 
     return { bundle, evidenceContext, hasSufficientEvidence };

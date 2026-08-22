@@ -370,6 +370,8 @@ export interface EvidenceBundle {
   queryTags?: string[];
   /** Free-text query used for full-text search pass */
   queryText?: string;
+  /** Present only when a legacy panel rebuild assembled evidence from current assets rather than a historical skill execution. */
+  reconstructedAt?: number;
 }
 
 /**
