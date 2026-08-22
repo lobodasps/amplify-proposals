@@ -20,7 +20,7 @@
  *  • isFallback replaced by matchQuality throughout
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,7 @@ interface ChunkPreview {
 interface AssetMatchingPanelProps {
   pursuitId: string;
   serviceLines: string[];
+  personnelRequirements?: unknown;
   onComplete: () => void;
   onBack?: () => void;
 }
@@ -98,6 +99,8 @@ type ProjectSheetDoc = {
   compositeScore?: number;
   matchQuality?: MatchQuality;
   topChunks?: ChunkPreview[];
+  autoMatched?: boolean;
+  matchReasons?: string[];
 };
 
 type ResumeDoc = {
@@ -109,6 +112,8 @@ type ResumeDoc = {
   compositeScore?: number;
   matchQuality?: MatchQuality;
   topChunks?: ChunkPreview[];
+  autoMatched?: boolean;
+  matchReasons?: string[];
 };
 
 type PastProposalDoc = {
@@ -122,6 +127,21 @@ type PastProposalDoc = {
   compositeScore?: number;
   matchQuality?: MatchQuality;
   topChunks?: ChunkPreview[];
+  autoMatched?: boolean;
+  matchReasons?: string[];
+};
+
+type FeeEvidenceDoc = {
+  id: string;
+  title: string;
+  fileName?: string | null;
+  docType?: string | null;
+  tags: string | null;
+  contractValue?: string | null;
+  compositeScore?: number;
+  matchQuality?: MatchQuality;
+  autoMatched?: boolean;
+  matchReasons?: string[];
 };
 
 // ─── Match Quality Banner ─────────────────────────────────────────────────────
@@ -236,6 +256,11 @@ function TagList({ tags }: { tags: string | null }) {
   );
 }
 
+function MatchReasons({ reasons }: { reasons?: string[] }) {
+  if (!reasons || reasons.length === 0) return null;
+  return <p className="mt-1.5 text-[10px] text-muted-foreground">Why suggested: {reasons.join(" · ")}</p>;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const CORPUS_SIZE_THRESHOLD = 8;
@@ -243,6 +268,7 @@ const CORPUS_SIZE_THRESHOLD = 8;
 export default function AssetMatchingPanel({
   pursuitId,
   serviceLines,
+  personnelRequirements,
   onComplete,
   onBack,
 }: AssetMatchingPanelProps) {
@@ -251,12 +277,17 @@ export default function AssetMatchingPanel({
     trpc.dam.matchProjectSheets.useQuery({ serviceLines });
 
   const { data: resumesData, isLoading: loadingResumes } =
-    trpc.dam.matchResumes.useQuery({ serviceLines });
+    trpc.dam.matchResumes.useQuery({ serviceLines, personnelRequirements });
 
   const { data: pastProposalsData, isLoading: loadingProposals } =
     trpc.dam.matchPastProposals.useQuery({ serviceLines });
 
-  const projectSheets: ProjectSheetDoc[] = (projectSheetsData?.results ?? []) as ProjectSheetDoc[];
+  const { data: feeEvidenceData, isLoading: loadingFeeEvidence } =
+    trpc.dam.matchFeeEvidence.useQuery({ serviceLines });
+
+  const { data: existingPursuit } = trpc.pursuits.getById.useQuery({ id: pursuitId });
+
+  const projectSheets: ProjectSheetDoc[] = (projectSheetsData?.results ?? []) as unknown as ProjectSheetDoc[];
   const projectsQuality: MatchQuality = (projectSheetsData?.matchQuality ?? "fallback") as MatchQuality;
   const projectsCorpusSize: number = projectSheetsData?.corpusSize ?? 0;
 
@@ -264,9 +295,13 @@ export default function AssetMatchingPanel({
   const resumesQuality: MatchQuality = (resumesData?.matchQuality ?? "fallback") as MatchQuality;
   const resumesCorpusSize: number = resumesData?.corpusSize ?? 0;
 
-  const pastProposals: PastProposalDoc[] = (pastProposalsData?.results ?? []) as PastProposalDoc[];
+  const pastProposals: PastProposalDoc[] = (pastProposalsData?.results ?? []) as unknown as PastProposalDoc[];
   const proposalsQuality: MatchQuality = (pastProposalsData?.matchQuality ?? "fallback") as MatchQuality;
   const proposalsCorpusSize: number = pastProposalsData?.corpusSize ?? 0;
+
+  const feeEvidence: FeeEvidenceDoc[] = (feeEvidenceData?.results ?? []) as unknown as FeeEvidenceDoc[];
+  const feeEvidenceQuality: MatchQuality = (feeEvidenceData?.matchQuality ?? "fallback") as MatchQuality;
+  const feeEvidenceCorpusSize: number = feeEvidenceData?.corpusSize ?? 0;
 
   // ── Search state ───────────────────────────────────────────────────────────
   const [projectSearch, setProjectSearch] = useState("");
@@ -295,21 +330,29 @@ export default function AssetMatchingPanel({
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
   const [selectedResumeIds, setSelectedResumeIds] = useState<Set<string>>(new Set());
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  const [selectedFeeEvidenceIds, setSelectedFeeEvidenceIds] = useState<Set<string>>(new Set());
   const [personnelRoles, setPersonnelRoles] = useState<Record<string, string>>({});
   const [showWarning, setShowWarning] = useState(false);
-
-  // ── Pre-check defaults on data load ────────────────────────────────────────
-  useEffect(() => {
-    if (projectSheets.length > 0 && selectedProjectIds.size === 0) {
-      setSelectedProjectIds(new Set(projectSheets.slice(0, 3).map((p) => p.id)));
-    }
-  }, [projectSheets]); // eslint-disable-line react-hooks/exhaustive-deps
+  const restoredSelectionsRef = useRef(false);
 
   useEffect(() => {
-    if (pastProposals.length > 0 && selectedProposalIds.size === 0) {
-      setSelectedProposalIds(new Set(pastProposals.slice(0, 1).map((p) => p.id)));
-    }
-  }, [pastProposals]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!existingPursuit || restoredSelectionsRef.current) return;
+    setSelectedProjectIds(new Set(Array.isArray(existingPursuit.selectedProjectIds) ? existingPursuit.selectedProjectIds : []));
+    setSelectedProposalIds(new Set(Array.isArray(existingPursuit.selectedPastProposalIds) ? existingPursuit.selectedPastProposalIds : []));
+    setSelectedFeeEvidenceIds(new Set(Array.isArray(existingPursuit.selectedFeeEvidenceIds) ? existingPursuit.selectedFeeEvidenceIds : []));
+    const restoredPersonnel = Array.isArray(existingPursuit.selectedPersonnel) ? existingPursuit.selectedPersonnel : [];
+    setSelectedResumeIds(new Set(restoredPersonnel.map((person) => person.damDocumentId)));
+    setPersonnelRoles(Object.fromEntries(restoredPersonnel.map((person) => [person.damDocumentId, person.role ?? ""])));
+    restoredSelectionsRef.current = true;
+  }, [existingPursuit]);
+
+  const selectionProvenance = (existingPursuit?.assetSelectionProvenance ?? {}) as Record<string, { source?: "manual" | "suggested_approved" }>;
+  const selectionLabel = (documentId: string, isSuggested?: boolean) =>
+    selectionProvenance[documentId]?.source === "suggested_approved"
+      ? "Approved suggestion"
+      : isSuggested
+        ? "Suggested · approval required"
+        : null;
 
   // ── Save mutation ──────────────────────────────────────────────────────────
   const saveMutation = trpc.pursuits.saveAssetSelections.useMutation({
@@ -323,7 +366,7 @@ export default function AssetMatchingPanel({
   // ── Confirm & Save ─────────────────────────────────────────────────────────
   const handleConfirm = () => {
     const totalSelected =
-      selectedProjectIds.size + selectedResumeIds.size + selectedProposalIds.size;
+      selectedProjectIds.size + selectedResumeIds.size + selectedProposalIds.size + selectedFeeEvidenceIds.size;
     if (totalSelected === 0) {
       setShowWarning(true);
       return;
@@ -341,10 +384,51 @@ export default function AssetMatchingPanel({
         role: personnelRoles[id] ?? "",
       };
     });
+    const approvedAt = new Date().toISOString();
+    const assetSelectionProvenance = Object.fromEntries([
+      ...Array.from(selectedProjectIds).map((id) => {
+        const suggestion = projectSheets.find((document) => document.id === id);
+        return [id, {
+          source: suggestion?.autoMatched ? "suggested_approved" as const : "manual" as const,
+          score: suggestion?.compositeScore,
+          reasons: suggestion?.matchReasons,
+          approvedAt,
+        }];
+      }),
+      ...Array.from(selectedResumeIds).map((id) => {
+        const suggestion = resumes.find((document) => document.id === id);
+        return [id, {
+          source: suggestion?.autoMatched ? "suggested_approved" as const : "manual" as const,
+          score: suggestion?.compositeScore,
+          reasons: suggestion?.matchReasons,
+          approvedAt,
+        }];
+      }),
+      ...Array.from(selectedProposalIds).map((id) => {
+        const suggestion = pastProposals.find((document) => document.id === id);
+        return [id, {
+          source: suggestion?.autoMatched ? "suggested_approved" as const : "manual" as const,
+          score: suggestion?.compositeScore,
+          reasons: suggestion?.matchReasons,
+          approvedAt,
+        }];
+      }),
+      ...Array.from(selectedFeeEvidenceIds).map((id) => {
+        const suggestion = feeEvidence.find((document) => document.id === id);
+        return [id, {
+          source: suggestion?.autoMatched ? "suggested_approved" as const : "manual" as const,
+          score: suggestion?.compositeScore,
+          reasons: suggestion?.matchReasons,
+          approvedAt,
+        }];
+      }),
+    ]);
     saveMutation.mutate({
       pursuitId,
       selectedProjectIds: Array.from(selectedProjectIds),
       selectedPastProposalIds: Array.from(selectedProposalIds),
+      selectedFeeEvidenceIds: Array.from(selectedFeeEvidenceIds),
+      assetSelectionProvenance,
       selectedPersonnel,
     });
   };
@@ -366,6 +450,13 @@ export default function AssetMatchingPanel({
 
   const toggleProposal = (id: string) =>
     setSelectedProposalIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleFeeEvidence = (id: string) =>
+    setSelectedFeeEvidenceIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
@@ -396,7 +487,7 @@ export default function AssetMatchingPanel({
     return Array.from(map.values());
   }, [pastProposals, proposalSearchResults, proposalSearch]);
 
-  const isLoading = loadingProjects || loadingResumes || loadingProposals;
+  const isLoading = loadingProjects || loadingResumes || loadingProposals || loadingFeeEvidence;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   // Scroll is owned by the parent Sheet (overflow-y-auto on SheetContent).
@@ -414,7 +505,7 @@ export default function AssetMatchingPanel({
           <div>
             <h2 className="text-lg font-semibold">Asset Matching</h2>
             <p className="text-sm text-muted-foreground">
-              Select firm assets to include in proposal generation. Matching by service lines:{" "}
+              These are deterministic Knowledge Hub suggestions. Review and confirm the assets you approve for proposal generation. Matching by service lines:{" "}
               {serviceLines.length > 0 ? serviceLines.join(", ") : "none specified"}
             </p>
           </div>
@@ -477,6 +568,7 @@ export default function AssetMatchingPanel({
                             {doc.compositeScore !== undefined && projectsCorpusSize >= CORPUS_SIZE_THRESHOLD && (
                               <ScoreBadge score={doc.compositeScore} />
                             )}
+                            {selectionLabel(doc.id, doc.autoMatched) && <Badge variant="outline" className="text-[10px]">{selectionLabel(doc.id, doc.autoMatched)}</Badge>}
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                             {doc.clientName && <span>Client: {doc.clientName}</span>}
@@ -484,6 +576,7 @@ export default function AssetMatchingPanel({
                             {doc.contractValue && <span>Value: {doc.contractValue}</span>}
                           </div>
                           <TagList tags={doc.tags} />
+                          <MatchReasons reasons={doc.matchReasons} />
                           {doc.topChunks && doc.topChunks.length > 0 && (
                             <TopChunksPreview chunks={doc.topChunks} />
                           )}
@@ -547,6 +640,7 @@ export default function AssetMatchingPanel({
                                 {doc.compositeScore !== undefined && resumesCorpusSize >= CORPUS_SIZE_THRESHOLD && (
                                   <ScoreBadge score={doc.compositeScore} />
                                 )}
+                                {selectionLabel(doc.id, doc.autoMatched) && <Badge variant="outline" className="text-[10px]">{selectionLabel(doc.id, doc.autoMatched)}</Badge>}
                               </div>
                               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                                 {meta?.title != null && <span>{String(meta.title)}</span>}
@@ -560,6 +654,7 @@ export default function AssetMatchingPanel({
                                 )}
                               </div>
                               <TagList tags={doc.tags} />
+                              <MatchReasons reasons={doc.matchReasons} />
                               {doc.topChunks && doc.topChunks.length > 0 && (
                                 <TopChunksPreview chunks={doc.topChunks} />
                               )}
@@ -634,6 +729,7 @@ export default function AssetMatchingPanel({
                             {doc.compositeScore !== undefined && proposalsCorpusSize >= CORPUS_SIZE_THRESHOLD && (
                               <ScoreBadge score={doc.compositeScore} />
                             )}
+                            {selectionLabel(doc.id, doc.autoMatched) && <Badge variant="outline" className="text-[10px]">{selectionLabel(doc.id, doc.autoMatched)}</Badge>}
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                             {doc.clientName && <span>Client: {doc.clientName}</span>}
@@ -645,9 +741,54 @@ export default function AssetMatchingPanel({
                             )}
                           </div>
                           <TagList tags={doc.tags} />
+                          <MatchReasons reasons={doc.matchReasons} />
                           {doc.topChunks && doc.topChunks.length > 0 && (
                             <TopChunksPreview chunks={doc.topChunks} />
                           )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ═══ Section D — Fee Evidence ═══ */}
+            <Card style={{ position: "relative" }}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  Approved Fee Evidence
+                  <Badge variant="secondary" className="text-xs">{selectedFeeEvidenceIds.size} selected</Badge>
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Fee Estimator can use only rate sheets or pricing artifacts you confirm here.
+                </p>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {feeEvidence.length > 0 && <MatchQualityBanner quality={feeEvidenceQuality} />}
+                {feeEvidence.length === 0 ? (
+                  <EmptyState message="No priced rate artifacts found — Fee Estimator will leave the fee section blank unless approved evidence is added." />
+                ) : (
+                  <div className="space-y-2 pr-1">
+                    {feeEvidence.map((document) => (
+                      <label key={document.id} className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors">
+                        <Checkbox
+                          checked={selectedFeeEvidenceIds.has(document.id)}
+                          onCheckedChange={() => toggleFeeEvidence(document.id)}
+                          className="mt-0.5 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium leading-tight truncate">{document.title}</p>
+                            {selectionLabel(document.id, document.autoMatched) && <Badge variant="outline" className="text-[10px]">{selectionLabel(document.id, document.autoMatched)}</Badge>}
+                            {document.compositeScore !== undefined && feeEvidenceCorpusSize >= CORPUS_SIZE_THRESHOLD && <ScoreBadge score={document.compositeScore} />}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {document.docType?.replace(/_/g, " ")}{document.contractValue ? ` · ${document.contractValue}` : ""}
+                          </div>
+                          <TagList tags={document.tags} />
+                          <MatchReasons reasons={document.matchReasons} />
                         </div>
                       </label>
                     ))}

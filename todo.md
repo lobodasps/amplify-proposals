@@ -32,6 +32,11 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Complete centralized deterministic Knowledge Hub matching: persist writer-approved suggestion provenance, move remaining full-corpus suggestion queries to constrained database retrieval, and retain no-silent-auto-fill behavior without vector infrastructure
+- [x] Surface per-asset approved-suggestion provenance in Sources, including source type, match score/reasons, and writer approval time
+- [x] Extend resume candidate filtering to use personnel-requirement terms in PostgreSQL before deterministic ranking when service lines are absent or insufficient
+- [x] Add router-level regression coverage that evidence-dependent `executeSkill` calls are rejected without writer-approved assets, plus persistence/reload coverage for saved suggestion provenance
+- [x] Audit every Proposal Workspace skill’s actual Knowledge Hub retrieval, matching scope, and prompt injection path; document verified gaps and insertion points without implementation changes
 - [x] Rename the skill-assembled draft view and clarify its relationship to the complete editable Proposal Draft document with front matter
 - [x] Add explicit Proposal Workspace guidance distinguishing Sources (evidence actually used) from Assets (editable pursuit inputs), render availability for all workflow skills, and support rebuilding legacy empty evidence bundles from current extracted document data
 - [x] Clarify Sources versus Assets in Proposal Workspace and repair the empty per-skill Sources panel: new runs use safe document-level excerpts when selected assets lack chunks, while historical empty bundles now explain the selected-asset and excerpt availability state accurately

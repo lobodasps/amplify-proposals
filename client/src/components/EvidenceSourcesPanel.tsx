@@ -320,6 +320,17 @@ export default function EvidenceSourcesPanel({ sessionId }: EvidenceSourcesPanel
     evidenceCoverage?: number;
     unsupportedClaims?: Array<{ section: string; claim: string; reason: string; relatedCriterion?: string }>;
   } | null;
+  const approvedAssetProvenance = (data?.approvedAssetProvenance ?? []) as Array<{
+    id: string;
+    title: string | null;
+    docType: string | null;
+    source?: "manual" | "suggested_approved";
+    score?: number;
+    reasons?: string[];
+    approvedAt?: string;
+  }>;
+  const approvedSuggestionCount = approvedAssetProvenance
+    .filter((entry) => entry.source === "suggested_approved").length;
 
   const hasAnyData =
     (evidenceBundles && Object.keys(evidenceBundles).length > 0) ||
@@ -363,6 +374,23 @@ export default function EvidenceSourcesPanel({ sessionId }: EvidenceSourcesPanel
         <div className="rounded-lg border bg-muted/30 p-3 mb-4 space-y-2">
           <p className="text-xs leading-relaxed"><strong>Sources</strong> shows the document excerpts a skill actually used or, for a legacy rebuild, the current selected-asset evidence assembled for review.</p>
           <p className="text-xs text-muted-foreground leading-relaxed"><strong>Assets</strong> opens the editable pursuit inputs—project sheets, resumes, and prior proposals—from which future skills may draw sources. Selecting an asset does not mean every skill used it.</p>
+          {approvedSuggestionCount > 0 && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2 space-y-1.5 dark:bg-emerald-950/20 dark:border-emerald-900">
+              <p className="text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                Writer-approved suggestions ({approvedSuggestionCount})
+              </p>
+              {approvedAssetProvenance.filter((entry) => entry.source === "suggested_approved").map((entry) => (
+                <div key={entry.id} className="text-[10px] text-emerald-800/90 dark:text-emerald-200/90">
+                  <span className="font-medium">{entry.title ?? "Untitled asset"}</span>
+                  <span> · {(entry.docType ?? "asset").replace(/_/g, " ")}</span>
+                  {entry.score !== undefined && <span> · {Math.round(entry.score * 100)}% match</span>}
+                  {entry.approvedAt && <span> · approved {new Date(entry.approvedAt).toLocaleDateString()}</span>}
+                  {entry.reasons?.length ? <p className="mt-0.5">Why suggested: {entry.reasons.join(" · ")}</p> : null}
+                </div>
+              ))}
+              <p className="text-[10px] text-muted-foreground">These are approved pursuit inputs. The per-skill lists below remain proof of what each skill actually used.</p>
+            </div>
+          )}
           <Button
             size="sm"
             variant="outline"

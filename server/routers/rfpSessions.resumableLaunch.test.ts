@@ -105,4 +105,36 @@ describe("rfpSessions resumable Launch state", () => {
     expect(restored?.launchState.review).toMatchObject({ title: review.title });
     expect(resolveLaunchRestoreTarget(restored?.launchState, "running")).toBe("processing");
   });
+
+  it("rejects an evidence-dependent skill before LLM execution when the pursuit has no writer-approved assets", async () => {
+    const session = {
+      id: sessionId,
+      pursuitId: "33333333-3333-4333-8333-333333333333",
+      workflowState: {},
+      skillOutputs: {},
+    };
+    let selectCount = 0;
+    getDbMock.mockResolvedValue({
+      select: () => {
+        const call = selectCount++;
+        return {
+          from: () => ({
+            where: () => ({
+              limit: async () => call === 0
+                ? [session]
+                : [{ selectedProjectIds: [], selectedPastProposalIds: [], selectedPersonnel: [] }],
+            }),
+          }),
+        };
+      },
+    });
+    const caller = rfpSessionsRouter.createCaller({
+      user: { id: "22222222-2222-4222-8222-222222222222", role: "user" },
+      req: {} as any,
+      res: {} as any,
+    } as any);
+
+    await expect(caller.executeSkill({ sessionId, skillName: "key_personnel" }))
+      .rejects.toThrow("Writer approval required");
+  });
 });

@@ -249,6 +249,8 @@ export const pursuits = pgTable("pursuits", {
   selectedProjectIds: jsonb("selectedProjectIds").$type<string[]>(),
   selectedPastProposalIds: jsonb("selectedPastProposalIds").$type<string[]>(),
   selectedPersonnel: jsonb("selectedPersonnel").$type<Array<{ damDocumentId: string; staffName: string; role: string }>>(),
+  selectedFeeEvidenceIds: jsonb("selectedFeeEvidenceIds").$type<string[]>(),
+  assetSelectionProvenance: jsonb("assetSelectionProvenance").$type<Record<string, { source: "manual" | "suggested_approved"; score?: number; reasons?: string[]; approvedAt: string }>>(),
 
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),

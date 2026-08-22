@@ -120,6 +120,13 @@ export const pursuitsRouter = router({
         pursuitId: z.string().uuid(),
         selectedProjectIds: z.array(z.string().uuid()).default([]),
         selectedPastProposalIds: z.array(z.string().uuid()).default([]),
+        selectedFeeEvidenceIds: z.array(z.string().uuid()).default([]),
+        assetSelectionProvenance: z.record(z.string(), z.object({
+          source: z.enum(["manual", "suggested_approved"]),
+          score: z.number().optional(),
+          reasons: z.array(z.string()).optional(),
+          approvedAt: z.string(),
+        })).default({}),
         selectedPersonnel: z.array(
           z.object({
             damDocumentId: z.string().uuid(),
@@ -137,6 +144,8 @@ export const pursuitsRouter = router({
         .set({
           selectedProjectIds: input.selectedProjectIds,
           selectedPastProposalIds: input.selectedPastProposalIds,
+          selectedFeeEvidenceIds: input.selectedFeeEvidenceIds,
+          assetSelectionProvenance: input.assetSelectionProvenance,
           selectedPersonnel: input.selectedPersonnel,
           updatedAt: new Date(),
         })

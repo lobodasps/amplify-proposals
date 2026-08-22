@@ -23,6 +23,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { documentChunks, damDocuments } from "../drizzle/schema";
 import type { EvidenceBundle, EvidenceItem } from "../shared/workflowTypes";
+import { scoreDeterministicEvidence } from "../shared/knowledgeHubMatching";
 
 type EvidenceFallbackDocument = {
   id: string;
@@ -322,7 +323,11 @@ export async function buildEvidenceBundle(
           serviceLineBoost = matchCount / rfpServiceLines.length;
         }
 
-        const relevanceScore = chunkWeight * 0.5 + priorityScore * 0.3 + serviceLineBoost * 0.2;
+        const relevanceScore = scoreDeterministicEvidence({
+          evidenceWeight: chunkWeight,
+          priorityScore,
+          relevanceBoost: serviceLineBoost,
+        });
 
         return {
           chunk: c,

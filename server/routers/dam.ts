@@ -14,7 +14,7 @@
  */
 
 import { z } from "zod";
-import { eq, desc, and, sql, like, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, or, sql, like, isNull, inArray } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { damDocuments, projects, documentChunks } from "../../drizzle/schema";
@@ -33,6 +33,7 @@ import { invokeLLM, type Message } from "../_core/llm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import { TRPCError } from "@trpc/server";
 import { shredDocumentForDam } from "../damShredder";
+import { rankKnowledgeHubDocuments } from "../../shared/knowledgeHubMatching";
 
 // ─── Image MIME type detection ───────────────────────────────────────────────
 
@@ -55,6 +56,35 @@ export type LegacyProjectSheet = {
   title: string;
   projectName: string | null;
 };
+
+function deterministicAssetSuggestions<T extends { id: string; docType?: string | null; title?: string | null; tags?: string | null; extractedMeta?: unknown }>(
+  documents: T[],
+  docTypes: string[],
+  serviceLines: string[],
+  limit: number,
+  personnelRequirements?: unknown,
+) {
+  return rankKnowledgeHubDocuments(documents, { docTypes, serviceLines, limit, personnelRequirements }).map(({ document, relevanceScore, autoMatched, reasons }) => ({
+    ...document,
+    compositeScore: relevanceScore,
+    matchQuality: relevanceScore > 0.5 ? "tag-only" as const : "fallback" as const,
+    topChunks: [],
+    autoMatched,
+    matchReasons: reasons,
+  }));
+}
+
+function serviceLineCandidateCondition(serviceLines: string[], additionalTerms = "") {
+  const terms = Array.from(new Set(
+    [...serviceLines, additionalTerms].flatMap((line) => line.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length >= 4)),
+  )).slice(0, 12);
+  if (terms.length === 0) return undefined;
+  return or(...terms.flatMap((term) => [
+    like(damDocuments.tags, `%${term}%`),
+    like(damDocuments.title, `%${term}%`),
+    like(damDocuments.extractedText, `%${term}%`),
+  ]));
+}
 
 export function normalizeProjectExperienceKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -1513,42 +1543,21 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         createdAt: damDocuments.createdAt,
       };
 
-      // Fetch all indexed project sheets (no limit — we score and sort below)
+      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
-        .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt));
+        .where(and(eq(damDocuments.docType, "project_sheet"), eq(damDocuments.processingStatus, "indexed"), serviceLineCondition))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(50);
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
-      // Pass 1: legacy tag score
-      const docIds = allDocs.map((d) => d.id);
-      const ftsQuery = buildFtsQuery(input.serviceLines);
-      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
-
-      const scored = allDocs.map((doc) => {
-        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
-        const ftsResult = ftsMap.get(doc.id);
-        const ftScore = ftsResult?.ftScore ?? 0;
-        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
-        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
-        return {
-          ...doc,
-          compositeScore: breakdown.compositeScore,
-          scoreBreakdown: breakdown,
-          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
-          topChunks: ftsResult?.topChunks ?? [],
-        };
-      });
-
-      // Sort by compositeScore descending, take top 10
-      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 10);
+      const sorted = deterministicAssetSuggestions(allDocs, ["project_sheet"], input.serviceLines, 10);
 
       // Overall matchQuality = best quality among top results
       const overallQuality: MatchQuality =
-        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
         sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
 
       return { results: sorted, matchQuality: overallQuality, corpusSize };
@@ -1556,7 +1565,7 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
 
   /** Match resumes (base version) — hybrid three-pass retrieval (Phase 3) */
   matchResumes: protectedProcedure
-    .input(z.object({ serviceLines: z.array(z.string()) }))
+    .input(z.object({ serviceLines: z.array(z.string()), personnelRequirements: z.unknown().optional() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
@@ -1571,37 +1580,24 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         createdAt: damDocuments.createdAt,
       };
 
+      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
-        .where(and(eq(damDocuments.docType, "resume"), eq(damDocuments.resumeVersion, "base"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt));
+        .where(and(
+          eq(damDocuments.docType, "resume"),
+          eq(damDocuments.resumeVersion, "base"),
+          eq(damDocuments.processingStatus, "indexed"),
+          serviceLineCandidateCondition(input.serviceLines, JSON.stringify(input.personnelRequirements ?? "")),
+        ))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(50);
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
-      const docIds = allDocs.map((d) => d.id);
-      const ftsQuery = buildFtsQuery(input.serviceLines);
-      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
-
-      const scored = allDocs.map((doc) => {
-        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
-        const ftsResult = ftsMap.get(doc.id);
-        const ftScore = ftsResult?.ftScore ?? 0;
-        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
-        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
-        return {
-          ...doc,
-          compositeScore: breakdown.compositeScore,
-          scoreBreakdown: breakdown,
-          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
-          topChunks: ftsResult?.topChunks ?? [],
-        };
-      });
-
-      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 10);
+      const sorted = deterministicAssetSuggestions(allDocs, ["resume"], input.serviceLines, 10, input.personnelRequirements);
       const overallQuality: MatchQuality =
-        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
         sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
 
       return { results: sorted, matchQuality: overallQuality, corpusSize };
@@ -1625,40 +1621,64 @@ Return ONLY valid JSON. Do not include markdown fences or explanation.`;
         chunkStatus: damDocuments.chunkStatus,
       };
 
+      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
       const allDocs = await db
         .select(selectFields)
         .from(damDocuments)
-        .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed")))
-        .orderBy(desc(damDocuments.createdAt));
+        .where(and(eq(damDocuments.docType, "past_proposal"), eq(damDocuments.processingStatus, "indexed"), serviceLineCondition))
+        .orderBy(desc(damDocuments.createdAt))
+        .limit(50);
 
       const corpusSize = allDocs.length;
       if (corpusSize === 0) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
 
-      const docIds = allDocs.map((d) => d.id);
-      const ftsQuery = buildFtsQuery(input.serviceLines);
-      const ftsMap = await fetchFtsScores(docIds, ftsQuery);
-
-      const scored = allDocs.map((doc) => {
-        const legacyTagScore = computeLegacyTagScore(input.serviceLines, doc.tags);
-        const ftsResult = ftsMap.get(doc.id);
-        const ftScore = ftsResult?.ftScore ?? 0;
-        const metaScore = computeMetaScore({ createdAt: doc.createdAt, extractedMeta: doc.extractedMeta, chunkStatus: doc.chunkStatus });
-        const breakdown = computeCompositeScore(legacyTagScore, ftScore, metaScore);
-        return {
-          ...doc,
-          compositeScore: breakdown.compositeScore,
-          scoreBreakdown: breakdown,
-          matchQuality: classifyMatchQuality(legacyTagScore, ftScore),
-          topChunks: ftsResult?.topChunks ?? [],
-        };
-      });
-
-      const sorted = scored.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, 5);
+      const sorted = deterministicAssetSuggestions(allDocs, ["past_proposal"], input.serviceLines, 5);
       const overallQuality: MatchQuality =
-        sorted.some((r) => r.matchQuality === "hybrid") ? "hybrid" :
         sorted.some((r) => r.matchQuality === "tag-only") ? "tag-only" : "fallback";
 
       return { results: sorted, matchQuality: overallQuality, corpusSize };
+    }),
+
+  /** Suggest priced rate artifacts for writer approval before Fee Estimator use. */
+  matchFeeEvidence: protectedProcedure
+    .input(z.object({ serviceLines: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { results: [], matchQuality: "fallback" as const, corpusSize: 0 };
+      const serviceLineCondition = serviceLineCandidateCondition(input.serviceLines);
+      const allDocs = await db
+        .select({
+          id: damDocuments.id,
+          title: damDocuments.title,
+          fileName: damDocuments.fileName,
+          docType: damDocuments.docType,
+          tags: damDocuments.tags,
+          contractValue: damDocuments.contractValue,
+          extractedText: damDocuments.extractedText,
+          extractedMeta: damDocuments.extractedMeta,
+        })
+        .from(damDocuments)
+        .where(and(
+          inArray(damDocuments.docType, ["rate_sheet", "spreadsheet", "other"]),
+          eq(damDocuments.processingStatus, "indexed"),
+          serviceLineCondition,
+        ))
+        .limit(50);
+      const corpusSize = allDocs.length;
+      const results = rankKnowledgeHubDocuments(allDocs, {
+        docTypes: ["rate_sheet", "spreadsheet", "other"],
+        serviceLines: input.serviceLines,
+        requirePricing: true,
+        limit: 5,
+      }).map(({ document, relevanceScore, autoMatched, reasons }) => ({
+        ...document,
+        compositeScore: relevanceScore,
+        matchQuality: relevanceScore > 0.5 ? "tag-only" as const : "fallback" as const,
+        autoMatched,
+        matchReasons: reasons,
+      }));
+      const matchQuality: MatchQuality = results.some((result) => result.matchQuality === "tag-only") ? "tag-only" : "fallback";
+      return { results, matchQuality, corpusSize };
     }),
 
   /** Search DAM documents by title, tag, or chunk content (Phase 3 hybrid) */

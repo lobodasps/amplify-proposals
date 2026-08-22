@@ -88,20 +88,22 @@ export function findFeePricingEvidence(
   serviceLines: string[] = []
 ): FeePricingEvidence {
   const selectedIds = new Set(selectedPastProposalIds);
-  const rateArtifacts = documents.filter((document) => {
-    if (document.docType === "rate_sheet") return true;
-    return (document.docType === "spreadsheet" || document.docType === "other")
-      && RATE_ARTIFACT_PATTERN.test([document.title, document.fileName, document.tags].filter(Boolean).join(" "));
-  });
-  const selectedPricedPastProposals = documents.filter((document) =>
-    document.id && selectedIds.has(document.id) && document.docType === "past_proposal"
-      && PRICING_VALUE_PATTERN.test(documentEvidenceText(document))
-  );
-  const relevantPricedPastProposals = documents.filter((document) =>
-    document.id && !selectedIds.has(document.id) && document.docType === "past_proposal"
-      && PRICING_VALUE_PATTERN.test(documentEvidenceText(document))
-      && hasRelevantServiceOverlap(document, serviceLines)
-  );
+  const rateArtifacts = rankKnowledgeHubDocuments(documents, {
+    docTypes: ["rate_sheet", "spreadsheet", "other"],
+    serviceLines,
+    requirePricing: true,
+    limit: 3,
+  }).filter(({ document }) =>
+    document.docType === "rate_sheet" || RATE_ARTIFACT_PATTERN.test([document.title, document.fileName, document.tags].filter(Boolean).join(" ")),
+  ).map(({ document }) => document);
+  const selectedPricedPastProposals = rankKnowledgeHubDocuments(
+    documents.filter((document) => Boolean(document.id && selectedIds.has(document.id))),
+    { docTypes: ["past_proposal"], serviceLines, requirePricing: true, limit: 3 },
+  ).map(({ document }) => document);
+  const relevantPricedPastProposals = rankKnowledgeHubDocuments(
+    documents.filter((document) => !selectedIds.has(document.id ?? "")),
+    { docTypes: ["past_proposal"], serviceLines, requirePricing: true, limit: 3 },
+  ).filter(({ document }) => hasRelevantServiceOverlap(document, serviceLines)).map(({ document }) => document);
   const sources = [
     ...rateArtifacts.map((document) => ({ type: "Knowledge Hub rate artifact", document })),
     ...selectedPricedPastProposals.map((document) => ({ type: "Selected priced prior proposal", document })),
@@ -181,3 +183,4 @@ export function buildFeeEstimatorTemplateVariables(input: {
     wordLimit: "Use a task-by-task labor-hours table, cited pricing inputs, assumptions, and exclusions. Do not invent rates or totals.",
   };
 }
+import { rankKnowledgeHubDocuments } from "./knowledgeHubMatching";

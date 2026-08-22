@@ -32,6 +32,7 @@ import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
 import { getProposalScoreDisplay } from "../../../shared/proposalScoring";
 import { isBlankSkillOutput } from "../../../shared/skillOutput";
 import { isLegacyFeeEstimateWithoutEvidenceProvenance } from "../../../shared/feeEstimator";
+import { hasApprovedAssetSelections } from "../../../shared/knowledgeHubMatching";
 import { GENERATED_SECTIONS_DESCRIPTION, GENERATED_SECTIONS_LABEL, PROPOSAL_DOCUMENT_LABEL } from "@/lib/proposalViewTerminology";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
@@ -501,6 +502,12 @@ export default function ProposalWorkspace() {
   const [workspaceMode, setWorkspaceMode] = useState<"workflow" | "draft">("workflow");
   const abortRef = useRef(false);
 
+  const { data: pursuitAssetSelections } = trpc.pursuits.getById.useQuery(
+    { id: session?.pursuitId ?? "00000000-0000-0000-0000-000000000000" },
+    { enabled: Boolean(session?.pursuitId) },
+  );
+  const hasApprovedAssets = hasApprovedAssetSelections(pursuitAssetSelections);
+
   // ── Sync server → local state on session load ──────────────────────────────
   useEffect(() => {
     if (session) {
@@ -587,6 +594,14 @@ export default function ProposalWorkspace() {
       const skillsToRun = WORKFLOW_SKILL_NAMES.slice(startIndex);
 
       for (const skillName of skillsToRun) {
+        const requiresApprovedAssets = skillName !== "rfp_parser" && skillName !== "technical_outline";
+        if (requiresApprovedAssets && session?.pursuitId && !hasApprovedAssets) {
+          setIsRunning(false);
+          setActiveSkill(null);
+          setShowAssetPanel(true);
+          toast.info("Review and approve Knowledge Hub asset suggestions before this skill runs.");
+          return;
+        }
         // Check if user clicked Pause
         if (abortRef.current) {
           toast.info("Workflow paused. Click Resume to continue.");
@@ -735,7 +750,7 @@ export default function ProposalWorkspace() {
         utils.rfpSessions.getById.invalidate({ id: sessionId });
       }
     },
-    [executeSkillMutation, utils, skillDisplayName, activeSessionId, refetchSections]
+    [executeSkillMutation, utils, skillDisplayName, activeSessionId, refetchSections, session?.pursuitId, hasApprovedAssets]
   );
 
   // ── Handle "Generate Proposal" / "Resume" click ────────────────────────────
@@ -1598,16 +1613,20 @@ export default function ProposalWorkspace() {
           </SheetHeader>
           {session?.pursuitId && (
             <div className="mt-4">
-              <AssetMatchingPanel
-                pursuitId={session.pursuitId}
+                <AssetMatchingPanel
+                  pursuitId={session.pursuitId}
                 serviceLines={
                   Array.isArray((session.extractedData as any)?.serviceLines)
                     ? (session.extractedData as any).serviceLines
                     : []
-                }
-                onComplete={() => {
-                  setShowAssetPanel(false);
-                  toast.success("Asset selections saved.");
+                  }
+                  personnelRequirements={(session.extractedData as any)?.keyPersonnelRequirements}
+                  onComplete={() => {
+                    setShowAssetPanel(false);
+                    if (session.pursuitId) {
+                      utils.pursuits.getById.invalidate({ id: session.pursuitId });
+                    }
+                    toast.success("Asset selections saved.");
                 }}
               />
             </div>

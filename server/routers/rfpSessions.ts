@@ -15,7 +15,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { rfpSessions, pursuits, proposals, personnel, projects, rfpWikis, firmSettings, proposalSections, damDocuments, rfpStructuredIndex, llmUsageLogs } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { invokeLLMWithSkill } from "../_core/llmSkill";
 import type {
   WorkflowSkillName,
@@ -66,6 +66,7 @@ import {
   findFeePricingEvidence,
 } from "../../shared/feeEstimator";
 import { requireNonEmptySkillOutput } from "../../shared/skillOutput";
+import { requiresWriterApprovedAssets } from "../../shared/knowledgeHubMatching";
 // ─── Zod schema for WorkflowSkillName ────────────────────────────────────────
 
 const workflowSkillNameSchema = z.enum([
@@ -161,12 +162,14 @@ async function buildSkillVariables(
   // ── Asset selections from pursuit (Step 3 Launchpad) ─────────────────────
   let pursuitSelectedProjectIds: string[] = [];
   let pursuitSelectedPastProposalIds: string[] = [];
+  let pursuitSelectedFeeEvidenceIds: string[] = [];
   let pursuitSelectedPersonnel: Array<{ damDocumentId: string; staffName: string; role: string }> = [];
   if (db && session.pursuitId) {
     const [pursuit] = await db.select().from(pursuits).where(eq(pursuits.id, session.pursuitId)).limit(1);
     if (pursuit) {
       pursuitSelectedProjectIds = Array.isArray(pursuit.selectedProjectIds) ? pursuit.selectedProjectIds as string[] : [];
       pursuitSelectedPastProposalIds = Array.isArray(pursuit.selectedPastProposalIds) ? pursuit.selectedPastProposalIds as string[] : [];
+      pursuitSelectedFeeEvidenceIds = Array.isArray(pursuit.selectedFeeEvidenceIds) ? pursuit.selectedFeeEvidenceIds as string[] : [];
       pursuitSelectedPersonnel = Array.isArray(pursuit.selectedPersonnel) ? pursuit.selectedPersonnel as typeof pursuitSelectedPersonnel : [];
     }
   }
@@ -189,8 +192,8 @@ async function buildSkillVariables(
   if (pursuitSelectedPersonnel.length > 0 && db) {
     // Hydrate from DAM documents (extractedMeta has resume details)
     const damIds = pursuitSelectedPersonnel.map(p => p.damDocumentId);
-    const allDam = await db.select().from(damDocuments).limit(200);
-    const damMap = new Map(allDam.filter(d => damIds.includes(d.id)).map(d => [d.id, d]));
+    const selectedDam = await db.select().from(damDocuments).where(inArray(damDocuments.id, damIds));
+    const damMap = new Map(selectedDam.map(d => [d.id, d]));
     personnelSummary = pursuitSelectedPersonnel.map(p => {
       const doc = damMap.get(p.damDocumentId);
       const meta = doc?.extractedMeta as Record<string, any> | null;
@@ -215,8 +218,7 @@ async function buildSkillVariables(
   let projectsSummary = "No projects selected.";
   if (pursuitSelectedProjectIds.length > 0 && db) {
     // Hydrate from DAM documents (project sheets have extractedMeta with project details)
-    const allDam = await db.select().from(damDocuments).limit(200);
-    const selected = allDam.filter(d => pursuitSelectedProjectIds.includes(d.id));
+    const selected = await db.select().from(damDocuments).where(inArray(damDocuments.id, pursuitSelectedProjectIds));
     if (selected.length > 0) {
       projectsSummary = selected.map(d => {
         const meta = d.extractedMeta as Record<string, any> | null;
@@ -236,8 +238,7 @@ async function buildSkillVariables(
   // Past proposals data (new — from pursuit selections)
   let pastProposalsSummary = "No past proposals selected.";
   if (pursuitSelectedPastProposalIds.length > 0 && db) {
-    const allDam = await db.select().from(damDocuments).limit(200);
-    const selected = allDam.filter(d => pursuitSelectedPastProposalIds.includes(d.id));
+    const selected = await db.select().from(damDocuments).where(inArray(damDocuments.id, pursuitSelectedPastProposalIds));
     if (selected.length > 0) {
       pastProposalsSummary = selected.map(d => {
         const meta = d.extractedMeta as Record<string, any> | null;
@@ -463,7 +464,16 @@ async function buildSkillVariables(
     }
 
     case "fee_estimator": {
-      const feeEvidenceDocuments = db ? await db.select().from(damDocuments).limit(200) : [];
+      const approvedFeeDocumentIds = Array.from(new Set([
+        ...pursuitSelectedFeeEvidenceIds,
+        ...pursuitSelectedPastProposalIds,
+      ]));
+      const feeEvidenceDocuments = db && approvedFeeDocumentIds.length > 0
+        ? await db
+            .select()
+            .from(damDocuments)
+            .where(inArray(damDocuments.id, approvedFeeDocumentIds))
+        : [];
       const evidenceServiceLines = (pursuitServiceLines || (Array.isArray(extracted.serviceLines) ? extracted.serviceLines.join(",") : ""))
         .split(",")
         .map((value) => value.trim())
@@ -911,22 +921,43 @@ export const rfpSessionsRouter = router({
     .input(z.object({ sessionId: z.string().uuid() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null };
+      if (!db) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null, approvedAssetProvenance: null };
       const rows = await db
         .select({
           evidenceBundles: rfpSessions.evidenceBundles,
           scorerEvidenceInput: rfpSessions.scorerEvidenceInput,
           liveScoreDetails: rfpSessions.liveScoreDetails,
+          pursuitId: rfpSessions.pursuitId,
         })
         .from(rfpSessions)
         .where(eq(rfpSessions.id, input.sessionId))
         .limit(1);
       const row = rows[0];
-      if (!row) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null };
+      if (!row) return { evidenceBundles: null, scorerEvidenceInput: null, liveScoreDetails: null, approvedAssetProvenance: null };
+      const pursuit = row.pursuitId
+        ? (await db.select({ assetSelectionProvenance: pursuits.assetSelectionProvenance }).from(pursuits).where(eq(pursuits.id, row.pursuitId)).limit(1))[0]
+        : null;
+      const provenance = (pursuit?.assetSelectionProvenance ?? {}) as Record<string, {
+        source?: "manual" | "suggested_approved";
+        score?: number;
+        reasons?: string[];
+        approvedAt?: string;
+      }>;
+      const approvedAssetIds = Object.keys(provenance);
+      const approvedDocuments = approvedAssetIds.length > 0
+        ? await db
+            .select({ id: damDocuments.id, title: damDocuments.title, docType: damDocuments.docType })
+            .from(damDocuments)
+            .where(inArray(damDocuments.id, approvedAssetIds))
+        : [];
       return {
         evidenceBundles: row.evidenceBundles ?? null,
         scorerEvidenceInput: row.scorerEvidenceInput ?? null,
         liveScoreDetails: row.liveScoreDetails ?? null,
+        approvedAssetProvenance: approvedDocuments.map((document) => ({
+          ...document,
+          ...provenance[document.id],
+        })),
       };
     }),
 
@@ -950,6 +981,7 @@ export const rfpSessionsRouter = router({
         ? [
             ...(Array.isArray(pursuit.selectedProjectIds) ? pursuit.selectedProjectIds as string[] : []),
             ...(Array.isArray(pursuit.selectedPastProposalIds) ? pursuit.selectedPastProposalIds as string[] : []),
+            ...(Array.isArray(pursuit.selectedFeeEvidenceIds) ? pursuit.selectedFeeEvidenceIds as string[] : []),
             ...(Array.isArray(pursuit.selectedPersonnel)
               ? (pursuit.selectedPersonnel as Array<{ damDocumentId: string }>).map((person) => person.damDocumentId)
               : []),
@@ -1405,6 +1437,21 @@ export const rfpSessionsRouter = router({
           completedAt: currentEntry.completedAt ?? new Date().toISOString(),
           cached: true,
         };
+      }
+
+      if (session.pursuitId) {
+        const [pursuit] = await db
+          .select({
+            selectedProjectIds: pursuits.selectedProjectIds,
+            selectedPastProposalIds: pursuits.selectedPastProposalIds,
+            selectedPersonnel: pursuits.selectedPersonnel,
+          })
+          .from(pursuits)
+          .where(eq(pursuits.id, session.pursuitId))
+          .limit(1);
+        if (requiresWriterApprovedAssets(input.skillName, session.pursuitId, pursuit)) {
+          throw new Error("Writer approval required: review and confirm Knowledge Hub asset suggestions before running evidence-dependent skills.");
+        }
       }
 
       // ── 3. Mark skill as "running" (immediate DB write) ──────────────────
