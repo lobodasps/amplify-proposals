@@ -40,9 +40,29 @@ function documentEvidenceText(document: FeePricingEvidenceDocument): string {
   ].filter(Boolean).join("\n");
 }
 
+function metadataPricingExcerpt(metadata: unknown): string {
+  if (!metadata || typeof metadata !== "object") return "";
+  const sections = (metadata as { sections?: unknown }).sections;
+  if (!Array.isArray(sections)) return "";
+  return sections
+    .filter((section) => {
+      if (!section || typeof section !== "object") return false;
+      const { title, content } = section as { title?: unknown; content?: unknown };
+      return PRICING_VALUE_PATTERN.test([title, content].filter((value) => typeof value === "string").join("\n"));
+    })
+    .map((section) => {
+      const { title, content } = section as { title?: unknown; content?: unknown };
+      return [`Section: ${typeof title === "string" ? title : "Pricing detail"}`, typeof content === "string" ? content : ""].filter(Boolean).join("\n");
+    })
+    .join("\n\n")
+    .slice(0, 2_000);
+}
+
 function sourceExcerpt(document: FeePricingEvidenceDocument): string {
   const extractedText = document.extractedText?.trim();
   if (extractedText) return extractedText.slice(0, 2_000);
+  const metadataExcerpt = metadataPricingExcerpt(document.extractedMeta);
+  if (metadataExcerpt) return metadataExcerpt;
   const value = document.contractValue?.trim();
   return value ? `Recorded contract/proposal value: ${value}` : "Pricing metadata is available; use only stated amounts and rates.";
 }

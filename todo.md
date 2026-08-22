@@ -32,6 +32,7 @@ Current version: v4.29 (post Pipeline Upgrade Phases 4–8 + auth storage-key is
 - [x] Commit the completed Project Experience, Knowledge Hub, Staff Phase 1, and schema-verification work and push the current branch to GitHub — pushed `main` to `lobodasps/amplify-proposals` on 2026-08-20
 
 ### Launch Generation Reliability
+- [x] Include pricing-bearing sections from selected past-proposal metadata in the Fee Estimator evidence payload so valid historical rate data is cited on rerun
 - [x] Trace the current generated Fee Estimator schedule and correct its source gap; the displayed schedule was a legacy Claude run at 2026-08-22 15:18–15:19 before evidence provenance was recorded. The selected past proposal does contain pricing metadata, but that legacy Fee Estimator path did not retrieve or cite it. Historical completed fee outputs without provenance now require a forced evidence-validating retry before they can be trusted.
 - [x] Change Fee Estimator to leave the fee section explicitly blank unless approved fee artifacts or prior-proposal pricing evidence are retrieved; report which permitted source types were searched and how to provide missing evidence
 - [x] Investigate why the Fee Estimator returned no result; no usable fee schedule or rate evidence exists in Knowledge Hub, Fee Estimator had incomplete generic-template variables, and an empty LLM response was incorrectly saved as complete. It now receives complete prompt context, explicitly distinguishes no-rate evidence, blocks blank-output completion, and makes historical blank results retryable.

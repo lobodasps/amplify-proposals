@@ -30,6 +30,21 @@ describe("Fee Estimator evidence gate", () => {
     expect(evidence.sourceSummary).not.toContain("Project Sheet");
   });
 
+  it("includes fee-bearing extracted metadata from a selected prior proposal in the cited prompt context", () => {
+    const evidence = findFeePricingEvidence([{
+      id: "past-1",
+      docType: "past_proposal",
+      title: "Comparable Past Proposal",
+      extractedMeta: {
+        sections: [{ title: "Fee Summary", content: "Average hourly rate: $185/hour. Total project fee: $120,001." }],
+      },
+    }], ["past-1"]);
+
+    expect(evidence.available).toBe(true);
+    expect(evidence.promptContext).toContain("Section: Fee Summary");
+    expect(evidence.promptContext).toContain("$185/hour");
+  });
+
   it("passes all generic proposal-writer variables together with evidence provenance", () => {
     const variables = buildFeeEstimatorTemplateVariables({
       rfpContext: "RFP context",
