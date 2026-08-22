@@ -15,6 +15,13 @@ export type FeePricingEvidence = {
   promptContext: string;
 };
 
+export function isLegacyFeeEstimateWithoutEvidenceProvenance(entry?: {
+  status?: string;
+  feeEvidenceStatus?: string;
+}): boolean {
+  return entry?.status === "complete" && !entry.feeEvidenceStatus;
+}
+
 const RATE_ARTIFACT_PATTERN = /\b(fee|billing|labor|rate|price)\b/i;
 const PRICING_VALUE_PATTERN = /(?:\$\s?[\d,.]+|\b(?:fee|price|billing rate|labor rate|hourly rate|not-to-exceed|NTE)\b)/i;
 

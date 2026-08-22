@@ -31,6 +31,7 @@ import { getProposalWorkspaceLayout } from "@/lib/proposalWorkspaceLayout";
 import { getSkillPipelineLayout } from "@/lib/proposalWorkspaceLayout";
 import { getProposalScoreDisplay } from "../../../shared/proposalScoring";
 import { isBlankSkillOutput } from "../../../shared/skillOutput";
+import { isLegacyFeeEstimateWithoutEvidenceProvenance } from "../../../shared/feeEstimator";
 import { WinThemeDraftContent } from "@/components/WinThemeDraftContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -506,11 +507,16 @@ export default function ProposalWorkspace() {
       const workflowState = (session.workflowState ?? {}) as WorkflowState;
       const recoveredState: WorkflowState = Object.fromEntries(
         (Object.entries(workflowState) as Array<[WorkflowSkillName, SkillStateEntry]>).map(([skillName, entry]) => {
-          if (entry?.status === "complete" && isBlankSkillOutput(outputs[skillName])) {
+          const hasBlankOutput = entry?.status === "complete" && isBlankSkillOutput(outputs[skillName]);
+          const lacksFeeEvidenceProvenance = skillName === "fee_estimator"
+            && isLegacyFeeEstimateWithoutEvidenceProvenance(entry);
+          if (hasBlankOutput || lacksFeeEvidenceProvenance) {
             return [skillName, {
               ...entry,
               status: "error",
-              errorMessage: "This earlier run completed without saving output. Retry this skill to generate the missing content.",
+              errorMessage: lacksFeeEvidenceProvenance
+                ? "This earlier fee estimate has no recorded approved pricing evidence. Retry this skill to validate its sources or replace it with the intentional blank notice."
+                : "This earlier run completed without saving output. Retry this skill to generate the missing content.",
             } satisfies SkillStateEntry];
           }
           return [skillName, entry];
@@ -602,10 +608,14 @@ export default function ProposalWorkspace() {
           // The backend fires the LLM in a background job and returns
           // immediately with running:true. We then poll getById every 2s
           // until the skill reaches "complete" or "error" in workflowState.
+          const shouldForceHistoricalRecovery = localState[skillName]?.status === "error" && (
+            isBlankSkillOutput(localOutputs[skillName])
+            || (skillName === "fee_estimator" && isLegacyFeeEstimateWithoutEvidenceProvenance(localState[skillName]))
+          );
           const executeResult = await executeSkillMutation.mutateAsync({
             sessionId,
             skillName,
-            force: localState[skillName]?.status === "error" && isBlankSkillOutput(localOutputs[skillName]),
+            force: shouldForceHistoricalRecovery,
           });
 
           // ── Poll DB until skill completes or errors ────────────────────────

@@ -47,6 +47,10 @@ export interface SkillStateEntry {
   usedDefaultModel?: boolean;
   /** Human-readable label of the default model that was used (e.g. 'openai/gpt-4o') */
   defaultModelName?: string;
+  /** Fee Estimator evidence gate outcome; absent values identify legacy unproven fee outputs. */
+  feeEvidenceStatus?: "available" | "unavailable";
+  /** User-facing record of the permitted fee source types and results searched. */
+  feeEvidenceSummary?: string;
 }
 
 /** Full workflow state — stored in rfpSessions.workflowState */

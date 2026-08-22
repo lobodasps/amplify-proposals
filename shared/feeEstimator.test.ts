@@ -3,6 +3,7 @@ import {
   buildFeeEstimatorTemplateVariables,
   createFeeEvidenceUnavailableOutput,
   findFeePricingEvidence,
+  isLegacyFeeEstimateWithoutEvidenceProvenance,
 } from "./feeEstimator";
 
 describe("Fee Estimator evidence gate", () => {
@@ -46,5 +47,10 @@ describe("Fee Estimator evidence gate", () => {
     expect(variables.rfpRequirements).toContain("TECHNICAL OUTLINE:\nTask 1");
     expect(variables.firmExperience).toContain("Firm size: 50-60");
     expect(variables.wordLimit).toContain("Do not invent rates or totals");
+  });
+
+  it("requires historical completed fee output without evidence provenance to be revalidated", () => {
+    expect(isLegacyFeeEstimateWithoutEvidenceProvenance({ status: "complete" })).toBe(true);
+    expect(isLegacyFeeEstimateWithoutEvidenceProvenance({ status: "complete", feeEvidenceStatus: "available" })).toBe(false);
   });
 });

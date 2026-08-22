@@ -1384,6 +1384,8 @@ export const rfpSessionsRouter = router({
         let usedProvider = "unknown";
         let usedDefaultModel = false;
         let defaultModelName: string | undefined;
+        let feeEvidenceStatus: "available" | "unavailable" | undefined;
+        let feeEvidenceSummary: string | undefined;
 
         try {
         // Sub-step: Preparing context
@@ -1398,10 +1400,14 @@ export const rfpSessionsRouter = router({
         }
         const variables = await buildSkillVariables(input.skillName, session);
 
-        if (input.skillName === "fee_estimator" && variables.feeEvidenceStatus === "unavailable") {
-          llmOutput = createFeeEvidenceUnavailableOutput(variables.feeEvidenceSummary ?? "No permitted fee evidence was found.");
-          usedModel = "evidence-validation";
-          usedProvider = "internal";
+        if (input.skillName === "fee_estimator") {
+          feeEvidenceStatus = variables.feeEvidenceStatus === "available" ? "available" : "unavailable";
+          feeEvidenceSummary = variables.feeEvidenceSummary;
+          if (feeEvidenceStatus === "unavailable") {
+            llmOutput = createFeeEvidenceUnavailableOutput(feeEvidenceSummary ?? "No permitted fee evidence was found.");
+            usedModel = "evidence-validation";
+            usedProvider = "internal";
+          }
         }
 
         // ── Substitution validator: scan for unresolved {variable} or {{variable}} patterns ──
@@ -1701,6 +1707,7 @@ export const rfpSessionsRouter = router({
         model: usedModel,
         provider: usedProvider,
         ...(usedDefaultModel ? { usedDefaultModel: true, defaultModelName } : {}),
+        ...(feeEvidenceStatus ? { feeEvidenceStatus, feeEvidenceSummary } : {}),
       };
       const completedState: WorkflowState = {
         ...((freshSession.workflowState ?? {}) as WorkflowState),
