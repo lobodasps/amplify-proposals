@@ -147,6 +147,10 @@ This means two different Gemini configurations (e.g., `gemini-flash` and `gemini
 
 **CRITICAL RULE:** When seeding missing `ai_skills` records (in `seedDefaultSkills()` or the `aiSkills.list` query), do NOT specify `provider` or `model` values. Leave those columns null. Provider and model selection is managed exclusively through the Settings → AI Configuration UI and must never be hardcoded in migrations, seed scripts, or application code. Only insert: `skillType`, `displayName`, `description`, `systemPrompt`, `userPromptTemplate`, and `outputType`.
 
+### RFP-Driven Proposal Structure
+
+The left-hand navigator and **Generate Full Proposal** use the same resolver in `shared/proposalSections.ts`. It first uses `rfp_structured_index.sectionMap` when an extracted RFP submission outline is available, sorting entries by their declared `order`. When the index has no usable section map, the resolver derives a sequence from the parsed RFP evaluation criteria and submission-format requirements, and the workspace explicitly labels that sequence as a criteria-based fallback. Only when neither source exists does the standard AEC template apply. This prevents an inferred or template order from being presented as the RFP’s required submission order.
+
 ---
 
 ## Project Structure
